@@ -395,4 +395,27 @@ extension View {
     func codexHover(cornerRadius: CGFloat = 8, color: Color = CodexTheme.hoverBackground) -> some View {
         modifier(CodexHoverHighlight(cornerRadius: cornerRadius, color: color))
     }
+
+    /// Hover darkening drawn ON TOP (clipped to the shape) — for buttons that
+    /// already have an opaque fill, where a behind-background wouldn't show.
+    /// Apply to the Button itself (after .buttonStyle) so onHover fires reliably.
+    func codexHoverOverlay(cornerRadius: CGFloat = 8) -> some View {
+        modifier(CodexHoverOverlay(cornerRadius: cornerRadius))
+    }
+}
+
+struct CodexHoverOverlay: ViewModifier {
+    var cornerRadius: CGFloat = 8
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(hovering ? Color.black.opacity(0.05) : Color.clear)
+                    .allowsHitTesting(false)
+            )
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
 }

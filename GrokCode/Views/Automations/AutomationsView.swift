@@ -110,6 +110,7 @@ struct AutomationsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
         }
     }
 
@@ -150,6 +151,7 @@ struct AutomationsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
@@ -305,6 +307,7 @@ private struct AutomationCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
     }
 
     private func foreground(prominent: Bool, destructive: Bool) -> Color {
@@ -382,8 +385,7 @@ private struct AutomationEditorSheet: View {
 
             Divider().background(CodexTheme.divider)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
                     field("Name") {
                         TextField("Weekly release notes", text: $name)
                             .textFieldStyle(.plain)
@@ -483,7 +485,6 @@ private struct AutomationEditorSheet: View {
                         )
                 }
                 .padding(20)
-            }
 
             Divider().background(CodexTheme.divider)
 
@@ -503,6 +504,7 @@ private struct AutomationEditorSheet: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
 
                 Button(action: save) {
                     Text(isEditing ? "Save changes" : "Create automation")
@@ -517,12 +519,13 @@ private struct AutomationEditorSheet: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
                 .disabled(!canSave)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .frame(width: 540, height: 620)
+        .frame(width: 540)
         .background(CodexTheme.mainBackground)
         .onAppear(perform: seedFields)
     }

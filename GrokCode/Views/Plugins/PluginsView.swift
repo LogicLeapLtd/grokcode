@@ -1,17 +1,29 @@
 import SwiftUI
 
-/// The Plugins page — a Codex-style catalogue of integrations (MCP servers,
-/// skills, hooks, commands) discovered from the local grok / Claude / Codex /
-/// Cursor configs. Two tabs: Discover (the full catalogue, grouped by source,
-/// with Import controls) and Installed.
+/// The Plugins page. Three tabs:
+///  - Discover: GrokCode's own curated marketplace.
+///  - Import: plugins found in your other coding agents (grok/Claude/Codex/Cursor).
+///  - Installed: what you've added.
 struct PluginsView: View {
     @Environment(AppViewModel.self) private var model
 
     private enum Tab: String, CaseIterable, Identifiable {
-        case discover, installed
+        case discover, importing, installed
         var id: String { rawValue }
-        var title: String { self == .discover ? "Discover" : "Installed" }
-        var symbol: String { self == .discover ? "square.grid.2x2" : "checkmark.seal" }
+        var title: String {
+            switch self {
+            case .discover: "Discover"
+            case .importing: "Import"
+            case .installed: "Installed"
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .discover: "square.grid.2x2"
+            case .importing: "square.and.arrow.down"
+            case .installed: "checkmark.seal"
+            }
+        }
     }
 
     @State private var tab: Tab = .discover
@@ -31,21 +43,20 @@ struct PluginsView: View {
                 .padding(.bottom, 48)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollIndicators(.visible)
         }
         .padding(.horizontal, 48)
-        .padding(.top, 40)
+        .padding(.top, 44)
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CodexTheme.mainBackground)
         .onAppear {
             model.refreshPlugins()
-            // Land on whichever tab has something to show.
-            tab = model.installedPlugins.isEmpty ? .discover : .installed
             searchFocused = false
         }
     }
 
-    // MARK: - Header
+    // MARK: Header
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -53,7 +64,7 @@ struct PluginsView: View {
                 Text("Plugins")
                     .font(CodexTheme.headlineFont)
                     .foregroundStyle(CodexTheme.textPrimary)
-                Text("MCP servers, skills, hooks, and commands discovered from your grok, Claude, Codex, and Cursor setups.")
+                Text("Browse the GrokCode marketplace, or import MCP servers, skills and commands you already use in other tools.")
                     .font(.system(size: 14))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +90,7 @@ struct PluginsView: View {
         .help("Rescan local tool configs for plugins")
     }
 
-    // MARK: - Search
+    // MARK: Search
 
     private var searchField: some View {
         HStack(spacing: 10) {
@@ -103,7 +114,7 @@ struct PluginsView: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.composerBorder, lineWidth: 1))
     }
 
-    // MARK: - Segmented control
+    // MARK: Segmented control
 
     private var segmentedControl: some View {
         HStack(spacing: 4) {
@@ -117,7 +128,13 @@ struct PluginsView: View {
 
     private func segment(_ item: Tab) -> some View {
         let selected = tab == item
-        let count = item == .discover ? discoverFiltered.count : installedFiltered.count
+        let count: Int = {
+            switch item {
+            case .discover: return marketplaceFiltered.count
+            case .importing: return importFiltered.count
+            case .installed: return installedFiltered.count
+            }
+        }()
         return Button {
             withAnimation(CodexMotion.quickSpring) { tab = item }
         } label: {
@@ -142,56 +159,73 @@ struct PluginsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Filtering
+    // MARK: Filtering
 
     private func matchesQuery(_ plugin: Plugin) -> Bool {
         let q = model.pluginSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return true }
         return plugin.name.localizedCaseInsensitiveContains(q)
             || plugin.subtitle.localizedCaseInsensitiveContains(q)
+            || plugin.detail.localizedCaseInsensitiveContains(q)
             || plugin.sourceTool.displayName.localizedCaseInsensitiveContains(q)
     }
 
-    private var installedFiltered: [Plugin] { model.installedPlugins.filter(matchesQuery) }
-    private var discoverFiltered: [Plugin] { model.importablePlugins.filter(matchesQuery) }
+    private var installedIDs: Set<String> { Set(model.installedPlugins.map(\.id)) }
 
-    // MARK: - Content
+    /// Curated marketplace, with `isInstalled` reflecting the installed set.
+    private var marketplaceFiltered: [Plugin] {
+        MarketplaceCatalog.plugins
+            .map { $0.settingInstalled(installedIDs.contains($0.id)) }
+            .filter(matchesQuery)
+    }
+    private var importFiltered: [Plugin] { model.importablePlugins.filter(matchesQuery) }
+    private var installedFiltered: [Plugin] { model.installedPlugins.filter(matchesQuery) }
+
+    // MARK: Content
 
     @ViewBuilder
     private var content: some View {
         switch tab {
         case .discover:
-            if discoverFiltered.isEmpty {
-                emptyState(
-                    symbol: "puzzlepiece.extension",
-                    title: model.pluginSearchQuery.isEmpty ? "Nothing discovered" : "No matches",
-                    subtitle: model.pluginSearchQuery.isEmpty
-                        ? "No grok, Claude, Codex, or Cursor configs were found. Add an MCP server or skill to one of those tools, then Rescan."
-                        : "No plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}."
-                )
+            if marketplaceFiltered.isEmpty {
+                emptyState(symbol: "magnifyingglass", title: "No matches",
+                           subtitle: "Nothing in the marketplace matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
-                ForEach(groupedBySource(discoverFiltered), id: \.0) { source, items in
-                    sourceSection(source: source, plugins: items)
+                sectionHeaderRow(icon: "sparkles", title: "Curated by GrokCode", count: marketplaceFiltered.count)
+                cardStack(marketplaceFiltered)
+            }
+        case .importing:
+            if importFiltered.isEmpty {
+                emptyState(symbol: "square.and.arrow.down",
+                           title: model.pluginSearchQuery.isEmpty ? "Nothing to import" : "No matches",
+                           subtitle: model.pluginSearchQuery.isEmpty
+                            ? "No MCP servers, skills or commands were found in your grok, Claude, Codex or Cursor setups. Add one to those tools, then Rescan."
+                            : "No imported plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
+            } else {
+                ForEach(groupedBySource(importFiltered), id: \.0) { source, items in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 9) {
+                            sourceBadge(source)
+                            Text(source.displayName).font(.system(size: 14, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
+                            Text("\(items.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+                            Spacer(minLength: 0)
+                        }
+                        cardStack(items)
+                    }
                 }
             }
         case .installed:
             if installedFiltered.isEmpty {
-                emptyState(
-                    symbol: "tray",
-                    title: model.pluginSearchQuery.isEmpty ? "No plugins installed yet" : "No matches",
-                    subtitle: model.pluginSearchQuery.isEmpty
-                        ? "Browse the Discover tab and import the MCP servers, skills, and commands you want to use."
-                        : "No installed plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}."
-                )
+                emptyState(symbol: "tray",
+                           title: model.pluginSearchQuery.isEmpty ? "No plugins installed yet" : "No matches",
+                           subtitle: model.pluginSearchQuery.isEmpty
+                            ? "Add plugins from the Discover marketplace or import them from your other tools."
+                            : "No installed plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
-                ForEach(groupedBySource(installedFiltered), id: \.0) { source, items in
-                    sourceSection(source: source, plugins: items)
-                }
+                cardStack(installedFiltered)
             }
         }
     }
-
-    // MARK: - Grouping
 
     private func groupedBySource(_ plugins: [Plugin]) -> [(PluginSource, [Plugin])] {
         let order = Dictionary(uniqueKeysWithValues: PluginSource.allCases.enumerated().map { ($1, $0) })
@@ -200,21 +234,12 @@ struct PluginsView: View {
             .map { ($0.key, $0.value.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) }
     }
 
-    // MARK: - Sections
-
-    private func sourceSection(source: PluginSource, plugins: [Plugin]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
-                sourceBadge(source)
-                Text(source.displayName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Text("\(plugins.count)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                Spacer(minLength: 0)
-            }
-            cardStack(plugins)
+    private func sectionHeaderRow(icon: String, title: String, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.accentOrange)
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
+            Text("\(count)").font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+            Spacer(minLength: 0)
         }
     }
 
@@ -240,24 +265,17 @@ struct PluginsView: View {
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.opacity(0.14)))
     }
 
-    // MARK: - Empty state (vertically centered so the page never looks empty/jammed)
-
     private func emptyState(symbol: String, title: String, subtitle: String) -> some View {
         VStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(CodexTheme.textTertiary)
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(CodexTheme.textPrimary)
+            Image(systemName: symbol).font(.system(size: 34, weight: .light)).foregroundStyle(CodexTheme.textTertiary)
+            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
             Text(subtitle)
-                .font(.system(size: 14))
-                .foregroundStyle(CodexTheme.textSecondary)
+                .font(.system(size: 14)).foregroundStyle(CodexTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 440)
         }
-        .frame(maxWidth: .infinity, minHeight: 380, alignment: .center)
+        .frame(maxWidth: .infinity, minHeight: 360, alignment: .center)
     }
 }
 
@@ -271,7 +289,6 @@ private struct PluginRow: View {
         Color(red: plugin.sourceTool.tint.red, green: plugin.sourceTool.tint.green, blue: plugin.sourceTool.tint.blue)
     }
 
-    /// Skip empty / frontmatter-artifact subtitles like ">" so rows stay clean.
     private var hasMeaningfulSubtitle: Bool {
         plugin.subtitle.trimmingCharacters(in: CharacterSet(charactersIn: "> \n\t-—·")).count > 1
     }
@@ -339,21 +356,21 @@ private struct PluginRow: View {
                 .overlay(Capsule().strokeBorder(CodexTheme.divider, lineWidth: 1))
                 .contentShape(Capsule())
             }
-            .buttonStyle(CodexPressableStyle())
+            .buttonStyle(.plain)
             .help("Remove \(plugin.displayName)")
         } else {
             Button { model.installPlugin(plugin) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "plus").font(.system(size: 11, weight: .bold))
-                    Text("Import").font(.system(size: 12, weight: .semibold))
+                    Text(plugin.sourceTool == .builtin ? "Add" : "Import").font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Capsule().fill(CodexTheme.sendButtonActiveBackground))
                 .contentShape(Capsule())
             }
-            .buttonStyle(CodexPressableStyle())
-            .help("Import \(plugin.displayName)")
+            .buttonStyle(.plain)
+            .help("Add \(plugin.displayName)")
         }
     }
 }
