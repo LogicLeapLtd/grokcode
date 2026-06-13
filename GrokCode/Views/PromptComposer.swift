@@ -91,7 +91,9 @@ struct PromptComposer: View {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(CodexTheme.textSecondary)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 28, height: 28)
+                    .codexHover(cornerRadius: 8)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle(scale: 0.92))
 
