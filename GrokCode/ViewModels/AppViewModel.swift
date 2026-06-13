@@ -305,7 +305,9 @@ final class AppViewModel {
         if let project = selectedProject {
             cwd = project.path
         } else if workWithoutProject {
-            cwd = FileManager.default.homeDirectoryForCurrentUser
+            // NEVER point grok at the home dir — it would scan Photos/iCloud/etc.
+            // and trigger macOS privacy prompts. Use an isolated, empty scratch.
+            cwd = Self.noProjectScratchDirectory()
         } else {
             return
         }
@@ -747,6 +749,16 @@ final class AppViewModel {
         default:
             break
         }
+    }
+
+    /// An isolated, empty working directory for "Don't work in a project" runs,
+    /// so grok never touches the user's home folder / protected files.
+    static func noProjectScratchDirectory() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("GrokCode/no-project-scratch", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
 
     /// Read the current git branch from a repo's .git/HEAD (handles the common

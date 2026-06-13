@@ -247,24 +247,25 @@ private struct ThinkingIndicator: View {
 private struct ThinkingDots: View {
     var color: Color
     var size: CGFloat = 6
-    @State private var phase = 0.0
+    @State private var animating = false
 
     var body: some View {
-        HStack(spacing: size * 0.6) {
+        HStack(spacing: size * 0.55) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(color)
                     .frame(width: size, height: size)
-                    .opacity(opacity(for: i))
+                    .opacity(animating ? 1.0 : 0.25)
+                    .scaleEffect(animating ? 1.0 : 0.6)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(i) * 0.2),
+                        value: animating
+                    )
             }
         }
-        .onAppear { phase = 1 }
-        .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: phase)
-    }
-
-    private func opacity(for index: Int) -> Double {
-        let active = Int((phase * 3).rounded()) % 3
-        return index == active ? 1.0 : 0.35
+        .onAppear { animating = true }
     }
 }
 
