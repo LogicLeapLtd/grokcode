@@ -105,7 +105,8 @@ struct PromptComposer: View {
     }
 
     private var permissionMenu: some View {
-        CodexMenuTrigger(minWidth: 260, edge: .top) { _ in
+        CodexMenuTrigger(minWidth: 260, edge: .top,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "permission") { _ in
             HStack(spacing: 4) {
                 if model.permissionMode == .fullAccess {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -126,6 +127,7 @@ struct PromptComposer: View {
                     CodexMenuItem(
                         title: mode.label,
                         subtitle: mode.detail,
+                        systemImage: mode.symbol,
                         isSelected: model.permissionMode == mode
                     ) { model.permissionMode = mode; close() }
                 }

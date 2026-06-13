@@ -79,6 +79,15 @@ enum PermissionMode: String, CaseIterable, Identifiable {
         case .plan: "Read-only — plan without making changes"
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .fullAccess: "lock.open"
+        case .acceptEdits: "pencil"
+        case .auto: "checkmark.shield"
+        case .plan: "list.bullet.clipboard"
+        }
+    }
 }
 
 enum EffortLevel: String, CaseIterable, Identifiable {
