@@ -64,6 +64,9 @@ final class AppViewModel {
     /// Set when the user taps Stop so the resulting termination is treated as a
     /// graceful cancel (no error surfaced, queue not auto-advanced).
     private var didUserCancel = false
+    /// The model the current grok session was started with. grok locks a session
+    /// to one model's agent, so switching models mid-session requires a new one.
+    private var sessionModelId: String?
     private let discovery = ProjectDiscovery()
     private let hooksService = HooksService()
     private let sessionIndex = SessionIndexService()
@@ -197,6 +200,7 @@ final class AppViewModel {
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
         messages = []
         activeSessionId = nil
+        sessionModelId = nil
         errorMessage = nil
         navigateTo(messages.isEmpty ? .home : .chat)
     }
@@ -207,6 +211,7 @@ final class AppViewModel {
         workWithoutProject = true
         messages = []
         activeSessionId = nil
+        sessionModelId = nil
         errorMessage = nil
         navigateTo(.home)
     }
@@ -252,6 +257,7 @@ final class AppViewModel {
         selectedProject = project
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
         activeSessionId = thread.id
+        sessionModelId = nil   // unknown which model this thread used
         errorMessage = nil
         navigateTo(.chat)
     }
@@ -259,6 +265,7 @@ final class AppViewModel {
     func startNewChat() {
         messages = []
         activeSessionId = nil
+        sessionModelId = nil
         promptText = ""
         errorMessage = nil
         navigateTo(.home)
@@ -285,7 +292,7 @@ final class AppViewModel {
         }
     }
 
-    private func runPrompt(userText: String) async {
+    private func runPrompt(userText: String, retriedNewSession: Bool = false) async {
         guard let model = selectedModel else { return }
         let cwd: URL
         if let project = selectedProject {
@@ -294,6 +301,12 @@ final class AppViewModel {
             cwd = FileManager.default.homeDirectoryForCurrentUser
         } else {
             return
+        }
+
+        // grok locks a session to one model's agent. If the user switched models
+        // since this session started, begin a fresh session so it doesn't error.
+        if let sid = activeSessionId, let started = sessionModelId, started != model.id, sid == activeSessionId {
+            activeSessionId = nil
         }
 
         errorMessage = nil
@@ -325,6 +338,7 @@ final class AppViewModel {
             if let sessionId {
                 activeSessionId = sessionId
             }
+            sessionModelId = model.id
 
             if let index = messages.firstIndex(where: { $0.id == assistantId }) {
                 messages[index].isStreaming = false
@@ -338,6 +352,21 @@ final class AppViewModel {
             sessions = (try? await grok.listSessions()) ?? sessions
             attachThreadsToProjects()
         } catch {
+            let message = error.localizedDescription
+            let needsNewSession = message.contains("MODEL_SWITCH_INCOMPATIBLE_AGENT")
+                || message.contains("Start a new session")
+
+            if !didUserCancel && needsNewSession && !retriedNewSession {
+                // The resumed session belongs to a different model's agent —
+                // drop the session and retry once as a brand-new conversation.
+                messages.removeAll { $0.id == assistantId }
+                activeSessionId = nil
+                sessionModelId = nil
+                isRunning = false
+                await runPrompt(userText: userText, retriedNewSession: true)
+                return
+            }
+
             if didUserCancel {
                 // Graceful stop — finalize the bubble, keep partial output.
                 if let index = messages.firstIndex(where: { $0.id == assistantId }) {
@@ -350,11 +379,11 @@ final class AppViewModel {
                 // Surface the failure inline on the assistant bubble.
                 if let index = messages.firstIndex(where: { $0.id == assistantId }) {
                     messages[index].isStreaming = false
-                    messages[index].errorText = error.localizedDescription
+                    messages[index].errorText = message
                 } else {
-                    messages.append(ChatMessage(role: .assistant, text: "", errorText: error.localizedDescription))
+                    messages.append(ChatMessage(role: .assistant, text: "", errorText: message))
                 }
-                errorMessage = error.localizedDescription
+                errorMessage = message
             }
         }
 
