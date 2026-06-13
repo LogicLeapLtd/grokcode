@@ -93,6 +93,19 @@ final class AppViewModel {
     /// never modify files. No-op when the variable is unset.
     private func runSmokeTestIfRequested() {
         let env = ProcessInfo.processInfo.environment
+
+        // Page navigation for visual QA (independent of the prompt hook).
+        if let page = env["GROKCODE_SMOKE_PAGE"] {
+            switch page {
+            case "search": navigateTo(.search)
+            case "plugins": navigateTo(.plugins)
+            case "automations": navigateTo(.automations)
+            case "settings": openSettings()
+            case "hooks": openHooksReview()
+            default: break
+            }
+        }
+
         guard let prompt = env["GROKCODE_SMOKE_PROMPT"], !prompt.isEmpty else { return }
 
         if let safe = projects.first(where: { $0.name == "GrokCodeGUI" }) {

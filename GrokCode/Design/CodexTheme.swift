@@ -2,7 +2,7 @@ import SwiftUI
 
 // Sourced from /Applications/Codex.app (app.asar CSS tokens + live screenshot)
 enum CodexTheme {
-    static let sidebarBackground = Color(red: 0.953, green: 0.953, blue: 0.953)       // #F3F3F3
+    static let sidebarBackground = Color(red: 0.992, green: 0.992, blue: 0.991)       // ~white, matches Codex
     static let mainBackground = Color.white
     static let composerShellBackground = Color(red: 0.941, green: 0.941, blue: 0.941)
     static let composerBackground = Color.white

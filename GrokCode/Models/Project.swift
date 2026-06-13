@@ -203,10 +203,10 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .newChat: "bubble.left"
+        case .newChat: "square.and.pencil"
         case .search: "magnifyingglass"
-        case .plugins: "puzzlepiece.extension"
-        case .automations: "gearshape.2"
+        case .plugins: "at"
+        case .automations: "clock"
         }
     }
 }
