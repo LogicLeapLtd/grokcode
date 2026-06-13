@@ -17,6 +17,7 @@ struct ContentView: View {
                 MainContentView()
                     .layoutPriority(1)
             }
+            .ignoresSafeArea(.container, edges: .top)   // fill under the title bar
             .task { await model.bootstrap() }
 
             AnimatedModal(isPresented: model.showSettings, onDismiss: { model.closeSettings() }) {

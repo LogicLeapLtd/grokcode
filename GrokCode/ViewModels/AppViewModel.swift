@@ -920,7 +920,8 @@ final class AppViewModel {
     private func relativeAge(from date: Date?) -> String {
         guard let date else { return "" }
         let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
-        if days < 1 { return "today" }
+        if days < 1 { return "Today" }
+        if days == 1 { return "Yesterday" }
         if days < 7 { return "\(days)d" }
         let weeks = days / 7
         return "\(weeks)w"

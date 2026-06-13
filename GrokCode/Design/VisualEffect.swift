@@ -23,7 +23,9 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
-/// Makes the host window non-opaque so behind-window vibrancy can show through.
+/// Makes the host window non-opaque (so behind-window vibrancy shows through)
+/// AND extends the content under the title bar so there's no transparent/dead
+/// strip at the top.
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -32,6 +34,10 @@ struct WindowConfigurator: NSViewRepresentable {
             window.isOpaque = false
             window.backgroundColor = .clear
             window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            // Draw content under the title bar so the sidebar glass / main pane
+            // fill the whole window — no invisible top strip.
+            window.styleMask.insert(.fullSizeContentView)
         }
         return view
     }

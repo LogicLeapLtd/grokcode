@@ -16,14 +16,14 @@ struct SidebarView: View {
                 .padding(.top, 8)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 12)
+        .padding(.top, 30)          // clearance for the traffic lights (full-size content)
         .padding(.bottom, 14)
         .frame(width: CodexTheme.sidebarWidth)
         .background {
             // Translucent "liquid glass" sidebar that samples the desktop behind
             // the (non-opaque) window — see WindowConfigurator on ContentView.
             VisualEffectView(material: .sidebar)
-                .overlay(CodexTheme.sidebarBackground.opacity(0.55))
+                .overlay(CodexTheme.sidebarBackground.opacity(0.30))
                 .ignoresSafeArea()
         }
         .onChange(of: model.sidebarStatusFilter) { _, _ in model.persistSidebarPreferences() }
@@ -76,9 +76,11 @@ struct SidebarView: View {
                     }
                 }
                 .padding(.top, 2)
+                .padding(.trailing, 6)   // gutter so the scrollbar sits past the rows, not over them
                 .animation(CodexMotion.expandSpring, value: model.sidebarProjectGroups.count)
                 .animation(CodexMotion.expandSpring, value: model.projectsCollapsed)
             }
+            .scrollIndicators(.visible)
         }
     }
 
@@ -139,10 +141,19 @@ struct SidebarView: View {
                                     .foregroundStyle(CodexTheme.textTertiary)
                             }
 
-                            Text(item.project.name)
-                                .font(.system(size: 12))
-                                .foregroundStyle(CodexTheme.textTertiary)
-                                .lineLimit(1)
+                            HStack(spacing: 5) {
+                                Text(item.project.name)
+                                    .font(.system(size: 12))
+                                    .lineLimit(1)
+                                if let branch = item.project.gitBranch {
+                                    Image(systemName: "arrow.triangle.branch")
+                                        .font(.system(size: 9, weight: .medium))
+                                    Text(branch)
+                                        .font(.system(size: 11))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .foregroundStyle(CodexTheme.textTertiary)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
