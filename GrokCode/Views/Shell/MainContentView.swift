@@ -19,19 +19,11 @@ struct MainContentView: View {
                 SearchPageView()
                     .codexPage("search")
             case .plugins:
-                FeaturePlaceholderView(
-                    title: "Plugins",
-                    subtitle: "Browse and manage Grok plugins, MCP servers, and skills.",
-                    symbol: "puzzlepiece.extension"
-                )
-                .codexPage("plugins")
+                PluginsView()
+                    .codexPage("plugins")
             case .automations:
-                FeaturePlaceholderView(
-                    title: "Automations",
-                    subtitle: "Schedule recurring Grok tasks for your projects.",
-                    symbol: "gearshape.2"
-                )
-                .codexPage("automations")
+                AutomationsView()
+                    .codexPage("automations")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

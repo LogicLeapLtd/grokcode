@@ -32,6 +32,15 @@ final class AppViewModel {
     var sidebarSort: SidebarSort = .lastActive
     var pinnedProjectPaths: Set<String> = []
     var archivedProjectPaths: Set<String> = []
+    /// Plugins discovered from local tool configs (grok/claude/codex/cursor),
+    /// with `isInstalled` reflecting the persisted installed set.
+    var importablePlugins: [Plugin] = []
+    /// Plugins the user has imported/installed (persisted full blobs).
+    var installedPlugins: [Plugin] = []
+    /// User-defined automations (saved grok prompts + simple schedules).
+    var automations: [Automation] = []
+    /// Live filter text for the Plugins page search box.
+    var pluginSearchQuery = ""
     /// When true, project rows collapse to just their names (the collapse
     /// toggle in the Projects header); otherwise every project auto-expands its
     /// chats, Codex-style.
@@ -58,6 +67,8 @@ final class AppViewModel {
     private let discovery = ProjectDiscovery()
     private let hooksService = HooksService()
     private let sessionIndex = SessionIndexService()
+    private let pluginImport = PluginImportService()
+    private let automationService = AutomationService()
     private let rootsKey = "grokcode.projectRoots"
     private let selectedProjectPathKey = "grokcode.selectedProjectPath"
     private let sidebarFilterKey = "grokcode.sidebarStatusFilter"
@@ -103,6 +114,12 @@ final class AppViewModel {
                 ]
                 selectedModel = models.first
             }
+        }
+
+        refreshPlugins()
+        loadAutomations()
+        automationService.startScheduler { [weak self] dueIDs in
+            self?.runDueAutomations(dueIDs)
         }
 
         runSmokeTestIfRequested()
@@ -579,6 +596,83 @@ final class AppViewModel {
 
     func refreshHooks() {
         pendingHooks = hooksService.loadPendingHooks(trusted: trustedHookIDs)
+    }
+
+    // MARK: - Plugins
+
+    /// Reload the installed set and re-scan local tool configs for importable
+    /// plugins. Cheap, synchronous, safe to call on appear / from a Rescan button.
+    func refreshPlugins() {
+        installedPlugins = pluginImport.installedPlugins()
+        importablePlugins = pluginImport.discoverImportable()
+    }
+
+    /// Add a plugin to the installed set, then refresh both lists.
+    func installPlugin(_ plugin: Plugin) {
+        pluginImport.install(plugin)
+        refreshPlugins()
+    }
+
+    /// Remove a plugin from the installed set, then refresh both lists.
+    func removePlugin(_ plugin: Plugin) {
+        pluginImport.remove(plugin)
+        refreshPlugins()
+    }
+
+    /// Installed plugins, surfaced in the composer's "+ → Plugins" flyout.
+    var activePlugins: [Plugin] { installedPlugins }
+
+    // MARK: - Automations
+
+    /// Load persisted automations and recompute the scheduler's snapshot.
+    func loadAutomations() {
+        automations = automationService.load()
+        automationService.reschedule(with: automations)
+    }
+
+    func addAutomation(_ automation: Automation) {
+        automationService.add(automation)
+        loadAutomations()
+    }
+
+    func updateAutomation(_ automation: Automation) {
+        automationService.update(automation)
+        loadAutomations()
+    }
+
+    func deleteAutomation(_ automation: Automation) {
+        automationService.delete(automation)
+        loadAutomations()
+    }
+
+    /// Flip an automation's enabled flag, persist, and reschedule.
+    func toggleAutomation(_ automation: Automation) {
+        var copy = automation
+        copy.enabled.toggle()
+        automationService.update(copy)
+        loadAutomations()
+    }
+
+    /// Run an automation now (headless via grok). Stamps `lastRun` on success and
+    /// refreshes the list. Failures are surfaced on `errorMessage`.
+    func runAutomation(_ automation: Automation) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await self.automationService.runNow(automation, using: self.grok)
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+            self.loadAutomations()
+        }
+    }
+
+    /// Scheduler callback: run every automation whose trigger just elapsed.
+    private func runDueAutomations(_ ids: [UUID]) {
+        let due = automations.filter { ids.contains($0.id) }
+        for automation in due {
+            runAutomation(automation)
+        }
     }
 
     var filteredProjects: [Project] {

@@ -132,9 +132,36 @@ struct PromptComposer: View {
 
                 CodexMenuDivider()
 
-                CodexMenuItem(title: "Plugins", systemImage: "puzzlepiece.extension") {
-                    close(); model.navigateTo(.plugins)
+                pluginsFlyout(close: close)
+            }
+        }
+    }
+
+    /// The "+ → Plugins" flyout: lists installed plugins (icon + name), or a
+    /// muted "No active plugins" row, and always a bottom "Manage plugins" item
+    /// that jumps to the Plugins page.
+    private func pluginsFlyout(close: @escaping () -> Void) -> some View {
+        CodexFlyoutItem(title: "Plugins", systemImage: "puzzlepiece.extension") {
+            let active = model.installedPlugins
+            if active.isEmpty {
+                Text("No active plugins")
+                    .font(.system(size: 13))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(active) { plugin in
+                    CodexMenuItem(title: plugin.displayName, systemImage: plugin.iconSystemName) {
+                        close(); model.navigateTo(.plugins)
+                    }
                 }
+            }
+
+            CodexMenuDivider()
+
+            CodexMenuItem(title: "Manage plugins", systemImage: "slider.horizontal.3") {
+                close(); model.navigateTo(.plugins)
             }
         }
     }
