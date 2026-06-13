@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct PromptComposer: View {
     @Environment(AppViewModel.self) private var model
@@ -87,15 +88,7 @@ struct PromptComposer: View {
 
     private var toolbarRow: some View {
         HStack(spacing: 8) {
-            Button { model.attachFiles() } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(CodexTheme.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .codexHover(cornerRadius: 8)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(CodexPressableStyle(scale: 0.92))
+            addMenu
 
             permissionMenu
 
@@ -104,6 +97,74 @@ struct PromptComposer: View {
             modelEffortMenu
             sendButton
         }
+    }
+
+    private var addMenu: some View {
+        CodexMenuTrigger(minWidth: 260, edge: .top, highlightOnHover: false,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "add") { _ in
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(CodexTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .codexHover(cornerRadius: 8)
+                .contentShape(Rectangle())
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuItem(title: "Add photos & files", systemImage: "paperclip") {
+                    close(); model.attachFiles()
+                }
+                if let app = model.lastActiveApp {
+                    attachAppRow(app, close: close)
+                }
+
+                CodexMenuDivider()
+
+                CodexMenuToggle(
+                    title: "Plan mode",
+                    systemImage: "list.bullet.clipboard",
+                    isOn: Binding(get: { model.isPlanMode }, set: { model.isPlanMode = $0 })
+                )
+                CodexMenuToggle(
+                    title: "Pursue goal",
+                    systemImage: "scope",
+                    isOn: Binding(get: { model.pursueGoal }, set: { model.pursueGoal = $0 })
+                )
+
+                CodexMenuDivider()
+
+                CodexMenuItem(title: "Plugins", systemImage: "puzzlepiece.extension") {
+                    close(); model.navigateTo(.plugins)
+                }
+            }
+        }
+    }
+
+    private func attachAppRow(_ app: NSRunningApplication, close: @escaping () -> Void) -> some View {
+        Button { close(); model.attachActiveApp() } label: {
+            HStack(spacing: 8) {
+                if let icon = app.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "app")
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 16)
+                }
+                Text("Attach \(app.localizedName ?? "app")")
+                    .font(.system(size: 13))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 16)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .codexHover(cornerRadius: 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var permissionMenu: some View {

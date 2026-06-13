@@ -40,6 +40,16 @@ final class AppViewModel {
     var projectPickerQuery = ""
     /// "Don't work in a project" — run with the home directory as cwd.
     var workWithoutProject = false
+    /// Codex "Pursue goal" — append grok's self-verification loop (--check).
+    var pursueGoal = false
+    /// The most recent app the user was in before GrokCode (for "Attach …").
+    var lastActiveApp: NSRunningApplication?
+
+    /// Codex "Plan mode" toggle in the + menu, mapped onto the permission mode.
+    var isPlanMode: Bool {
+        get { permissionMode == .plan }
+        set { permissionMode = newValue ? .plan : .fullAccess }
+    }
 
     private let grok = GrokCLIService.shared
     /// Set when the user taps Stop so the resulting termination is treated as a
@@ -287,6 +297,7 @@ final class AppViewModel {
                 model: model.id,
                 permissionMode: permissionMode,
                 effort: effortLevel,
+                check: pursueGoal,
                 sessionId: activeSessionId
             ) { event in
                 Task { @MainActor [weak self] in
@@ -357,12 +368,45 @@ final class AppViewModel {
 
         let paths = panel.urls.map(\.path)
         guard !paths.isEmpty else { return }
+        appendAttachment(paths.map { "[\($0)]" }.joined(separator: " "))
+    }
 
-        let attachmentText = paths.map { "[\($0)]" }.joined(separator: " ")
+    /// Codex "Attach <app>" — grab a screenshot and attach it to the prompt.
+    func attachActiveApp() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("grok_attach_\(UUID().uuidString).png")
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        proc.arguments = ["-x", url.path]
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            if FileManager.default.fileExists(atPath: url.path) {
+                appendAttachment("[\(url.path)]")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func appendAttachment(_ text: String) {
         if promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            promptText = attachmentText
+            promptText = text
         } else {
-            promptText += " " + attachmentText
+            promptText += " " + text
+        }
+    }
+
+    private func setupActiveAppObserver() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+                self?.lastActiveApp = app
+            }
         }
     }
 
@@ -750,6 +794,7 @@ final class AppViewModel {
     init() {
         loadRoots()
         loadSidebarPreferences()
+        setupActiveAppObserver()
     }
 }
 

@@ -308,6 +308,59 @@ struct CodexFlyoutItem<Sub: View>: View {
     }
 }
 
+/// A menu row with a trailing switch (Codex "Plan mode" / "Pursue goal").
+struct CodexMenuToggle: View {
+    let title: String
+    var systemImage: String? = nil
+    @Binding var isOn: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        Button { isOn.toggle() } label: {
+            HStack(spacing: 8) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 16)
+                }
+                Text(title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Spacer(minLength: 16)
+                MiniSwitch(isOn: isOn)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(hovering ? CodexTheme.hoverBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+struct MiniSwitch: View {
+    let isOn: Bool
+    var body: some View {
+        Capsule()
+            .fill(isOn ? CodexTheme.textPrimary : Color(red: 0.82, green: 0.82, blue: 0.82))
+            .frame(width: 30, height: 18)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 14, height: 14)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
+            }
+            .animation(CodexMotion.quickSpring, value: isOn)
+    }
+}
+
 struct CodexMenuDivider: View {
     var body: some View {
         Rectangle()

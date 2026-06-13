@@ -146,6 +146,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         model: String,
         permissionMode: PermissionMode,
         effort: EffortLevel = .medium,
+        check: Bool = false,
         sessionId: String?,
         onEvent: @escaping @Sendable (GrokStreamEvent) -> Void
     ) async throws -> String? {
@@ -157,6 +158,10 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
             "--permission-mode", permissionMode.rawValue,
             "--effort", effort.rawValue,
         ]
+
+        if check {
+            args.append("--check")
+        }
 
         if let sessionId {
             args += ["-r", sessionId]
