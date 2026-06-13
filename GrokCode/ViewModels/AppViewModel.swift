@@ -108,6 +108,10 @@ final class AppViewModel {
     private func runSmokeTestIfRequested() {
         let env = ProcessInfo.processInfo.environment
 
+        if let g = env["GROKCODE_SMOKE_GROUPBY"], let gb = SidebarGroupBy(rawValue: g) {
+            sidebarGroupBy = gb
+        }
+
         // Page navigation for visual QA (independent of the prompt hook).
         if let page = env["GROKCODE_SMOKE_PAGE"] {
             switch page {
