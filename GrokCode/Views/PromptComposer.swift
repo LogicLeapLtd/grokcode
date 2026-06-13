@@ -212,13 +212,14 @@ struct PromptComposer: View {
             }
         } menu: { close in
             CodexMenuContainer {
-                CodexMenuSectionHeader(title: "Permission mode")
-                ForEach(PermissionMode.allCases) { mode in
+                CodexMenuSectionHeader(title: "Mode", keys: ["⇧", "⌘", "M"])
+                ForEach(Array(PermissionMode.allCases.enumerated()), id: \.element) { idx, mode in
                     CodexMenuItem(
                         title: mode.label,
                         subtitle: mode.detail,
                         systemImage: mode.symbol,
-                        isSelected: model.permissionMode == mode
+                        isSelected: model.permissionMode == mode,
+                        shortcut: "\(idx + 1)"
                     ) { model.permissionMode = mode; close() }
                 }
             }

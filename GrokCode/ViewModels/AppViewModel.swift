@@ -474,6 +474,14 @@ final class AppViewModel {
         }
     }
 
+    /// ⇧⌘M — step through the permission modes (Codex/Claude-style shortcut).
+    func cyclePermissionMode() {
+        let all = PermissionMode.allCases
+        if let i = all.firstIndex(of: permissionMode) {
+            permissionMode = all[(i + 1) % all.count]
+        }
+    }
+
     func cancelRun() {
         didUserCancel = true
         grok.cancel()

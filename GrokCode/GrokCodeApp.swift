@@ -18,6 +18,8 @@ struct GrokCodeApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") { appModel.startNewChat() }
                     .keyboardShortcut("n", modifiers: .command)
+                Button("Cycle Permission Mode") { appModel.cyclePermissionMode() }
+                    .keyboardShortcut("m", modifiers: [.shift, .command])
             }
         }
         #endif

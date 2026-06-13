@@ -162,13 +162,28 @@ struct CodexMenuContainer<Content: View>: View {
 
 struct CodexMenuSectionHeader: View {
     let title: String
+    /// Optional keyboard-shortcut chips shown on the right (e.g. ["⇧","⌘","M"]).
+    var keys: [String]? = nil
+
     var body: some View {
-        Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(CodexTheme.textTertiary)
-            .padding(.horizontal, 9)
-            .padding(.top, 7)
-            .padding(.bottom, 3)
+        HStack(spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CodexTheme.textTertiary)
+            if let keys {
+                Spacer(minLength: 12)
+                ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
+                    Text(key)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(CodexTheme.pillBackground))
+                }
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.top, 7)
+        .padding(.bottom, 3)
     }
 }
 
@@ -178,6 +193,8 @@ struct CodexMenuItem: View {
     var systemImage: String? = nil
     var isSelected: Bool = false
     var isDestructive: Bool = false
+    /// Optional keyboard-shortcut hint shown on the right (e.g. "1").
+    var shortcut: String? = nil
     let action: () -> Void
 
     @State private var hovering = false
@@ -206,6 +223,12 @@ struct CodexMenuItem: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
+                }
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(minWidth: 12)
                 }
             }
             .padding(.horizontal, 9)
