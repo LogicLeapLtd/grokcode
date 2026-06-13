@@ -16,7 +16,7 @@ enum CodexTheme {
     static let pillBackground = Color(red: 0.92, green: 0.92, blue: 0.92)
     static let pillBackgroundPressed = Color(red: 0.86, green: 0.86, blue: 0.86)
     static let modalBackdrop = Color(red: 0.94, green: 0.94, blue: 0.94)
-    static let navHighlight = Color(red: 0.90, green: 0.90, blue: 0.90)
+    static let navHighlight = Color.black.opacity(0.085)   // darkening → visible over the translucent sidebar AND white
     static let shadowColor = Color(red: 0.75, green: 0.75, blue: 0.75)
     static let accentOrange = Color(red: 0.92, green: 0.45, blue: 0.18)                // Full access
     static let sendButtonBackground = Color(red: 0.90, green: 0.90, blue: 0.90)
@@ -24,7 +24,7 @@ enum CodexTheme {
     static let sendButtonActiveBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
     static let sendButtonActiveForeground = Color.white
 
-    static let hoverBackground = Color(red: 0.93, green: 0.93, blue: 0.93)
+    static let hoverBackground = Color.black.opacity(0.055)   // darkening overlay so hover reads over any background
     static let menuBackground = Color(red: 0.99, green: 0.99, blue: 0.99)
     static let menuBorder = Color(red: 0.86, green: 0.86, blue: 0.86)
     static let menuShadow = Color.black.opacity(0.16)

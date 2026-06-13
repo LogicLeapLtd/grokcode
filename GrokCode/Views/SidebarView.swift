@@ -49,14 +49,15 @@ struct SidebarView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(model.activeSidebarSection == section ? CodexTheme.navHighlight : Color.clear)
                     )
-                    .codexHover()
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(CodexPressableStyle(scale: 0.98))
+                .buttonStyle(.plain)
+                .codexHover()
                 .animation(CodexMotion.quickSpring, value: model.activeSidebarSection)
             }
         }
@@ -145,14 +146,15 @@ struct SidebarView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .fill(model.activeSessionId == item.id ? CodexTheme.navHighlight : Color.clear)
                         )
-                        .codexHover(cornerRadius: 7)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(CodexPressableStyle(scale: 0.99))
+                    .buttonStyle(.plain)
+                    .codexHover(cornerRadius: 7)
                 }
             }
         }
@@ -174,10 +176,11 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .codexHover()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(CodexPressableStyle(scale: 0.98))
+        .buttonStyle(.plain)
+        .codexHover()
     }
 
     private func handleNav(_ section: SidebarSection) {
@@ -243,14 +246,15 @@ private struct ProjectSidebarBlock: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(isSelected ? CodexTheme.navHighlight : Color.clear)
                 )
-                .codexHover(cornerRadius: 7)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(CodexPressableStyle(scale: 0.99))
+            .buttonStyle(.plain)
+            .codexHover(cornerRadius: 7)
             .contextMenu {
                 Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
                 Button("Archive", action: onArchive)
@@ -295,13 +299,14 @@ private struct ProjectSidebarBlock: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isActive ? CodexTheme.navHighlight : Color.clear)
             )
-            .codexHover(cornerRadius: 7)
             .contentShape(Rectangle())
         }
-        .buttonStyle(CodexPressableStyle(scale: 0.99))
+        .buttonStyle(.plain)
+        .codexHover(cornerRadius: 7)
     }
 }
