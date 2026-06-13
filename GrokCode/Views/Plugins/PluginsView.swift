@@ -95,13 +95,15 @@ struct PluginsView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(CodexTheme.textSecondary)
-            TextField("Search plugins", text: Binding(
+            TextField("", text: Binding(
                 get: { model.pluginSearchQuery },
                 set: { model.pluginSearchQuery = $0 }
             ))
             .textFieldStyle(.plain)
             .font(.system(size: 15))
             .focused($searchFocused)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .placeholderOverlay("Search plugins", visible: model.pluginSearchQuery.isEmpty, font: .system(size: 15))
             if !model.pluginSearchQuery.isEmpty {
                 Button { model.pluginSearchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(CodexTheme.textTertiary)

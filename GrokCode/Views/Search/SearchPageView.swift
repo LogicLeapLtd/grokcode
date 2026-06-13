@@ -13,13 +13,15 @@ struct SearchPageView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(CodexTheme.textSecondary)
-                TextField("Search projects and sessions", text: Binding(
+                TextField("", text: Binding(
                     get: { model.searchQuery },
                     set: { model.searchQuery = $0 }
                 ))
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .focused($isFocused)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .placeholderOverlay("Search projects and sessions", visible: model.searchQuery.isEmpty, font: .system(size: 16))
             }
             .padding(14)
             .background(

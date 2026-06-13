@@ -65,7 +65,7 @@ struct PromptComposer: View {
     private var inputArea: some View {
         // While a run is in flight, Codex keeps the field live so you can queue
         // a follow-up; the placeholder hints at that.
-        TextField(model.isRunning ? "Queue a follow-up…" : "Do anything", text: Binding(
+        TextField("", text: Binding(
             get: { model.promptText },
             set: { model.promptText = $0 }
         ), axis: .vertical)
@@ -84,6 +84,10 @@ struct PromptComposer: View {
             return .handled
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .placeholderOverlay(model.isRunning ? "Queue a follow-up…" : "Do anything",
+                            visible: model.promptText.isEmpty,
+                            alignment: .topLeading,
+                            font: CodexTheme.bodyFont)
     }
 
     private var toolbarRow: some View {
@@ -326,13 +330,15 @@ struct PromptComposer: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
                         .foregroundStyle(CodexTheme.textTertiary)
-                    TextField("Search projects", text: Binding(
+                    TextField("", text: Binding(
                         get: { model.projectPickerQuery },
                         set: { model.projectPickerQuery = $0 }
                     ))
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(CodexTheme.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .placeholderOverlay("Search projects", visible: model.projectPickerQuery.isEmpty)
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)

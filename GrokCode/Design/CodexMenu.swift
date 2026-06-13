@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Controller
 
@@ -18,6 +19,24 @@ final class CodexMenuController {
 
     var active: Active?
 
+    /// Single-key shortcuts (e.g. "1"…"4") for the menu that's currently open,
+    /// mapped to that row's action. `CodexMenuItem` registers/unregisters these
+    /// while it's on screen so pressing the key activates the row instead of
+    /// leaking the keystroke into a focused text field behind the menu.
+    private var shortcuts: [String: () -> Void] = [:]
+    private var keyMonitor: Any?
+
+    /// `installsKeyboardMonitor` is false for short-lived controllers hosted
+    /// inside a sheet (which only need menu rendering, not global key capture).
+    init(installsKeyboardMonitor: Bool = true) {
+        guard installsKeyboardMonitor else { return }
+        let handler: @Sendable (NSEvent) -> NSEvent? = { [weak self] event in
+            guard let self else { return event }
+            return MainActor.assumeIsolated { self.handleKeyDown(event) }
+        }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: handler)
+    }
+
     func toggle<V: View>(id: UUID, anchor: CGRect, minWidth: CGFloat, edge: VerticalEdge,
                          @ViewBuilder content: @escaping () -> V) {
         if active?.id == id {
@@ -29,6 +48,31 @@ final class CodexMenuController {
     }
 
     func close() { active = nil }
+
+    func registerShortcut(_ key: String, _ action: @escaping () -> Void) {
+        shortcuts[key] = action
+    }
+
+    func unregisterShortcut(_ key: String) {
+        shortcuts.removeValue(forKey: key)
+    }
+
+    /// Returns `nil` to swallow the keystroke (handled), or the event to let it
+    /// continue to the responder chain. Only acts while a menu is open.
+    private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+        guard active != nil else { return event }
+        if event.keyCode == 53 {                 // Escape closes the open menu
+            close()
+            return nil
+        }
+        let mods = event.modifierFlags.intersection([.command, .control, .option])
+        guard mods.isEmpty,
+              let key = event.charactersIgnoringModifiers, !key.isEmpty,
+              let action = shortcuts[key]
+        else { return event }
+        action()
+        return nil
+    }
 }
 
 // MARK: - Host
@@ -193,11 +237,13 @@ struct CodexMenuItem: View {
     var systemImage: String? = nil
     var isSelected: Bool = false
     var isDestructive: Bool = false
-    /// Optional keyboard-shortcut hint shown on the right (e.g. "1").
+    /// Optional keyboard-shortcut hint shown on the right (e.g. "1"). When set,
+    /// the key activates this row while the menu is open.
     var shortcut: String? = nil
     let action: () -> Void
 
     @State private var hovering = false
+    @Environment(CodexMenuController.self) private var menuController
 
     var body: some View {
         Button(action: action) {
@@ -242,6 +288,8 @@ struct CodexMenuItem: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .onAppear { if let shortcut { menuController.registerShortcut(shortcut, action) } }
+        .onDisappear { if let shortcut { menuController.unregisterShortcut(shortcut) } }
     }
 }
 
@@ -417,6 +465,28 @@ extension View {
     /// Adds a Codex-style hover background. Place on the padded row content.
     func codexHover(cornerRadius: CGFloat = 8, color: Color = CodexTheme.hoverBackground) -> some View {
         modifier(CodexHoverHighlight(cornerRadius: cornerRadius, color: color))
+    }
+
+    /// Draws a placeholder string over an empty input. Native `.plain`
+    /// TextField prompts don't render reliably on this macOS build, so every
+    /// search / text input uses this explicit overlay instead. Apply it to the
+    /// bare `TextField` (before any outer padding) so the placeholder lines up
+    /// with where the text cursor sits.
+    func placeholderOverlay(
+        _ text: String,
+        visible: Bool,
+        alignment: Alignment = .leading,
+        font: Font = .system(size: 13)
+    ) -> some View {
+        overlay(alignment: alignment) {
+            if visible {
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, alignment: alignment)
+            }
+        }
     }
 
     /// Hover darkening drawn ON TOP (clipped to the shape) — for buttons that

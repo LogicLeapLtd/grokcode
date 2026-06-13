@@ -55,7 +55,13 @@ struct AutomationsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CodexTheme.mainBackground)
-        .onAppear { model.loadAutomations() }
+        .onAppear {
+            model.loadAutomations()
+            // QA: auto-open the editor so the modal can be captured.
+            if ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENEDITOR"] == "1" {
+                editorMode = .create
+            }
+        }
         .sheet(item: $editorMode) { mode in
             AutomationEditorSheet(
                 seed: { if case .edit(let automation) = mode { return automation } else { return nil } }(),
@@ -343,6 +349,10 @@ private struct AutomationEditorSheet: View {
 
     @FocusState private var nameFocused: Bool
 
+    /// The sheet is its own window, so it needs its own menu host — otherwise
+    /// the custom dropdowns render on the main window's host, behind the sheet.
+    @State private var menuController = CodexMenuController(installsKeyboardMonitor: false)
+
     private var isEditing: Bool { seed != nil }
 
     private var canSave: Bool {
@@ -387,10 +397,11 @@ private struct AutomationEditorSheet: View {
 
             VStack(alignment: .leading, spacing: 18) {
                     field("Name") {
-                        TextField("Weekly release notes", text: $name)
+                        TextField("", text: $name)
                             .textFieldStyle(.plain)
                             .font(.system(size: 14))
                             .focused($nameFocused)
+                            .placeholderOverlay("Weekly release notes", visible: name.isEmpty, font: .system(size: 14))
                             .padding(10)
                             .background(inputBackground)
                     }
@@ -417,7 +428,8 @@ private struct AutomationEditorSheet: View {
 
                     HStack(alignment: .top, spacing: 14) {
                         field("Project") {
-                            menuPicker(label: projectLabel, systemImage: "folder") { close in
+                            menuPicker(label: projectLabel, systemImage: "folder",
+                                       autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENEDITOR"] == "1") { close in
                                 CodexMenuContainer {
                                     CodexMenuItem(
                                         title: "Home (no project)",
@@ -527,6 +539,8 @@ private struct AutomationEditorSheet: View {
         }
         .frame(width: 540)
         .background(CodexTheme.mainBackground)
+        .codexMenuHost()
+        .environment(menuController)
         .onAppear(perform: seedFields)
     }
 
@@ -602,9 +616,10 @@ private struct AutomationEditorSheet: View {
         label: String,
         systemImage: String,
         minWidth: CGFloat = 220,
+        autoOpen: Bool = false,
         @ViewBuilder menu: @escaping (_ close: @escaping () -> Void) -> Menu
     ) -> some View {
-        CodexMenuTrigger(minWidth: minWidth, highlightOnHover: false) { isOpen in
+        CodexMenuTrigger(minWidth: minWidth, highlightOnHover: false, autoOpen: autoOpen) { isOpen in
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
                     .font(.system(size: 12))
