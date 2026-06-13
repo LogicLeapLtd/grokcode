@@ -362,12 +362,21 @@ final class AppViewModel {
             attachThreadsToProjects()
         } catch {
             let message = error.localizedDescription
-            let needsNewSession = message.contains("MODEL_SWITCH_INCOMPATIBLE_AGENT")
-                || message.contains("Start a new session")
+            let lower = message.lowercased()
+            // Any failure to resume the session (incompatible model agent, the
+            // session expired / was never persisted, etc.) → retry once fresh.
+            let needsNewSession = activeSessionId != nil && (
+                message.contains("MODEL_SWITCH_INCOMPATIBLE_AGENT")
+                || lower.contains("start a new session")
+                || lower.contains("session does not exist")
+                || lower.contains("session not found")
+                || lower.contains("couldn't create session")
+                || lower.contains("could not create session")
+            )
 
             if !didUserCancel && needsNewSession && !retriedNewSession {
-                // The resumed session belongs to a different model's agent —
-                // drop the session and retry once as a brand-new conversation.
+                // The resumed session is unusable — drop it and retry once as a
+                // brand-new conversation so the message still goes through.
                 messages.removeAll { $0.id == assistantId }
                 activeSessionId = nil
                 sessionModelId = nil
