@@ -6,13 +6,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             navSection
-                .padding(.bottom, 10)
-
-            Rectangle()
-                .fill(CodexTheme.divider)
-                .frame(height: 1)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 10)
+                .padding(.bottom, 16)
 
             projectsSection
 
@@ -25,7 +19,13 @@ struct SidebarView: View {
         .padding(.top, 12)
         .padding(.bottom, 14)
         .frame(width: CodexTheme.sidebarWidth)
-        .background(CodexTheme.sidebarBackground)
+        .background {
+            // Translucent "liquid glass" sidebar that samples the desktop behind
+            // the (non-opaque) window — see WindowConfigurator on ContentView.
+            VisualEffectView(material: .sidebar)
+                .overlay(CodexTheme.sidebarBackground.opacity(0.55))
+                .ignoresSafeArea()
+        }
         .onChange(of: model.sidebarStatusFilter) { _, _ in model.persistSidebarPreferences() }
         .onChange(of: model.sidebarGroupBy) { _, _ in model.persistSidebarPreferences() }
         .onChange(of: model.sidebarSort) { _, _ in model.persistSidebarPreferences() }
@@ -129,18 +129,18 @@ struct SidebarView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 0) {
                                 Text(item.title)
-                                    .font(.system(size: 13, weight: .regular))
+                                    .font(.system(size: 14, weight: .regular))
                                     .foregroundStyle(CodexTheme.textPrimary)
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
                                 Text(item.ageLabel)
-                                    .font(CodexTheme.smallFont)
+                                    .font(.system(size: 12))
                                     .foregroundStyle(CodexTheme.textTertiary)
                             }
 
                             Text(item.project.name)
-                                .font(CodexTheme.smallFont)
-                                .foregroundStyle(CodexTheme.textSecondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(CodexTheme.textTertiary)
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 8)

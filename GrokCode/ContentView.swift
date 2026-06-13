@@ -47,6 +47,7 @@ struct ContentView: View {
         }
         .codexMenuHost()
         .focusEffectDisabled()
+        .background(WindowConfigurator())
     }
 }
 
