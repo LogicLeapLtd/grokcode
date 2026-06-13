@@ -67,16 +67,16 @@ struct SidebarView: View {
             SidebarControlsBar()
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 1) {
                     if model.sidebarGroupBy == .flatList {
                         flatThreadList
                     } else {
                         groupedProjectList
                     }
                 }
+                .padding(.top, 2)
                 .animation(CodexMotion.expandSpring, value: model.sidebarProjectGroups.count)
-                .animation(CodexMotion.expandSpring, value: model.sidebarFlatThreads.count)
-                .animation(CodexMotion.expandSpring, value: model.selectedProject?.id)
+                .animation(CodexMotion.expandSpring, value: model.projectsCollapsed)
             }
         }
     }
@@ -97,6 +97,8 @@ struct SidebarView: View {
                     project: project,
                     isSelected: model.selectedProject?.id == project.id,
                     isPinned: model.isPinned(project),
+                    collapsed: model.projectsCollapsed,
+                    activeThreadId: model.activeSessionId,
                     onSelectProject: { model.selectProject(project) },
                     onSelectThread: { thread in
                         model.selectThread(thread, in: project)
@@ -196,34 +198,51 @@ private struct ProjectSidebarBlock: View {
     let project: Project
     let isSelected: Bool
     let isPinned: Bool
+    let collapsed: Bool
+    let activeThreadId: String?
     let onSelectProject: () -> Void
     let onSelectThread: (ProjectThread) -> Void
     let onTogglePin: () -> Void
     let onArchive: () -> Void
 
+    // Folder icon (16) + spacing (8) + row inset (8) → align sub-rows under the name.
+    private let nameIndent: CGFloat = 24
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 1) {
             Button(action: onSelectProject) {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     Image(systemName: isPinned ? "pin.fill" : "folder")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(CodexTheme.textSecondary)
-                        .frame(width: 15)
+                        .frame(width: 16)
 
                     Text(project.displayName)
-                        .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
+                        .layoutPriority(1)
+
+                    if let branch = project.gitBranch {
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9, weight: .medium))
+                            Text(branch)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(CodexTheme.textTertiary)
+                    }
 
                     Spacer(minLength: 8)
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(isSelected ? CodexTheme.navHighlight : Color.clear)
                 )
-                .codexHover(cornerRadius: 6)
+                .codexHover(cornerRadius: 7)
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle(scale: 0.99))
@@ -232,47 +251,52 @@ private struct ProjectSidebarBlock: View {
                 Button("Archive", action: onArchive)
             }
 
-            if project.threads.isEmpty {
-                Text("No chats")
-                    .font(.system(size: 12))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .padding(.leading, 30)
-                    .padding(.vertical, 3)
-            }
-
-            if isSelected {
-                ForEach(Array(project.threads.enumerated()), id: \.element.id) { index, thread in
-                    Button {
-                        onSelectThread(thread)
-                    } label: {
-                        HStack(spacing: 0) {
-                            Text(thread.title)
-                                .font(.system(size: 13))
-                                .foregroundStyle(CodexTheme.textSecondary)
-                                .lineLimit(1)
-                                .padding(.leading, 22)
-
-                            Spacer(minLength: 8)
-
-                            Text(thread.ageLabel)
-                                .font(CodexTheme.smallFont)
-                                .foregroundStyle(CodexTheme.textTertiary)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .codexHover(cornerRadius: 6)
-                        .contentShape(Rectangle())
+            if !collapsed {
+                if project.threads.isEmpty {
+                    HStack(spacing: 0) {
+                        Text("No chats")
+                            .font(.system(size: 13))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .padding(.leading, nameIndent)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(CodexPressableStyle(scale: 0.99))
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .opacity
-                    ))
-                    .codexStaggeredAppear(index: index)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                } else {
+                    ForEach(project.threads) { thread in
+                        threadRow(thread)
+                    }
                 }
             }
         }
-        .animation(CodexMotion.expandSpring, value: isSelected)
-        .animation(CodexMotion.expandSpring, value: project.threads.count)
+        .padding(.bottom, collapsed ? 0 : 4)
+    }
+
+    private func threadRow(_ thread: ProjectThread) -> some View {
+        let isActive = activeThreadId == thread.id
+        return Button { onSelectThread(thread) } label: {
+            HStack(spacing: 8) {
+                Text(thread.title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                    .lineLimit(1)
+                    .padding(.leading, nameIndent)
+
+                Spacer(minLength: 8)
+
+                Text(thread.ageLabel)
+                    .font(.system(size: 12))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isActive ? CodexTheme.navHighlight : Color.clear)
+            )
+            .codexHover(cornerRadius: 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CodexPressableStyle(scale: 0.99))
     }
 }

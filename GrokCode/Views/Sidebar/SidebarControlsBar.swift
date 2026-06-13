@@ -4,71 +4,85 @@ struct SidebarControlsBar: View {
     @Environment(AppViewModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Text("Projects")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(CodexTheme.textTertiary)
 
             Spacer(minLength: 0)
 
-            viewSettingsMenu
+            collapseButton
+            organizeMenu
             addProjectButton
         }
         .padding(.horizontal, 8)
     }
 
-    private var isViewCustomized: Bool {
-        model.sidebarStatusFilter != .all
-            || model.sidebarGroupBy != .project
-            || model.sidebarSort != .lastActive
+    private var collapseButton: some View {
+        Button { model.toggleProjectsCollapsed() } label: {
+            controlIcon(model.projectsCollapsed
+                        ? "arrow.up.left.and.arrow.down.right"
+                        : "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.plain)
+        .help(model.projectsCollapsed ? "Expand projects" : "Collapse projects")
     }
 
-    private var viewSettingsMenu: some View {
-        CodexMenuTrigger(minWidth: 220, edge: .bottom, highlightOnHover: false) { _ in
-            controlIcon("slider.horizontal.3", isActive: isViewCustomized)
-        } menu: { _ in
+    private var organizeMenu: some View {
+        CodexMenuTrigger(minWidth: 210, edge: .bottom, highlightOnHover: false,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "organize") { _ in
+            controlIcon("ellipsis")
+        } menu: { close in
             CodexMenuContainer {
-                CodexMenuSectionHeader(title: "Filter")
-                ForEach(SidebarStatusFilter.allCases) { filter in
-                    CodexMenuItem(title: filter.label, isSelected: model.sidebarStatusFilter == filter) {
-                        model.sidebarStatusFilter = filter
-                    }
+                CodexMenuItem(title: "Archive all chats", systemImage: "archivebox") {
+                    model.archiveAllProjects(); close()
                 }
                 CodexMenuDivider()
-                CodexMenuSectionHeader(title: "Group by")
-                ForEach(SidebarGroupBy.allCases) { mode in
-                    CodexMenuItem(title: mode.label, isSelected: model.sidebarGroupBy == mode) {
-                        model.sidebarGroupBy = mode
+                CodexFlyoutItem(title: "Organize sidebar", systemImage: "square.stack") {
+                    ForEach(SidebarGroupBy.allCases) { mode in
+                        CodexMenuItem(
+                            title: mode.label,
+                            systemImage: mode.symbol,
+                            isSelected: model.sidebarGroupBy == mode
+                        ) {
+                            model.sidebarGroupBy = mode
+                            model.persistSidebarPreferences()
+                            close()
+                        }
                     }
                 }
-                CodexMenuDivider()
-                CodexMenuSectionHeader(title: "Sort")
-                ForEach(SidebarSort.allCases) { sort in
-                    CodexMenuItem(title: sort.label, isSelected: model.sidebarSort == sort) {
-                        model.sidebarSort = sort
+                CodexFlyoutItem(title: "Sort by", systemImage: "clock") {
+                    ForEach(SidebarSort.codexCases) { sort in
+                        CodexMenuItem(
+                            title: sort.label,
+                            systemImage: sort.symbol,
+                            isSelected: model.sidebarSort == sort
+                        ) {
+                            model.sidebarSort = sort
+                            model.persistSidebarPreferences()
+                            close()
+                        }
                     }
                 }
             }
         }
-        .help("View settings")
+        .help("Sidebar options")
     }
 
     private var addProjectButton: some View {
         Button { model.addProjectFromPicker() } label: {
-            controlIcon("plus", isActive: false)
+            controlIcon("folder.badge.plus")
         }
         .buttonStyle(.plain)
         .help("Add project folder")
     }
 
-    private func controlIcon(_ symbol: String, isActive: Bool) -> some View {
+    private func controlIcon(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
-            .frame(width: 24, height: 24)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isActive ? CodexTheme.navHighlight : Color.clear)
-            )
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundStyle(CodexTheme.textSecondary)
+            .frame(width: 26, height: 24)
+            .codexHover(cornerRadius: 6)
+            .contentShape(Rectangle())
     }
 }

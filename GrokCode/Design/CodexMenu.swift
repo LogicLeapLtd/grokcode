@@ -49,23 +49,24 @@ private struct CodexMenuHost: ViewModifier {
                     let belowY = active.anchor.maxY - host.minY + gap             // just below anchor
 
                     ZStack(alignment: .topLeading) {
-                        // Dismiss layer.
+                        // Dismiss layer — taps outside the card close the menu.
                         Color.black.opacity(0.0001)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.close() }
 
-                        // Card placed by alignment (no size measurement needed, so it
-                        // is visible on the very first frame).
-                        Color.clear
-                            .frame(width: geo.size.width,
-                                   height: active.edge == .top ? topSpace : geo.size.height,
-                                   alignment: active.edge == .top ? .bottomLeading : .topLeading)
-                            .overlay(alignment: active.edge == .top ? .bottomLeading : .topLeading) {
+                        // Card positioned with only the card itself hittable, so
+                        // outside taps fall through to the dismiss layer above.
+                        if active.edge == .top {
+                            VStack(spacing: 0) {
+                                Spacer(minLength: 0)
                                 card(active)
-                                    .padding(.leading, x)
-                                    .padding(active.edge == .top ? .bottom : .top,
-                                             active.edge == .top ? 0 : belowY)
                             }
+                            .frame(height: topSpace, alignment: .bottomLeading)
+                            .offset(x: x)
+                        } else {
+                            card(active)
+                                .offset(x: x, y: belowY)
+                        }
                     }
                 }
                 .ignoresSafeArea()
@@ -218,6 +219,92 @@ struct CodexMenuItem: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// A menu row that reveals a flyout submenu to its right on hover (Codex-style
+/// "Organize sidebar ›" / "Sort by ›").
+struct CodexFlyoutItem<Sub: View>: View {
+    let title: String
+    var systemImage: String? = nil
+    @ViewBuilder var submenu: () -> Sub
+
+    @State private var rowHover = false
+    @State private var subHover = false
+    @State private var open = false
+    @State private var rowWidth: CGFloat = 220
+    @State private var closeWork: DispatchWorkItem?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                    .frame(width: 16)
+            }
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(CodexTheme.textPrimary)
+            Spacer(minLength: 16)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CodexTheme.textTertiary)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(open ? CodexTheme.hoverBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .background(
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { rowWidth = g.size.width }
+                    .onChange(of: g.size.width) { _, w in rowWidth = w }
+            }
+        )
+        .onHover { h in rowHover = h; recompute() }
+        .overlay(alignment: .topLeading) {
+            if open {
+                // A transparent leading bridge overlaps the parent row so the
+                // hover never drops into a dead gap on the way to the submenu.
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: 12)
+                    CodexMenuContainer { submenu() }
+                        .frame(minWidth: 190, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(CodexTheme.menuBackground)
+                                .shadow(color: CodexTheme.menuShadow, radius: 16, y: 6)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
+                        )
+                }
+                .fixedSize()
+                .contentShape(Rectangle())
+                .onHover { h in subHover = h; recompute() }
+                .offset(x: rowWidth - 10, y: -6)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private func recompute() {
+        closeWork?.cancel()
+        if rowHover || subHover {
+            open = true
+        } else {
+            let work = DispatchWorkItem {
+                if !rowHover && !subHover { open = false }
+            }
+            closeWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28, execute: work)
+        }
     }
 }
 

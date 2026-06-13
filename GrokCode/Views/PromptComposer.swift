@@ -20,6 +20,7 @@ struct PromptComposer: View {
                     .transition(CodexMotion.bannerTransition)
             }
 
+            // White input area (prompt + toolbar).
             VStack(alignment: .leading, spacing: 0) {
                 inputArea
                     .padding(.horizontal, 14)
@@ -28,13 +29,16 @@ struct PromptComposer: View {
 
                 toolbarRow
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-
-                projectRow
-                    .padding(.horizontal, 14)
                     .padding(.bottom, 10)
             }
             .background(CodexTheme.composerBackground)
+
+            // Gray footer holding the project/folder selector (Codex-style).
+            projectRow
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(CodexTheme.composerShellBackground)
         }
         .background(
             RoundedRectangle(cornerRadius: CodexTheme.composerRadius, style: .continuous)
@@ -201,34 +205,78 @@ struct PromptComposer: View {
     }
 
     private var projectRow: some View {
-        CodexMenuTrigger(minWidth: 240, edge: .top) { _ in
-            HStack(spacing: 5) {
-                Image(systemName: "folder")
+        CodexMenuTrigger(minWidth: 280, edge: .top, highlightOnHover: false,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "project") { _ in
+            HStack(spacing: 6) {
+                Image(systemName: model.workWithoutProject ? "folder.badge.minus" : "folder")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(CodexTheme.textTertiary)
-                Text(model.selectedProject?.name ?? "Select project")
+                Text(model.workWithoutProject ? "No project" : (model.selectedProject?.name ?? "Select project"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(CodexTheme.textSecondary)
+                if !model.workWithoutProject, let branch = model.selectedProject?.gitBranch {
+                    branchChip(branch)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(CodexTheme.pillBackground)
+            )
         } menu: { close in
             CodexMenuContainer {
-                CodexMenuSectionHeader(title: "Project")
-                ForEach(model.projects) { project in
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                    TextField("Search projects", text: Binding(
+                        get: { model.projectPickerQuery },
+                        set: { model.projectPickerQuery = $0 }
+                    ))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+
+                CodexMenuDivider()
+
+                ForEach(model.pickerProjects.prefix(8)) { project in
                     CodexMenuItem(
                         title: project.name,
                         systemImage: "folder",
-                        isSelected: model.selectedProject?.id == project.id
-                    ) { model.selectProject(project); close() }
+                        isSelected: !model.workWithoutProject && model.selectedProject?.id == project.id
+                    ) { model.selectProject(project); model.projectPickerQuery = ""; close() }
                 }
+
                 CodexMenuDivider()
-                CodexMenuItem(title: "Add folder…", systemImage: "plus") {
+
+                CodexMenuItem(title: "Add new project", systemImage: "folder.badge.plus") {
                     close(); model.addProjectFromPicker()
                 }
+                CodexMenuItem(
+                    title: "Don't work in a project",
+                    systemImage: "folder.badge.minus",
+                    isSelected: model.workWithoutProject
+                ) { model.clearProjectSelection(); model.projectPickerQuery = ""; close() }
             }
         }
+    }
+
+    private func branchChip(_ branch: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 9, weight: .medium))
+            Text(branch)
+                .font(.system(size: 11, weight: .regular))
+                .lineLimit(1)
+        }
+        .foregroundStyle(CodexTheme.textTertiary)
     }
 }
 

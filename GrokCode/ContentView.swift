@@ -46,6 +46,7 @@ struct ContentView: View {
             }
         }
         .codexMenuHost()
+        .focusEffectDisabled()
     }
 }
 

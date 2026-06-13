@@ -7,6 +7,8 @@ struct Project: Identifiable, Hashable, Codable {
     var threads: [ProjectThread]
     var lastActiveAt: Date?
     var createdAt: Date?
+    /// Current git branch, if the folder is a git repo (nil otherwise).
+    var gitBranch: String?
 
     init(
         id: UUID = UUID(),
@@ -14,7 +16,8 @@ struct Project: Identifiable, Hashable, Codable {
         path: URL,
         threads: [ProjectThread] = [],
         lastActiveAt: Date? = nil,
-        createdAt: Date? = nil
+        createdAt: Date? = nil,
+        gitBranch: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -22,6 +25,7 @@ struct Project: Identifiable, Hashable, Codable {
         self.threads = threads
         self.lastActiveAt = lastActiveAt
         self.createdAt = createdAt
+        self.gitBranch = gitBranch
     }
 
     var displayName: String {
@@ -214,7 +218,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         switch self {
         case .newChat: "square.and.pencil"
         case .search: "magnifyingglass"
-        case .plugins: "at"
+        case .plugins: "puzzlepiece.extension"
         case .automations: "clock"
         }
     }

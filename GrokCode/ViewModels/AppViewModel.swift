@@ -32,6 +32,14 @@ final class AppViewModel {
     var sidebarSort: SidebarSort = .lastActive
     var pinnedProjectPaths: Set<String> = []
     var archivedProjectPaths: Set<String> = []
+    /// When true, project rows collapse to just their names (the collapse
+    /// toggle in the Projects header); otherwise every project auto-expands its
+    /// chats, Codex-style.
+    var projectsCollapsed = false
+    /// Live filter text for the composer's project picker.
+    var projectPickerQuery = ""
+    /// "Don't work in a project" — run with the home directory as cwd.
+    var workWithoutProject = false
 
     private let grok = GrokCLIService.shared
     /// Set when the user taps Stop so the resulting termination is treated as a
@@ -154,11 +162,29 @@ final class AppViewModel {
 
     func selectProject(_ project: Project) {
         selectedProject = project
+        workWithoutProject = false
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
         messages = []
         activeSessionId = nil
         errorMessage = nil
         navigateTo(messages.isEmpty ? .home : .chat)
+    }
+
+    /// Codex "Don't work in a project" — clear the project; runs use the home dir.
+    func clearProjectSelection() {
+        selectedProject = nil
+        workWithoutProject = true
+        messages = []
+        activeSessionId = nil
+        errorMessage = nil
+        navigateTo(.home)
+    }
+
+    /// Projects filtered by the picker's live query.
+    var pickerProjects: [Project] {
+        let q = projectPickerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return projects }
+        return projects.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
     func navigateTo(_ page: MainPage) {
@@ -216,7 +242,7 @@ final class AppViewModel {
     /// queue/steering).
     func submit() {
         let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, selectedProject != nil, selectedModel != nil else { return }
+        guard !trimmed.isEmpty, (selectedProject != nil || workWithoutProject), selectedModel != nil else { return }
         promptText = ""
 
         if isRunning {
@@ -229,7 +255,15 @@ final class AppViewModel {
     }
 
     private func runPrompt(userText: String) async {
-        guard let project = selectedProject, let model = selectedModel else { return }
+        guard let model = selectedModel else { return }
+        let cwd: URL
+        if let project = selectedProject {
+            cwd = project.path
+        } else if workWithoutProject {
+            cwd = FileManager.default.homeDirectoryForCurrentUser
+        } else {
+            return
+        }
 
         errorMessage = nil
         didUserCancel = false
@@ -245,7 +279,7 @@ final class AppViewModel {
         do {
             let sessionId = try await grok.streamPrompt(
                 userText,
-                cwd: project.path,
+                cwd: cwd,
                 model: model.id,
                 permissionMode: permissionMode,
                 effort: effortLevel,
@@ -398,6 +432,20 @@ final class AppViewModel {
         saveSidebarPreferences()
     }
 
+    /// Codex "Archive all chats" — archive every currently-active project.
+    func archiveAllProjects() {
+        for project in projects where !archivedProjectPaths.contains(project.path.path) {
+            archivedProjectPaths.insert(project.path.path)
+        }
+        pinnedProjectPaths.removeAll()
+        saveSidebarPreferences()
+    }
+
+    func toggleProjectsCollapsed() {
+        projectsCollapsed.toggle()
+        UserDefaults.standard.set(projectsCollapsed, forKey: "grokcode.projectsCollapsed")
+    }
+
     var sidebarProjectGroups: [SidebarProjectGroup] {
         let active = sortedSidebarProjects(includeArchived: false)
         let archived = sortedSidebarProjects(includeArchived: true)
@@ -416,7 +464,14 @@ final class AppViewModel {
             }
             return groups
         case .rootFolder:
-            var groups = groupedByRoot(active)
+            // "Recent projects": a single flat list ordered by most-recent activity.
+            let recent = active.sorted {
+                ($0.lastActiveAt ?? .distantPast) > ($1.lastActiveAt ?? .distantPast)
+            }
+            var groups: [SidebarProjectGroup] = []
+            if !recent.isEmpty {
+                groups.append(SidebarProjectGroup(id: "active", title: "", projects: recent))
+            }
             if !archived.isEmpty {
                 groups.append(SidebarProjectGroup(id: "archive", title: "Archive", projects: archived))
             }
@@ -516,6 +571,17 @@ final class AppViewModel {
         }
     }
 
+    /// Read the current git branch from a repo's .git/HEAD (handles the common
+    /// `ref: refs/heads/<branch>` case; nil for non-repos / detached HEAD).
+    static func gitBranch(for path: URL) -> String? {
+        let head = path.appendingPathComponent(".git/HEAD")
+        guard let raw = try? String(contentsOf: head, encoding: .utf8) else { return nil }
+        let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "ref: refs/heads/"
+        guard line.hasPrefix(prefix) else { return nil }
+        return String(line.dropFirst(prefix.count))
+    }
+
     private func attachThreadsToProjects() {
         let indexed = sessionIndex.loadIndexedSessions()
 
@@ -523,6 +589,7 @@ final class AppViewModel {
             let path = projects[index].path
             let threads = sessionIndex.threads(for: path, in: indexed)
             projects[index].threads = threads
+            projects[index].gitBranch = Self.gitBranch(for: path)
             projects[index].lastActiveAt = indexed
                 .filter {
                     let projectPath = path.standardizedFileURL.path
@@ -640,6 +707,7 @@ final class AppViewModel {
         if let archived = UserDefaults.standard.array(forKey: archivedProjectsKey) as? [String] {
             archivedProjectPaths = Set(archived)
         }
+        projectsCollapsed = UserDefaults.standard.bool(forKey: "grokcode.projectsCollapsed")
     }
 
     private func saveSidebarPreferences() {
