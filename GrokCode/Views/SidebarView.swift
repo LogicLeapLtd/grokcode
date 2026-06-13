@@ -144,7 +144,12 @@ struct SidebarView: View {
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(model.activeSessionId == item.id ? CodexTheme.navHighlight : Color.clear)
+                        )
+                        .codexHover(cornerRadius: 7)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(CodexPressableStyle(scale: 0.99))
