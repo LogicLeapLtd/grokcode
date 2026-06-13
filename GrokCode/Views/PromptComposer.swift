@@ -58,23 +58,24 @@ struct PromptComposer: View {
     }
 
     private var inputArea: some View {
-        TextField("Do anything", text: Binding(
+        // While a run is in flight, Codex keeps the field live so you can queue
+        // a follow-up; the placeholder hints at that.
+        TextField(model.isRunning ? "Queue a follow-up…" : "Do anything", text: Binding(
             get: { model.promptText },
             set: { model.promptText = $0 }
         ), axis: .vertical)
         .font(CodexTheme.bodyFont)
         .foregroundStyle(CodexTheme.textPrimary)
         .textFieldStyle(.plain)
-        .lineLimit(1...6)
-        .frame(minHeight: 24, maxHeight: 120, alignment: .topLeading)
+        .lineLimit(1...8)
+        .frame(minHeight: 22, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .focused($isFocused)
-        .disabled(model.isRunning)
         .onKeyPress(.return, phases: .down) { press in
             if press.modifiers.contains(.shift) { return .ignored }
-            guard !model.isRunning else { return .handled }
             let trimmed = model.promptText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .ignored }
-            Task { await model.sendPrompt() }
+            model.submit()
             return .handled
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,7 +184,7 @@ struct PromptComposer: View {
             if model.isRunning {
                 model.cancelRun()
             } else {
-                Task { await model.sendPrompt() }
+                model.submit()
             }
         } label: {
             Image(systemName: model.isRunning ? "stop.fill" : "arrow.up")

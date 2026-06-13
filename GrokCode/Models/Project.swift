@@ -122,18 +122,55 @@ struct ChatMessage: Identifiable, Hashable {
         case user
         case assistant
         case system
+
+        /// Human label shown above the message. Codex shows "You" for the
+        /// person and leaves the assistant turn unlabelled; system/tool turns
+        /// are surfaced inline.
+        var label: String {
+            switch self {
+            case .user: "You"
+            case .assistant: "Grok"
+            case .system: "System"
+            }
+        }
     }
 
     let id: UUID
     var role: Role
+    /// Final answer body (streamed from `text` events).
     var text: String
+    /// Reasoning trace (streamed from `thought` events) rendered as a
+    /// collapsible "Thinking" block, Codex-style.
+    var reasoning: String
+    /// True while the assistant turn is actively streaming.
     var isStreaming: Bool
+    /// A follow-up the user submitted mid-run; rendered as a pending bubble
+    /// and auto-sent when the in-flight run finishes.
+    var isQueued: Bool
+    /// Surfaced failure text when a run errors out.
+    var errorText: String?
 
-    init(id: UUID = UUID(), role: Role, text: String, isStreaming: Bool = false) {
+    init(
+        id: UUID = UUID(),
+        role: Role,
+        text: String,
+        reasoning: String = "",
+        isStreaming: Bool = false,
+        isQueued: Bool = false,
+        errorText: String? = nil
+    ) {
         self.id = id
         self.role = role
         self.text = text
+        self.reasoning = reasoning
         self.isStreaming = isStreaming
+        self.isQueued = isQueued
+        self.errorText = errorText
+    }
+
+    /// True when nothing has streamed yet and we're still waiting on the model.
+    var isAwaitingFirstToken: Bool {
+        isStreaming && text.isEmpty && reasoning.isEmpty && errorText == nil
     }
 }
 
