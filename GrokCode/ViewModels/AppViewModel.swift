@@ -74,6 +74,7 @@ final class AppViewModel {
     private let automationService = AutomationService()
     private let rootsKey = "grokcode.projectRoots"
     private let selectedProjectPathKey = "grokcode.selectedProjectPath"
+    private let workWithoutProjectKey = "grokcode.workWithoutProject"
     private let sidebarFilterKey = "grokcode.sidebarStatusFilter"
     private let sidebarGroupByKey = "grokcode.sidebarGroupBy"
     private let sidebarSortKey = "grokcode.sidebarSort"
@@ -88,7 +89,11 @@ final class AppViewModel {
         projects = discovery.discoverProjects(in: projectRoots)
         attachThreadsToProjects()
 
-        if selectedProject == nil {
+        if UserDefaults.standard.bool(forKey: workWithoutProjectKey) {
+            // Last session was "Don't work in a project" — restore that.
+            workWithoutProject = true
+            selectedProject = nil
+        } else if selectedProject == nil {
             if let savedPath = UserDefaults.standard.string(forKey: selectedProjectPathKey) {
                 selectedProject = projects.first { $0.path.path == savedPath }
             }
@@ -198,6 +203,7 @@ final class AppViewModel {
         selectedProject = project
         workWithoutProject = false
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
+        UserDefaults.standard.set(false, forKey: workWithoutProjectKey)
         messages = []
         activeSessionId = nil
         sessionModelId = nil
@@ -209,6 +215,7 @@ final class AppViewModel {
     func clearProjectSelection() {
         selectedProject = nil
         workWithoutProject = true
+        UserDefaults.standard.set(true, forKey: workWithoutProjectKey)
         messages = []
         activeSessionId = nil
         sessionModelId = nil
