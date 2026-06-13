@@ -778,11 +778,41 @@ final class AppViewModel {
         return dir
     }
 
-    /// Read the current git branch from a repo's .git/HEAD (handles the common
-    /// `ref: refs/heads/<branch>` case; nil for non-repos / detached HEAD).
+    /// Current git branch for a project. Checks the folder itself, and — for
+    /// projects whose repo lives in a subdirectory (e.g. GrokCodeGUI/GrokCode) —
+    /// the immediate subfolders too. Handles `.git` dirs and `.git` pointer files.
     static func gitBranch(for path: URL) -> String? {
-        let head = path.appendingPathComponent(".git/HEAD")
-        guard let raw = try? String(contentsOf: head, encoding: .utf8) else { return nil }
+        if let branch = branch(atGit: path.appendingPathComponent(".git")) { return branch }
+        let fm = FileManager.default
+        guard let subs = try? fm.contentsOfDirectory(
+            at: path, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        ) else { return nil }
+        for sub in subs.prefix(24) {
+            if (try? sub.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+               let branch = branch(atGit: sub.appendingPathComponent(".git")) {
+                return branch
+            }
+        }
+        return nil
+    }
+
+    private static func branch(atGit gitPath: URL) -> String? {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: gitPath.path, isDirectory: &isDir) else { return nil }
+        let headURL: URL
+        if isDir.boolValue {
+            headURL = gitPath.appendingPathComponent("HEAD")
+        } else {
+            // `.git` is a pointer file: "gitdir: <path>"
+            guard let content = try? String(contentsOf: gitPath, encoding: .utf8),
+                  let line = content.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("gitdir:") })
+            else { return nil }
+            let dir = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+            headURL = URL(fileURLWithPath: dir, relativeTo: gitPath.deletingLastPathComponent())
+                .appendingPathComponent("HEAD")
+        }
+        guard let raw = try? String(contentsOf: headURL, encoding: .utf8) else { return nil }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = "ref: refs/heads/"
         guard line.hasPrefix(prefix) else { return nil }
