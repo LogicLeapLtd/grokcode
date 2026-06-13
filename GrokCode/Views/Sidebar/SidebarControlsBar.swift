@@ -24,55 +24,32 @@ struct SidebarControlsBar: View {
     }
 
     private var viewSettingsMenu: some View {
-        Menu {
-            Section("Filter") {
-                ForEach(SidebarStatusFilter.allCases) { filter in
-                    Button {
-                        model.sidebarStatusFilter = filter
-                    } label: {
-                        if model.sidebarStatusFilter == filter {
-                            Label(filter.label, systemImage: "checkmark")
-                        } else {
-                            Text(filter.label)
-                        }
-                    }
-                }
-            }
-
-            Section("Group by") {
-                ForEach(SidebarGroupBy.allCases) { mode in
-                    Button {
-                        model.sidebarGroupBy = mode
-                    } label: {
-                        if model.sidebarGroupBy == mode {
-                            Label(mode.label, systemImage: "checkmark")
-                        } else {
-                            Text(mode.label)
-                        }
-                    }
-                }
-            }
-
-            Section("Sort") {
-                ForEach(SidebarSort.allCases) { sort in
-                    Button {
-                        model.sidebarSort = sort
-                    } label: {
-                        if model.sidebarSort == sort {
-                            Label(sort.label, systemImage: "checkmark")
-                        } else {
-                            Text(sort.label)
-                        }
-                    }
-                }
-            }
-        } label: {
+        CodexMenuTrigger(minWidth: 220, edge: .bottom, highlightOnHover: false) { _ in
             controlIcon("slider.horizontal.3", isActive: isViewCustomized)
+        } menu: { _ in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Filter")
+                ForEach(SidebarStatusFilter.allCases) { filter in
+                    CodexMenuItem(title: filter.label, isSelected: model.sidebarStatusFilter == filter) {
+                        model.sidebarStatusFilter = filter
+                    }
+                }
+                CodexMenuDivider()
+                CodexMenuSectionHeader(title: "Group by")
+                ForEach(SidebarGroupBy.allCases) { mode in
+                    CodexMenuItem(title: mode.label, isSelected: model.sidebarGroupBy == mode) {
+                        model.sidebarGroupBy = mode
+                    }
+                }
+                CodexMenuDivider()
+                CodexMenuSectionHeader(title: "Sort")
+                ForEach(SidebarSort.allCases) { sort in
+                    CodexMenuItem(title: sort.label, isSelected: model.sidebarSort == sort) {
+                        model.sidebarSort = sort
+                    }
+                }
+            }
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help("View settings")
     }
 

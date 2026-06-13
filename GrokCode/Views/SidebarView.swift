@@ -53,6 +53,7 @@ struct SidebarView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(model.activeSidebarSection == section ? CodexTheme.navHighlight : Color.clear)
                     )
+                    .codexHover()
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(CodexPressableStyle(scale: 0.98))
@@ -166,6 +167,7 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
+            .codexHover()
             .contentShape(Rectangle())
         }
         .buttonStyle(CodexPressableStyle(scale: 0.98))
@@ -221,6 +223,7 @@ private struct ProjectSidebarBlock: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isSelected ? CodexTheme.navHighlight : Color.clear)
                 )
+                .codexHover(cornerRadius: 6)
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle(scale: 0.99))
@@ -258,6 +261,7 @@ private struct ProjectSidebarBlock: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
+                        .codexHover(cornerRadius: 6)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(CodexPressableStyle(scale: 0.99))

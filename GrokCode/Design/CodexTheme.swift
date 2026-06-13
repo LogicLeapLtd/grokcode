@@ -24,6 +24,11 @@ enum CodexTheme {
     static let sendButtonActiveBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
     static let sendButtonActiveForeground = Color.white
 
+    static let hoverBackground = Color(red: 0.93, green: 0.93, blue: 0.93)
+    static let menuBackground = Color(red: 0.99, green: 0.99, blue: 0.99)
+    static let menuBorder = Color(red: 0.86, green: 0.86, blue: 0.86)
+    static let menuShadow = Color.black.opacity(0.16)
+
     static let userBubbleBackground = Color(red: 0.945, green: 0.945, blue: 0.945)   // #F1F1F1
     static let errorForeground = Color(red: 0.70, green: 0.18, blue: 0.13)
     static let errorBackground = Color(red: 0.99, green: 0.94, blue: 0.93)

@@ -101,11 +101,7 @@ struct PromptComposer: View {
     }
 
     private var permissionMenu: some View {
-        Menu {
-            ForEach(PermissionMode.allCases) { mode in
-                Button(mode.label) { model.permissionMode = mode }
-            }
-        } label: {
+        CodexMenuTrigger(minWidth: 260, edge: .top) { _ in
             HStack(spacing: 4) {
                 if model.permissionMode == .fullAccess {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -119,62 +115,63 @@ struct PromptComposer: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Permission mode")
+                ForEach(PermissionMode.allCases) { mode in
+                    CodexMenuItem(
+                        title: mode.label,
+                        subtitle: mode.detail,
+                        isSelected: model.permissionMode == mode
+                    ) { model.permissionMode = mode; close() }
+                }
+            }
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 
     // Codex-style combined control: "<Model> <Effort> ⌄" with one dropdown.
+    // Effort/reasoning is only meaningful for reasoning models (grok-4), so it
+    // is only shown when such a model is selected.
     private var modelEffortMenu: some View {
-        Menu {
-            Section("Model") {
-                ForEach(model.models) { option in
-                    Button {
-                        model.selectedModel = option
-                    } label: {
-                        if model.selectedModel == option {
-                            Label(option.menuName, systemImage: "checkmark")
-                        } else {
-                            Text(option.menuName)
-                        }
-                    }
-                }
-            }
-
-            Section("Effort") {
-                ForEach(EffortLevel.allCases) { level in
-                    Button {
-                        model.effortLevel = level
-                    } label: {
-                        if model.effortLevel == level {
-                            Label(level.label, systemImage: "checkmark")
-                        } else {
-                            Text(level.label)
-                        }
-                    }
-                }
-            }
-        } label: {
+        CodexMenuTrigger(minWidth: 260, edge: .top) { _ in
             HStack(spacing: 5) {
                 Text(model.selectedModel?.displayName ?? "Model")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
-                Text(model.effortLevel.label)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .lineLimit(1)
+                if model.selectedModel?.isReasoningModel == true {
+                    Text(model.effortLevel.label)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .lineLimit(1)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Model")
+                ForEach(model.models) { option in
+                    CodexMenuItem(
+                        title: option.displayName,
+                        subtitle: option.isReasoningModel ? "Reasoning" : "Fast",
+                        isSelected: model.selectedModel == option
+                    ) { model.selectedModel = option }   // keep open so effort can appear
+                }
+
+                if model.selectedModel?.isReasoningModel == true {
+                    CodexMenuDivider()
+                    CodexMenuSectionHeader(title: "Reasoning effort")
+                    ForEach(EffortLevel.allCases) { level in
+                        CodexMenuItem(
+                            title: level.label,
+                            isSelected: model.effortLevel == level
+                        ) { model.effortLevel = level; close() }
+                    }
+                }
+            }
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 
     private var sendButton: some View {
@@ -203,12 +200,11 @@ struct PromptComposer: View {
     }
 
     private var projectRow: some View {
-        Menu {
-            ForEach(model.projects) { project in
-                Button(project.name) { model.selectProject(project) }
-            }
-        } label: {
-            HStack(spacing: 4) {
+        CodexMenuTrigger(minWidth: 240, edge: .top) { _ in
+            HStack(spacing: 5) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(CodexTheme.textTertiary)
                 Text(model.selectedProject?.name ?? "Select project")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(CodexTheme.textSecondary)
@@ -216,11 +212,22 @@ struct PromptComposer: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Project")
+                ForEach(model.projects) { project in
+                    CodexMenuItem(
+                        title: project.name,
+                        systemImage: "folder",
+                        isSelected: model.selectedProject?.id == project.id
+                    ) { model.selectProject(project); close() }
+                }
+                CodexMenuDivider()
+                CodexMenuItem(title: "Add folder…", systemImage: "plus") {
+                    close(); model.addProjectFromPicker()
+                }
+            }
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 }
 

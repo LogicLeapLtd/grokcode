@@ -50,6 +50,7 @@ final class AppViewModel {
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
+        restoreDefaults()
         trustedHookIDs = hooksService.loadTrustedIDs()
         refreshHooks()
         projects = discovery.discoverProjects(in: projectRoots)
@@ -65,7 +66,12 @@ final class AppViewModel {
         do {
             models = try await grok.listModels()
             if selectedModel == nil {
-                selectedModel = models.first(where: \.isDefault) ?? models.first
+                if let savedId = UserDefaults.standard.string(forKey: "grokcode.defaultModel"),
+                   let saved = models.first(where: { $0.id == savedId }) {
+                    selectedModel = saved
+                } else {
+                    selectedModel = models.first(where: \.isDefault) ?? models.first
+                }
             }
             sessions = try await grok.listSessions()
             attachThreadsToProjects()
@@ -336,6 +342,28 @@ final class AppViewModel {
         projectRoots.append(standardized)
         saveRoots()
         refreshProjects()
+    }
+
+    func removeProjectRoot(_ url: URL) {
+        projectRoots.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
+        saveRoots()
+        refreshProjects()
+    }
+
+    /// Persist the current model / permission / effort as the launch defaults.
+    func persistDefaults() {
+        let d = UserDefaults.standard
+        d.set(selectedModel?.id, forKey: "grokcode.defaultModel")
+        d.set(permissionMode.rawValue, forKey: "grokcode.defaultPermission")
+        d.set(effortLevel.rawValue, forKey: "grokcode.defaultEffort")
+    }
+
+    private func restoreDefaults() {
+        let d = UserDefaults.standard
+        if let raw = d.string(forKey: "grokcode.defaultPermission"),
+           let mode = PermissionMode(rawValue: raw) { permissionMode = mode }
+        if let raw = d.string(forKey: "grokcode.defaultEffort"),
+           let effort = EffortLevel(rawValue: raw) { effortLevel = effort }
     }
 
     func addProjectFromPicker() {

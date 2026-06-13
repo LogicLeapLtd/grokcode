@@ -66,6 +66,15 @@ enum PermissionMode: String, CaseIterable, Identifiable {
         case .plan: "Plan mode"
         }
     }
+
+    var detail: String {
+        switch self {
+        case .fullAccess: "Run everything without asking"
+        case .acceptEdits: "Auto-approve file edits, ask for the rest"
+        case .auto: "Approve safe actions automatically"
+        case .plan: "Read-only — plan without making changes"
+        }
+    }
 }
 
 enum EffortLevel: String, CaseIterable, Identifiable {
