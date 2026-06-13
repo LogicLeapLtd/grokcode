@@ -94,8 +94,7 @@ struct PromptComposer: View {
 
             Spacer(minLength: 12)
 
-            effortMenu
-            modelMenu
+            modelEffortMenu
             sendButton
         }
     }
@@ -126,37 +125,45 @@ struct PromptComposer: View {
         .fixedSize()
     }
 
-    private var effortMenu: some View {
+    // Codex-style combined control: "<Model> <Effort> ⌄" with one dropdown.
+    private var modelEffortMenu: some View {
         Menu {
-            ForEach(EffortLevel.allCases) { level in
-                Button(level.label) { model.effortLevel = level }
+            Section("Model") {
+                ForEach(model.models) { option in
+                    Button {
+                        model.selectedModel = option
+                    } label: {
+                        if model.selectedModel == option {
+                            Label(option.menuName, systemImage: "checkmark")
+                        } else {
+                            Text(option.menuName)
+                        }
+                    }
+                }
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(model.effortLevel.label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textTertiary)
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-    }
 
-    private var modelMenu: some View {
-        Menu {
-            ForEach(model.models) { option in
-                Button(option.displayName) { model.selectedModel = option }
+            Section("Effort") {
+                ForEach(EffortLevel.allCases) { level in
+                    Button {
+                        model.effortLevel = level
+                    } label: {
+                        if model.effortLevel == level {
+                            Label(level.label, systemImage: "checkmark")
+                        } else {
+                            Text(level.label)
+                        }
+                    }
+                }
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(model.selectedModel?.id ?? "Model")
+            HStack(spacing: 5) {
+                Text(model.selectedModel?.displayName ?? "Model")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                Text(model.effortLevel.label)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(CodexTheme.textTertiary)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
