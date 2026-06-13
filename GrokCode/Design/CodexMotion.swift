@@ -9,9 +9,14 @@ enum CodexMotion {
     static let staggerDelay: Double = 0.04
 
     static var pageTransition: AnyTransition {
+        // Content settles in (fade + gentle scale-up + slight rise) rather than
+        // sliding horizontally — feels lighter and more deliberate.
         .asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .leading).combined(with: .opacity)
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.975, anchor: .center))
+                .combined(with: .offset(y: 12)),
+            removal: .opacity
+                .combined(with: .scale(scale: 1.01, anchor: .center))
         )
     }
 

@@ -3,31 +3,41 @@ import SwiftUI
 struct ChatView: View {
     @Environment(AppViewModel.self) private var model
 
+    private var chatTitle: String {
+        if let firstUser = model.messages.first(where: { $0.role == .user })?.text,
+           !firstUser.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(firstUser.prefix(72))
+        }
+        return "New chat"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            header
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
+                        ForEach(model.messages) { message in
                             MessageBlock(message: message)
                                 .id(message.id)
-                                .codexStaggeredAppear(index: min(index, 8))
                         }
+                        Color.clear.frame(height: 1).id("bottom-anchor")
                     }
                     .padding(.horizontal, 48)
-                    .padding(.vertical, 32)
+                    .padding(.vertical, 28)
                     .frame(maxWidth: 760)
                     .frame(maxWidth: .infinity)
-                    .animation(CodexMotion.panelSpring, value: model.messages.count)
                 }
                 .onChange(of: model.messages.count) { _, _ in
-                    scrollToBottom(proxy)
+                    withAnimation(CodexMotion.quickSpring) { proxy.scrollTo("bottom-anchor", anchor: .bottom) }
                 }
+                // Follow streaming output instantly (no per-token animation = smooth).
                 .onChange(of: model.messages.last?.text) { _, _ in
-                    scrollToBottom(proxy)
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
                 .onChange(of: model.messages.last?.reasoning) { _, _ in
-                    scrollToBottom(proxy)
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
             }
 
@@ -40,11 +50,42 @@ struct ChatView: View {
         }
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        if let last = model.messages.last {
-            withAnimation(CodexMotion.quickSpring) {
-                proxy.scrollTo(last.id, anchor: .bottom)
+    private var header: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(chatTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                if let project = model.selectedProject {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                        Text(project.name)
+                            .font(.system(size: 12))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .lineLimit(1)
+                        if let branch = project.gitBranch {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(CodexTheme.textTertiary)
+                            Text(branch)
+                                .font(.system(size: 11))
+                                .foregroundStyle(CodexTheme.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
             }
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CodexTheme.mainBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(CodexTheme.divider).frame(height: 1)
         }
     }
 }
@@ -88,9 +129,7 @@ private struct UserMessageBlock: View {
                             .foregroundStyle(CodexTheme.textSecondary)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(CodexTheme.pillBackground)
-                            )
+                            .background(Capsule().fill(CodexTheme.pillBackground))
                             .offset(x: 4, y: -8)
                     }
                 }
@@ -124,7 +163,6 @@ private struct AssistantMessageBlock: View {
                     .foregroundStyle(CodexTheme.textPrimary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(CodexMotion.quickSpring, value: message.text.count)
             }
 
             if let errorText = message.errorText {
@@ -141,18 +179,13 @@ private struct ReasoningBlock: View {
     let reasoning: String
     let isStreaming: Bool
 
-    /// nil = follow the default (expanded while actively reasoning, collapsed
-    /// once the answer starts); non-nil = user override.
     @State private var manualExpanded: Bool?
-
     private var isExpanded: Bool { manualExpanded ?? isStreaming }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(CodexMotion.expandSpring) {
-                    manualExpanded = !isExpanded
-                }
+                withAnimation(CodexMotion.expandSpring) { manualExpanded = !isExpanded }
             } label: {
                 HStack(spacing: 6) {
                     if isStreaming {
@@ -191,16 +224,23 @@ private struct ReasoningBlock: View {
     }
 }
 
-// MARK: - Thinking indicator (no reasoning yet)
+// MARK: - Thinking indicator (no output yet)
 
 private struct ThinkingIndicator: View {
+    @State private var start = Date()
+
     var body: some View {
         HStack(spacing: 8) {
             ThinkingDots(color: CodexTheme.textSecondary, size: 6)
-            Text("Thinking…")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(CodexTheme.textSecondary)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let secs = Int(context.date.timeIntervalSince(start))
+                Text(secs >= 3 ? "Thinking… \(secs)s" : "Thinking…")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                    .contentTransition(.numericText())
+            }
         }
+        .onAppear { start = Date() }
     }
 }
 
@@ -219,18 +259,12 @@ private struct ThinkingDots: View {
             }
         }
         .onAppear { phase = 1 }
-        .animation(
-            .easeInOut(duration: 0.6).repeatForever(autoreverses: true),
-            value: phase
-        )
+        .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: phase)
     }
 
     private func opacity(for index: Int) -> Double {
-        // Stagger the three dots so they shimmer in sequence.
-        let base = 0.35
-        let lit = 1.0
         let active = Int((phase * 3).rounded()) % 3
-        return index == active ? lit : base
+        return index == active ? 1.0 : 0.35
     }
 }
 
