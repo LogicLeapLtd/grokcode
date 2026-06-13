@@ -11,19 +11,19 @@ final class CodexMenuController {
     struct Active: Identifiable {
         let id: UUID
         var anchor: CGRect            // trigger frame in global coordinates
-        var content: AnyView
+        var content: () -> AnyView    // rebuilt every host render so it stays live
         var minWidth: CGFloat
         var edge: VerticalEdge        // .bottom = open downward, .top = upward
     }
 
     var active: Active?
 
-    func toggle(id: UUID, anchor: CGRect, minWidth: CGFloat, edge: VerticalEdge,
-                @ViewBuilder content: () -> some View) {
+    func toggle<V: View>(id: UUID, anchor: CGRect, minWidth: CGFloat, edge: VerticalEdge,
+                         @ViewBuilder content: @escaping () -> V) {
         if active?.id == id {
             active = nil
         } else {
-            active = Active(id: id, anchor: anchor, content: AnyView(content()),
+            active = Active(id: id, anchor: anchor, content: { AnyView(content()) },
                             minWidth: minWidth, edge: edge)
         }
     }
@@ -33,14 +33,8 @@ final class CodexMenuController {
 
 // MARK: - Host
 
-private struct MenuSizeKey: PreferenceKey {
-    static let defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
 private struct CodexMenuHost: ViewModifier {
     @Environment(CodexMenuController.self) private var controller
-    @State private var cardSize: CGSize = .zero
 
     func body(content: Content) -> some View {
         content.overlay {
@@ -48,48 +42,52 @@ private struct CodexMenuHost: ViewModifier {
                 GeometryReader { geo in
                     let host = geo.frame(in: .global)
                     let gap: CGFloat = 6
+                    // Clamp left edge so the card stays on-screen (estimate width via minWidth).
                     let x = min(max(8, active.anchor.minX - host.minX),
-                                geo.size.width - cardSize.width - 8)
-                    let y: CGFloat = {
-                        if active.edge == .bottom {
-                            return active.anchor.maxY - host.minY + gap
-                        } else {
-                            return active.anchor.minY - host.minY - cardSize.height - gap
-                        }
-                    }()
+                                max(8, geo.size.width - active.minWidth - 8))
+                    let topSpace = max(0, active.anchor.minY - host.minY - gap)   // room above anchor
+                    let belowY = active.anchor.maxY - host.minY + gap             // just below anchor
 
                     ZStack(alignment: .topLeading) {
+                        // Dismiss layer.
                         Color.black.opacity(0.0001)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.close() }
 
-                        active.content
-                            .frame(minWidth: active.minWidth, alignment: .leading)
-                            .background(
-                                GeometryReader { g in
-                                    Color.clear.preference(key: MenuSizeKey.self, value: g.size)
-                                }
-                            )
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(CodexTheme.menuBackground)
-                                    .shadow(color: CodexTheme.menuShadow, radius: 16, y: 6)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
-                            )
-                            .fixedSize()
-                            .opacity(cardSize == .zero ? 0 : 1)
-                            .offset(x: x, y: max(8, y))
-                            .onPreferenceChange(MenuSizeKey.self) { cardSize = $0 }
-                            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                        // Card placed by alignment (no size measurement needed, so it
+                        // is visible on the very first frame).
+                        Color.clear
+                            .frame(width: geo.size.width,
+                                   height: active.edge == .top ? topSpace : geo.size.height,
+                                   alignment: active.edge == .top ? .bottomLeading : .topLeading)
+                            .overlay(alignment: active.edge == .top ? .bottomLeading : .topLeading) {
+                                card(active)
+                                    .padding(.leading, x)
+                                    .padding(active.edge == .top ? .bottom : .top,
+                                             active.edge == .top ? 0 : belowY)
+                            }
                     }
                 }
                 .ignoresSafeArea()
+                .transition(.opacity)
             }
         }
-        .onChange(of: controller.active?.id) { _, _ in cardSize = .zero }
+        .animation(.easeOut(duration: 0.12), value: controller.active?.id)
+    }
+
+    private func card(_ active: CodexMenuController.Active) -> some View {
+        active.content()
+            .frame(minWidth: active.minWidth, alignment: .leading)
+            .fixedSize()
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(CodexTheme.menuBackground)
+                    .shadow(color: CodexTheme.menuShadow, radius: 16, y: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
+            )
     }
 }
 
@@ -108,17 +106,21 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
     var minWidth: CGFloat = 220
     var edge: VerticalEdge = .bottom
     var highlightOnHover: Bool = true
+    /// Dev/QA only: open this menu automatically shortly after appearing.
+    var autoOpen: Bool = false
     @ViewBuilder var label: (_ isOpen: Bool) -> Label
     @ViewBuilder var menu: (_ close: @escaping () -> Void) -> Menu
 
     private var isOpen: Bool { controller.active?.id == id }
 
+    private func open() {
+        controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge) {
+            menu({ controller.close() })
+        }
+    }
+
     var body: some View {
-        Button {
-            controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge) {
-                menu({ controller.close() })
-            }
-        } label: {
+        Button { open() } label: {
             label(isOpen)
                 .padding(.horizontal, highlightOnHover ? 8 : 0)
                 .padding(.vertical, highlightOnHover ? 5 : 0)
@@ -133,7 +135,14 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
         .background(
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { frame = geo.frame(in: .global) }
+                    .onAppear {
+                        frame = geo.frame(in: .global)
+                        if autoOpen {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                if controller.active == nil { open() }
+                            }
+                        }
+                    }
                     .onChange(of: geo.frame(in: .global)) { _, f in frame = f }
             }
         )
@@ -231,11 +240,13 @@ struct CodexHoverHighlight: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(hovering ? color : .clear)
             )
             .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

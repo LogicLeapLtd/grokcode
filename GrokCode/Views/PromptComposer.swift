@@ -133,7 +133,8 @@ struct PromptComposer: View {
     // Effort/reasoning is only meaningful for reasoning models (grok-4), so it
     // is only shown when such a model is selected.
     private var modelEffortMenu: some View {
-        CodexMenuTrigger(minWidth: 260, edge: .top) { _ in
+        CodexMenuTrigger(minWidth: 260, edge: .top,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "model") { _ in
             HStack(spacing: 5) {
                 Text(model.selectedModel?.displayName ?? "Model")
                     .font(.system(size: 13, weight: .medium))

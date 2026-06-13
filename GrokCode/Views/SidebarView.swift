@@ -127,7 +127,7 @@ struct SidebarView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 0) {
                                 Text(item.title)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 13, weight: .regular))
                                     .foregroundStyle(CodexTheme.textPrimary)
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
@@ -234,11 +234,10 @@ private struct ProjectSidebarBlock: View {
 
             if project.threads.isEmpty {
                 Text("No chats")
-                    .font(CodexTheme.smallFont)
+                    .font(.system(size: 12))
                     .foregroundStyle(CodexTheme.textTertiary)
                     .padding(.leading, 30)
-                    .padding(.vertical, 2)
-                    .padding(.bottom, 2)
+                    .padding(.vertical, 3)
             }
 
             if isSelected {
@@ -248,7 +247,7 @@ private struct ProjectSidebarBlock: View {
                     } label: {
                         HStack(spacing: 0) {
                             Text(thread.title)
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(CodexTheme.textSecondary)
                                 .lineLimit(1)
                                 .padding(.leading, 22)
