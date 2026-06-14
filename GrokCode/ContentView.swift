@@ -20,19 +20,6 @@ struct ContentView: View {
             .ignoresSafeArea(.container, edges: .top)   // fill under the title bar
             .task { await model.bootstrap() }
 
-            AnimatedModal(isPresented: model.showSettings, onDismiss: { model.closeSettings() }) {
-                SettingsView()
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(CodexTheme.mainBackground)
-                            .shadow(color: CodexTheme.shadowColor, radius: 24, y: 8)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
-                    )
-            }
-
             AnimatedModal(isPresented: model.showHooksReview, onDismiss: { model.closeHooksReview() }) {
                 HooksReviewView()
                     .background(
@@ -49,6 +36,7 @@ struct ContentView: View {
         .codexMenuHost()
         .focusEffectDisabled()
         .background(WindowConfigurator())
+        .preferredColorScheme(model.appearance.colorScheme)
     }
 }
 

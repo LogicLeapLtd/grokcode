@@ -29,6 +29,25 @@ enum AutomationScheduleKind: String, CaseIterable, Identifiable, Hashable, Codab
     }
 }
 
+/// A single recorded execution of an `Automation` — the timestamp and whether
+/// the grok run succeeded. Kept in a small ring (see `Automation.maxRunHistory`)
+/// so the card can show a recent run trail. Fully `Codable` for persistence.
+struct AutomationRun: Hashable, Codable, Identifiable {
+    /// When the run finished.
+    var date: Date
+    /// `true` if the grok invocation completed without throwing.
+    var ok: Bool
+
+    /// Stable identity for `ForEach`: the run instant. Two runs can't share an
+    /// instant in practice (they're serialised through one CLI call).
+    var id: Date { date }
+
+    init(date: Date = Date(), ok: Bool) {
+        self.date = date
+        self.ok = ok
+    }
+}
+
 /// A user-defined automation: a saved grok prompt that can be run on demand or
 /// on a simple in-app schedule (interval / daily). Pure value type, fully
 /// `Codable` for UserDefaults persistence.
@@ -67,6 +86,19 @@ struct Automation: Identifiable, Hashable, Codable {
     /// When the automation was created.
     var createdAt: Date
 
+    /// Recent run trail (most-recent first), capped at `maxRunHistory`. Appended
+    /// to by `markingRun(at:ok:)`; surfaced on the card.
+    var runHistory: [AutomationRun]
+
+    // MARK: Validation limits (shared by the editor)
+
+    /// Longest accepted automation name.
+    static let maxNameLength = 80
+    /// Longest accepted prompt.
+    static let maxPromptLength = 4000
+    /// How many runs to retain in `runHistory`.
+    static let maxRunHistory = 5
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -78,7 +110,8 @@ struct Automation: Identifiable, Hashable, Codable {
         timeOfDay: String? = nil,
         enabled: Bool = true,
         lastRun: Date? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        runHistory: [AutomationRun] = []
     ) {
         self.id = id
         self.name = name
@@ -91,6 +124,30 @@ struct Automation: Identifiable, Hashable, Codable {
         self.enabled = enabled
         self.lastRun = lastRun
         self.createdAt = createdAt
+        self.runHistory = runHistory
+    }
+
+    // MARK: Codable — tolerate older blobs without `runHistory`.
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, prompt, projectPath, modelId, scheduleKind
+        case intervalMinutes, timeOfDay, enabled, lastRun, createdAt, runHistory
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        prompt = try c.decode(String.self, forKey: .prompt)
+        projectPath = try c.decodeIfPresent(String.self, forKey: .projectPath)
+        modelId = try c.decode(String.self, forKey: .modelId)
+        scheduleKind = try c.decode(AutomationScheduleKind.self, forKey: .scheduleKind)
+        intervalMinutes = try c.decodeIfPresent(Int.self, forKey: .intervalMinutes)
+        timeOfDay = try c.decodeIfPresent(String.self, forKey: .timeOfDay)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        lastRun = try c.decodeIfPresent(Date.self, forKey: .lastRun)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        runHistory = try c.decodeIfPresent([AutomationRun].self, forKey: .runHistory) ?? []
     }
 
     // MARK: Display helpers
@@ -143,12 +200,58 @@ struct Automation: Identifiable, Hashable, Codable {
         return FileManager.default.homeDirectoryForCurrentUser
     }
 
-    /// A copy with `lastRun` stamped to `date`. Services use this rather than
-    /// mutating in place.
-    func markingRun(at date: Date = Date()) -> Automation {
+    /// A copy with `lastRun` stamped to `date` and a run appended to
+    /// `runHistory` (newest first, capped at `maxRunHistory`). Services and the
+    /// view-model use this rather than mutating in place. `ok` defaults to `true`
+    /// so the scheduler's existing single-arg call records a success.
+    func markingRun(at date: Date = Date(), ok: Bool = true) -> Automation {
         var copy = self
         copy.lastRun = date
+        copy.runHistory.insert(AutomationRun(date: date, ok: ok), at: 0)
+        if copy.runHistory.count > Self.maxRunHistory {
+            copy.runHistory = Array(copy.runHistory.prefix(Self.maxRunHistory))
+        }
         return copy
+    }
+
+    /// Whether the most recent recorded run succeeded (nil if never run).
+    var lastRunSucceeded: Bool? { runHistory.first?.ok }
+
+    /// The next time this automation is expected to fire, or `nil` for manual /
+    /// disabled automations. Mirrors `AutomationService.isDue` so the card's
+    /// "Next" line matches the scheduler.
+    ///
+    /// - `.interval`: `(lastRun ?? createdAt) + intervalMinutes`, advanced past
+    ///   `now` so a long-idle automation shows its *upcoming* slot, not a stale
+    ///   past one.
+    /// - `.daily`: today's `timeOfDay` if still ahead and not yet run today,
+    ///   otherwise tomorrow's.
+    func nextRun(after now: Date = Date(), calendar: Calendar = .current) -> Date? {
+        guard isScheduled else { return nil }
+        switch scheduleKind {
+        case .manual:
+            return nil
+        case .interval:
+            guard let minutes = intervalMinutes, minutes > 0 else { return nil }
+            let step = Double(minutes) * 60
+            var fire = (lastRun ?? createdAt).addingTimeInterval(step)
+            if fire <= now {
+                // Jump forward to the first slot strictly after `now`.
+                let missed = (now.timeIntervalSince(fire) / step).rounded(.down) + 1
+                fire = fire.addingTimeInterval(missed * step)
+            }
+            return fire
+        case .daily:
+            let (hour, minute) = timeOfDayComponents
+            guard let todayFire = calendar.date(
+                bySettingHour: hour, minute: minute, second: 0, of: now
+            ) else { return nil }
+            let ranToday = lastRun.map { calendar.isDate($0, inSameDayAs: now) } ?? false
+            if todayFire > now && !ranToday {
+                return todayFire
+            }
+            return calendar.date(byAdding: .day, value: 1, to: todayFire)
+        }
     }
 
     /// Parsed (hour, minute) from `timeOfDay`; defaults to 09:00 when missing

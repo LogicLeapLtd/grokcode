@@ -21,6 +21,27 @@ struct GrokCodeApp: App {
                 Button("Cycle Permission Mode") { appModel.cyclePermissionMode() }
                     .keyboardShortcut("m", modifiers: [.shift, .command])
             }
+
+            // ⌘, — Settings (conventional Preferences slot).
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { appModel.navigateTo(.settings) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+
+            // Navigation shortcuts: ⌘F search, ⌘1..4 for the primary pages.
+            CommandGroup(after: .sidebar) {
+                Button("Search") { appModel.navigateTo(.search) }
+                    .keyboardShortcut("f", modifiers: .command)
+                Divider()
+                Button("Home") { appModel.navigateTo(.home) }
+                    .keyboardShortcut("1", modifiers: .command)
+                Button("Search Page") { appModel.navigateTo(.search) }
+                    .keyboardShortcut("2", modifiers: .command)
+                Button("Plugins") { appModel.navigateTo(.plugins) }
+                    .keyboardShortcut("3", modifiers: .command)
+                Button("Automations") { appModel.navigateTo(.automations) }
+                    .keyboardShortcut("4", modifiers: .command)
+            }
         }
         #endif
 
@@ -33,6 +54,7 @@ struct GrokCodeApp: App {
                 .frame(minWidth: 560, minHeight: 480)
                 .background(CodexTheme.mainBackground)
                 .codexMenuHost()
+                .preferredColorScheme(appModel.appearance.colorScheme)
         }
         #if os(macOS)
         .defaultSize(width: 820, height: 720)

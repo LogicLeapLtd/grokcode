@@ -20,6 +20,7 @@ enum SidebarStatusFilter: String, CaseIterable, Identifiable, Codable {
 
 enum SidebarGroupBy: String, CaseIterable, Identifiable, Codable {
     case project
+    case projectBranch
     case rootFolder
     case flatList
 
@@ -28,6 +29,7 @@ enum SidebarGroupBy: String, CaseIterable, Identifiable, Codable {
     var label: String {
         switch self {
         case .project: "By project"
+        case .projectBranch: "By project → branch"
         case .rootFolder: "Recent projects"
         case .flatList: "Chronological list"
         }
@@ -36,6 +38,7 @@ enum SidebarGroupBy: String, CaseIterable, Identifiable, Codable {
     var symbol: String {
         switch self {
         case .project: "square.stack"
+        case .projectBranch: "arrow.triangle.branch"
         case .rootFolder: "square.stack"
         case .flatList: "clock"
         }

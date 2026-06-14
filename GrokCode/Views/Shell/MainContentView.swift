@@ -24,6 +24,9 @@ struct MainContentView: View {
             case .automations:
                 AutomationsView()
                     .codexPage("automations")
+            case .settings:
+                SettingsView()
+                    .codexPage("settings")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

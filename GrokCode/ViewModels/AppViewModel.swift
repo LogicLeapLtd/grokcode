@@ -1,6 +1,34 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
+
+/// App-wide appearance preference. `system` follows macOS; `light`/`dark`
+/// force a `ColorScheme`, applied at the `ContentView` root.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// `nil` for `system` (let SwiftUI inherit the platform appearance).
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
 
 @Observable
 @MainActor
@@ -54,6 +82,64 @@ final class AppViewModel {
     /// The most recent app the user was in before GrokCode (for "Attach …").
     var lastActiveApp: NSRunningApplication?
 
+    // MARK: - Appearance & layout preferences (shared contract)
+
+    /// Light / dark / system appearance. Applied via `.preferredColorScheme`
+    /// at the `ContentView` root. Persisted under `grokcode.appearance`.
+    var appearance: AppAppearance = .system {
+        didSet {
+            guard appearance != oldValue else { return }
+            UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
+        }
+    }
+
+    /// Sidebar width in points. Clamped to `220...420`. Persisted under
+    /// `grokcode.sidebarWidth` (default 290).
+    var sidebarWidth: Double = 290 {
+        didSet {
+            let clamped = min(max(sidebarWidth, 220), 420)
+            if clamped != sidebarWidth {
+                // Re-clamp without re-triggering persistence twice.
+                sidebarWidth = clamped
+                return
+            }
+            guard sidebarWidth != oldValue else { return }
+            UserDefaults.standard.set(sidebarWidth, forKey: Self.sidebarWidthKey)
+        }
+    }
+
+    /// Whether the sidebar is collapsed. Persisted under
+    /// `grokcode.sidebarCollapsed`.
+    var sidebarCollapsed: Bool = false {
+        didSet {
+            guard sidebarCollapsed != oldValue else { return }
+            UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarCollapsedKey)
+        }
+    }
+
+    /// When true, plain Return in the composer sends; otherwise it inserts a
+    /// newline and ⌘/⇧-Return sends. Persisted under `grokcode.sendOnReturn`
+    /// (default true).
+    var sendOnReturn: Bool = true {
+        didSet {
+            guard sendOnReturn != oldValue else { return }
+            UserDefaults.standard.set(sendOnReturn, forKey: Self.sendOnReturnKey)
+        }
+    }
+
+    /// Mirrors `GrokCLIService.useWarmSession` (same UserDefaults key) so the
+    /// Settings UI can toggle the warm-session optimisation. Default true.
+    var warmSessionEnabled: Bool = true {
+        didSet {
+            guard warmSessionEnabled != oldValue else { return }
+            UserDefaults.standard.set(warmSessionEnabled, forKey: Self.warmSessionKey)
+        }
+    }
+
+    /// Transient feedback string for plugin install/remove (consumed by the
+    /// Plugins lane). Not persisted.
+    var pluginToast: String?
+
     /// Codex "Plan mode" toggle in the + menu, mapped onto the permission mode.
     var isPlanMode: Bool {
         get { permissionMode == .plan }
@@ -80,6 +166,13 @@ final class AppViewModel {
     private let sidebarSortKey = "grokcode.sidebarSort"
     private let pinnedProjectsKey = "grokcode.pinnedProjects"
     private let archivedProjectsKey = "grokcode.archivedProjects"
+    // Appearance / layout preference keys (shared contract).
+    fileprivate static let appearanceKey = "grokcode.appearance"
+    fileprivate static let sidebarWidthKey = "grokcode.sidebarWidth"
+    fileprivate static let sidebarCollapsedKey = "grokcode.sidebarCollapsed"
+    fileprivate static let sendOnReturnKey = "grokcode.sendOnReturn"
+    fileprivate static let warmSessionKey = "grokcode.useWarmSession"   // shared with GrokCLIService
+    private static let activePageKey = "grokcode.activePage"
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
@@ -133,6 +226,11 @@ final class AppViewModel {
         automationService.startScheduler { [weak self] dueIDs in
             self?.runDueAutomations(dueIDs)
         }
+
+        // #39 — return the user to the page they left on last launch (never
+        // .chat, which needs live messages). Runs before the smoke hook so the
+        // hook's explicit page override still wins.
+        restoreActivePage()
 
         runSmokeTestIfRequested()
     }
@@ -270,7 +368,7 @@ final class AppViewModel {
     func navigateTo(_ page: MainPage) {
         activePage = page
         switch page {
-        case .home, .chat:
+        case .home, .chat, .settings:
             activeSidebarSection = nil
         case .search:
             activeSidebarSection = .search
@@ -279,14 +377,38 @@ final class AppViewModel {
         case .automations:
             activeSidebarSection = .automations
         }
+        persistActivePage(page)
+    }
+
+    /// Persist the last *stable* landing page (#39). `.chat` is excluded — it
+    /// depends on live in-memory messages, so restoring into it on a cold launch
+    /// would show an empty conversation; we fall back to `.home` instead.
+    private func persistActivePage(_ page: MainPage) {
+        let stored: MainPage = (page == .chat) ? .home : page
+        UserDefaults.standard.set(stored.rawValue, forKey: Self.activePageKey)
+    }
+
+    /// Restore the last stable landing page on launch (#39).
+    private func restoreActivePage() {
+        guard let raw = UserDefaults.standard.string(forKey: Self.activePageKey),
+              let page = MainPage(rawValue: raw),
+              page != .chat else { return }
+        navigateTo(page)
     }
 
     func openSettings() {
-        showSettings = true
+        // Settings is now a full page (#15) rather than a modal. Keep the modal
+        // flag clear and route via the page so existing callers (sidebar gear,
+        // smoke hook, ⌘,) all land on the same surface.
+        showSettings = false
+        navigateTo(.settings)
     }
 
     func closeSettings() {
         showSettings = false
+        if activePage == .settings {
+            navigateTo(.home)
+        }
     }
 
     func openHooksReview() {
@@ -622,7 +744,9 @@ final class AppViewModel {
         switch sidebarGroupBy {
         case .flatList:
             return []
-        case .project:
+        case .project, .projectBranch:
+            // Both surface the project list; the Sidebar lane renders the
+            // per-branch sub-grouping for `.projectBranch` from these projects.
             var groups: [SidebarProjectGroup] = []
             if !active.isEmpty {
                 groups.append(SidebarProjectGroup(id: "active", title: "", projects: active))
@@ -1003,6 +1127,35 @@ final class AppViewModel {
         UserDefaults.standard.set(Array(archivedProjectPaths), forKey: archivedProjectsKey)
     }
 
+    /// Restore appearance / layout preferences from UserDefaults. Reads each key
+    /// only if present so the inline defaults (system / 290 / collapsed=false /
+    /// sendOnReturn=true / warm=true) stand in for a fresh install. Runs early
+    /// (from `init`) so there's no light→dark flash on launch.
+    private func loadAppearancePreferences() {
+        let d = UserDefaults.standard
+        if let raw = d.string(forKey: Self.appearanceKey),
+           let value = AppAppearance(rawValue: raw) {
+            appearance = value
+        }
+        if d.object(forKey: Self.sidebarWidthKey) != nil {
+            sidebarWidth = min(max(d.double(forKey: Self.sidebarWidthKey), 220), 420)
+        }
+        if d.object(forKey: Self.sidebarCollapsedKey) != nil {
+            sidebarCollapsed = d.bool(forKey: Self.sidebarCollapsedKey)
+        }
+        if d.object(forKey: Self.sendOnReturnKey) != nil {
+            sendOnReturn = d.bool(forKey: Self.sendOnReturnKey)
+        }
+        if d.object(forKey: Self.warmSessionKey) != nil {
+            warmSessionEnabled = d.bool(forKey: Self.warmSessionKey)
+        }
+    }
+
+    /// Toggle the sidebar collapsed state (didSet persists it).
+    func toggleSidebarCollapsed() {
+        sidebarCollapsed.toggle()
+    }
+
     private func relativeAge(from date: Date?) -> String {
         guard let date else { return "" }
         let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
@@ -1024,14 +1177,21 @@ final class AppViewModel {
 
     private func saveRoots() {
         let paths = projectRoots.map(\.path)
-        if let data = try? JSONEncoder().encode(paths) {
+        do {
+            let data = try JSONEncoder().encode(paths)
             UserDefaults.standard.set(data, forKey: rootsKey)
+        } catch {
+            // Never silently drop the project-roots write.
+            #if DEBUG
+            print("[AppViewModel] Failed to persist project roots: \(error)")
+            #endif
         }
     }
 
     init() {
         loadRoots()
         loadSidebarPreferences()
+        loadAppearancePreferences()
         setupActiveAppObserver()
     }
 }

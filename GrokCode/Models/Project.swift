@@ -44,6 +44,16 @@ struct ProjectThread: Identifiable, Hashable, Codable {
     let id: String
     var title: String
     var ageLabel: String
+    /// Git branch this thread was worked on, if known (used by the
+    /// "By project → branch" sidebar grouping). Optional/back-compatible.
+    var branch: String?
+
+    init(id: String, title: String, ageLabel: String, branch: String? = nil) {
+        self.id = id
+        self.title = title
+        self.ageLabel = ageLabel
+        self.branch = branch
+    }
 }
 
 struct GrokSession: Identifiable, Hashable {
@@ -111,6 +121,16 @@ struct GrokModelOption: Identifiable, Hashable {
     let id: String
     var isDefault: Bool
 
+    /// Model ids that are known *fast* (non-reasoning) agents. Anything not in
+    /// this set is treated as a reasoning model (see `isReasoningModel`).
+    static let knownFastModelIDs: Set<String> = [
+        "grok-composer-2.5-fast",
+        "grok-composer-2.5",
+        "grok-build",
+        "grok-code-fast",
+        "grok-code-fast-1",
+    ]
+
     /// Friendly, human-readable name for the model id.
     var displayName: String {
         switch id {
@@ -118,13 +138,16 @@ struct GrokModelOption: Identifiable, Hashable {
         case "grok-composer-2.5": return "Composer 2.5"
         case "grok-build": return "Build"
         case "grok-4": return "Grok 4"
+        case "grok-4-fast": return "Grok 4 Fast"
         default:
-            // Fall back to a title-cased version of the raw id.
-            return id
+            // Fall back to a title-cased version of the raw id, with common
+            // suffixes normalised (e.g. "2.5" stays intact, "fast" → "Fast").
+            let cleaned = id
                 .replacingOccurrences(of: "grok-", with: "")
                 .split(separator: "-")
                 .map { $0.prefix(1).uppercased() + $0.dropFirst() }
                 .joined(separator: " ")
+            return cleaned.isEmpty ? id : cleaned
         }
     }
 
@@ -133,9 +156,14 @@ struct GrokModelOption: Identifiable, Hashable {
         isDefault ? "\(displayName) (default)" : displayName
     }
 
-    /// True for models that perform multi-step reasoning and honor a reasoning effort level.
+    /// True for models that perform multi-step reasoning and honor a reasoning
+    /// effort level. Less brittle than an exact id match: any `grok-4*` model or
+    /// anything advertising "reasoning" qualifies, as does any id not on the
+    /// known-fast list (so newly-released reasoning models default to reasoning).
     var isReasoningModel: Bool {
-        id == "grok-4"
+        let lower = id.lowercased()
+        if lower.contains("grok-4") || lower.contains("reasoning") { return true }
+        return !Self.knownFastModelIDs.contains(id)
     }
 }
 
@@ -202,6 +230,7 @@ enum MainPage: String, CaseIterable, Identifiable, Hashable {
     case search
     case plugins
     case automations
+    case settings
 
     var id: String { rawValue }
 }

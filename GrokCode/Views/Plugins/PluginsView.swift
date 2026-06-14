@@ -50,9 +50,30 @@ struct PluginsView: View {
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CodexTheme.mainBackground)
+        .overlay(alignment: .bottom) { toastOverlay }
         .onAppear {
             model.refreshPlugins()
+            model.syncInstalledFromGrok()
             searchFocused = false
+        }
+    }
+
+    // MARK: Toast (#33)
+
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let toast = model.pluginToast {
+            PluginToast(text: toast)
+                .padding(.bottom, 28)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .id(toast)
+                .task(id: toast) {
+                    // Auto-dismiss ~2.5s after the latest toast appears. Keyed on
+                    // the text so a new toast restarts the timer rather than being
+                    // cut short by a previous one.
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    withAnimation(CodexMotion.quickSpring) { model.pluginToast = nil }
+                }
         }
     }
 
@@ -163,6 +184,12 @@ struct PluginsView: View {
 
     // MARK: Filtering
 
+    /// True when there's an active (non-whitespace) search query. While true the
+    /// results span every tab (#35) rather than just the selected one.
+    private var isSearching: Bool {
+        !model.pluginSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func matchesQuery(_ plugin: Plugin) -> Bool {
         let q = model.pluginSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return true }
@@ -187,6 +214,57 @@ struct PluginsView: View {
 
     @ViewBuilder
     private var content: some View {
+        if isSearching {
+            globalSearchContent
+        } else {
+            tabContent
+        }
+    }
+
+    /// #35 — while searching, results span every tab. Each non-empty category is
+    /// shown as its own section so the user finds a match without hunting through
+    /// tabs; the segment badges above already reflect the per-tab match counts.
+    @ViewBuilder
+    private var globalSearchContent: some View {
+        let totalMatches = marketplaceFiltered.count + importFiltered.count + installedFiltered.count
+        if totalMatches == 0 {
+            emptyState(symbol: "magnifyingglass", title: "No matches",
+                       subtitle: "Nothing across Discover, Import or Installed matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
+        } else {
+            if !installedFiltered.isEmpty {
+                searchSection(icon: "checkmark.seal", title: "Installed", tab: .installed, items: installedFiltered)
+            }
+            if !marketplaceFiltered.isEmpty {
+                searchSection(icon: "sparkles", title: "Discover", tab: .discover, items: marketplaceFiltered)
+            }
+            if !importFiltered.isEmpty {
+                searchSection(icon: "square.and.arrow.down", title: "Import", tab: .importing, items: importFiltered)
+            }
+        }
+    }
+
+    /// One category block in global-search mode. Tapping the header jumps to that
+    /// tab (and the search box keeps filtering it there).
+    private func searchSection(icon: String, title: String, tab destination: Tab, items: [Plugin]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(CodexMotion.quickSpring) { tab = destination }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.accentOrange)
+                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
+                    Text("\(items.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            cardStack(items)
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
         switch tab {
         case .discover:
             if marketplaceFiltered.isEmpty {
@@ -286,6 +364,7 @@ struct PluginsView: View {
 private struct PluginRow: View {
     @Environment(AppViewModel.self) private var model
     let plugin: Plugin
+    @State private var showConfigure = false
 
     private var tint: Color {
         Color(red: plugin.sourceTool.tint.red, green: plugin.sourceTool.tint.green, blue: plugin.sourceTool.tint.blue)
@@ -293,6 +372,12 @@ private struct PluginRow: View {
 
     private var hasMeaningfulSubtitle: Bool {
         plugin.subtitle.trimmingCharacters(in: CharacterSet(charactersIn: "> \n\t-—·")).count > 1
+    }
+
+    /// Env vars / API keys are only configurable on MCP servers (the only kind
+    /// grok launches with an `--env` blob), and only once installed.
+    private var canConfigure: Bool {
+        plugin.isInstalled && plugin.kind == .mcpServer
     }
 
     var body: some View {
@@ -319,12 +404,32 @@ private struct PluginRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 12)
+            if canConfigure { configureButton }
             actionControl
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .codexHover(cornerRadius: 11)
+        .sheet(isPresented: $showConfigure) {
+            PluginConfigureSheet(plugin: plugin)
+        }
+    }
+
+    private var configureButton: some View {
+        Button { showConfigure = true } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .medium))
+                Text("Configure").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(CodexTheme.textSecondary)
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .background(Capsule().fill(CodexTheme.pillBackground))
+            .overlay(Capsule().strokeBorder(CodexTheme.divider, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Edit environment variables / API keys for \(plugin.displayName)")
     }
 
     private var icon: some View {
@@ -347,7 +452,7 @@ private struct PluginRow: View {
     @ViewBuilder
     private var actionControl: some View {
         if plugin.isInstalled {
-            Button { model.removePlugin(plugin) } label: {
+            Button { model.removePluginViaGrok(plugin) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
                     Text("Installed").font(.system(size: 12, weight: .medium))
@@ -361,7 +466,7 @@ private struct PluginRow: View {
             .buttonStyle(.plain)
             .help("Remove \(plugin.displayName)")
         } else {
-            Button { model.installPlugin(plugin) } label: {
+            Button { model.installPluginViaGrok(plugin) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "plus").font(.system(size: 11, weight: .bold))
                     Text(plugin.sourceTool == .builtin ? "Add" : "Import").font(.system(size: 12, weight: .semibold))
@@ -374,5 +479,241 @@ private struct PluginRow: View {
             .buttonStyle(.plain)
             .help("Add \(plugin.displayName)")
         }
+    }
+}
+
+// MARK: - Toast (#33)
+
+/// A small bottom-anchored confirmation pill (e.g. "Added cloudflare"). Auto-
+/// dismissal is owned by the presenting view's `.task(id:)`.
+private struct PluginToast: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(CodexTheme.accentOrange)
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(CodexTheme.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule(style: .continuous)
+                .fill(CodexTheme.composerBackground)
+                .shadow(color: CodexTheme.shadowColor.opacity(0.28), radius: 14, y: 5)
+        )
+        .overlay(Capsule(style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+    }
+}
+
+// MARK: - Configure sheet (#34)
+
+/// Edit a plugin's environment variables / API keys (`Plugin.env`). On save the
+/// values are persisted and, for MCP servers, re-registered with grok via
+/// `updatePluginEnv` so `--env KEY=VALUE` reaches the launched server.
+private struct PluginConfigureSheet: View {
+    @Environment(AppViewModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let plugin: Plugin
+
+    /// Editable KEY/VALUE rows. Order is stabilised on appear; `id` keeps row
+    /// identity stable across edits (so focus / SwiftUI diffing behaves).
+    @State private var rows: [EnvRow] = []
+
+    private struct EnvRow: Identifiable {
+        let id = UUID()
+        var key: String
+        var value: String
+    }
+
+    private var tint: Color {
+        Color(red: plugin.sourceTool.tint.red, green: plugin.sourceTool.tint.green, blue: plugin.sourceTool.tint.blue)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider().background(CodexTheme.divider)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    intro
+                    if rows.isEmpty {
+                        emptyRowsState
+                    } else {
+                        ForEach($rows) { $row in
+                            envRow($row)
+                        }
+                    }
+                    addRowButton
+                }
+                .padding(20)
+            }
+            .frame(maxHeight: 360)
+            Divider().background(CodexTheme.divider)
+            footer
+        }
+        .frame(width: 540)
+        .background(CodexTheme.mainBackground)
+        .onAppear(perform: seedRows)
+    }
+
+    // MARK: Header / footer
+
+    private var header: some View {
+        HStack(spacing: 11) {
+            Image(systemName: plugin.iconSystemName)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Configure \(plugin.displayName)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Text(plugin.sourceKindCaption)
+                    .font(.system(size: 12))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            Spacer()
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                    .frame(width: 26, height: 26)
+                    .codexHover(cornerRadius: 7)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            Button { dismiss() } label: {
+                Text("Cancel")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(CodexTheme.pillBackground))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(CodexPressableStyle())
+            .codexHoverOverlay(cornerRadius: 9)
+
+            Button(action: save) {
+                Text("Save")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(CodexTheme.sendButtonActiveBackground))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(CodexPressableStyle())
+            .codexHoverOverlay(cornerRadius: 9)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: Body pieces
+
+    private var intro: some View {
+        Text("Set environment variables passed to this server (e.g. API keys). They're stored with the plugin and applied as --env KEY=VALUE when grok launches it.")
+            .font(.system(size: 12))
+            .foregroundStyle(CodexTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var emptyRowsState: some View {
+        Text("No variables yet. Add one below.")
+            .font(.system(size: 13))
+            .foregroundStyle(CodexTheme.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+    }
+
+    private func envRow(_ row: Binding<EnvRow>) -> some View {
+        HStack(spacing: 8) {
+            TextField("", text: row.key)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, design: .monospaced))
+                .placeholderOverlay("KEY", visible: row.wrappedValue.key.isEmpty, font: .system(size: 13, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .frame(width: 180, alignment: .leading)
+                .background(inputBackground)
+
+            Text("=").font(.system(size: 13, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+
+            TextField("", text: row.value)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, design: .monospaced))
+                .placeholderOverlay("value", visible: row.wrappedValue.value.isEmpty, font: .system(size: 13, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(inputBackground)
+
+            Button { removeRow(row.wrappedValue.id) } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Remove this variable")
+        }
+    }
+
+    private var addRowButton: some View {
+        Button { rows.append(EnvRow(key: "", value: "")) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                Text("Add variable").font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(CodexTheme.textSecondary)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(CodexTheme.pillBackground))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .codexHoverOverlay(cornerRadius: 9)
+    }
+
+    private var inputBackground: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(CodexTheme.composerBackground)
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(CodexTheme.composerBorder, lineWidth: 1))
+    }
+
+    // MARK: Actions
+
+    private func seedRows() {
+        rows = plugin.env
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { EnvRow(key: $0.key, value: $0.value) }
+    }
+
+    private func removeRow(_ id: UUID) {
+        rows.removeAll { $0.id == id }
+    }
+
+    private func save() {
+        // Collapse rows to a map: trimmed non-empty keys win; later rows override
+        // earlier duplicates.
+        var env: [String: String] = [:]
+        for row in rows {
+            let key = row.key.trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            env[key] = row.value
+        }
+        model.updatePluginEnv(plugin, env: env)
+        dismiss()
     }
 }

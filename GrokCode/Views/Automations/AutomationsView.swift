@@ -40,7 +40,7 @@ struct AutomationsView: View {
                             AutomationCard(
                                 automation: automation,
                                 onToggle: { model.toggleAutomation(automation) },
-                                onRun: { model.runAutomation(automation) },
+                                onRun: { await model.runAutomationNow(automation) },
                                 onEdit: { editorMode = .edit(automation) },
                                 onDelete: { model.deleteAutomation(automation) }
                             )
@@ -179,15 +179,34 @@ struct AutomationsView: View {
 private struct AutomationCard: View {
     let automation: Automation
     let onToggle: () -> Void
-    let onRun: () -> Void
+    /// Awaitable run that reports success, so the card can drive its inline
+    /// running → ✓ / ✗ feedback.
+    let onRun: () async -> Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
+
+    /// Inline run feedback for #36. `.idle` shows the normal button; `.running`
+    /// shows a spinner; `.succeeded` / `.failed` show a transient ✓ / ✗ that
+    /// settles back to `.idle`.
+    private enum RunState: Equatable {
+        case idle, running, succeeded, failed
+    }
+
+    @State private var runState: RunState = .idle
+    @State private var confirmingDelete = false
 
     private var lastRunLabel: String {
         guard let lastRun = automation.lastRun else { return "Never run" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return "Ran " + formatter.localizedString(for: lastRun, relativeTo: Date())
+    }
+
+    private var nextRunLabel: String? {
+        guard let next = automation.nextRun() else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return "Next " + formatter.localizedString(for: next, relativeTo: Date())
     }
 
     var body: some View {
@@ -238,18 +257,29 @@ private struct AutomationCard: View {
 
                 Spacer(minLength: 8)
 
-                Text(lastRunLabel)
-                    .font(.system(size: 11))
-                    .foregroundStyle(CodexTheme.textTertiary)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(lastRunLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                    if let nextRunLabel {
+                        Text(nextRunLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                    }
+                }
+            }
+
+            if !automation.runHistory.isEmpty {
+                runHistoryTrail
             }
 
             HStack(spacing: 8) {
-                actionButton("Run now", systemImage: "play.fill", prominent: true) {
-                    onRun()
-                }
+                runButton
                 actionButton("Edit", systemImage: "pencil") { onEdit() }
                 Spacer(minLength: 0)
-                actionButton("Delete", systemImage: "trash", destructive: true) { onDelete() }
+                actionButton("Delete", systemImage: "trash", destructive: true) {
+                    confirmingDelete = true
+                }
             }
         }
         .padding(16)
@@ -262,6 +292,113 @@ private struct AutomationCard: View {
                 .strokeBorder(CodexTheme.divider, lineWidth: 1)
         )
         .opacity(automation.enabled ? 1 : 0.6)
+        .confirmationDialog(
+            "Delete “\(automation.displayName)”?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete automation", role: .destructive) { onDelete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the saved prompt and its schedule. This can’t be undone.")
+        }
+    }
+
+    // MARK: Run button + state machine
+
+    @ViewBuilder
+    private var runButton: some View {
+        switch runState {
+        case .running:
+            runStatusPill {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                    .frame(width: 12, height: 12)
+                Text("Running…")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CodexTheme.textSecondary)
+            }
+        case .succeeded:
+            runStatusPill {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.green)
+                Text("Done")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CodexTheme.textPrimary)
+            }
+        case .failed:
+            runStatusPill {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(CodexTheme.errorForeground)
+                Text("Failed")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CodexTheme.errorForeground)
+            }
+        case .idle:
+            actionButton("Run now", systemImage: "play.fill", prominent: true) {
+                runNow()
+            }
+        }
+    }
+
+    /// Shared chrome for the non-idle run states so the button doesn't resize
+    /// jarringly between spinner / ✓ / ✗.
+    private func runStatusPill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 5) {
+            content()
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(CodexTheme.pillBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(CodexTheme.divider, lineWidth: 1)
+        )
+        .transition(.opacity)
+    }
+
+    private func runNow() {
+        guard runState != .running else { return }
+        withAnimation(.easeInOut(duration: 0.15)) { runState = .running }
+        Task {
+            let ok = await onRun()
+            withAnimation(.easeInOut(duration: 0.15)) {
+                runState = ok ? .succeeded : .failed
+            }
+            // Settle back to the button after a short beat.
+            try? await Task.sleep(nanoseconds: ok ? 1_400_000_000 : 2_200_000_000)
+            withAnimation(.easeInOut(duration: 0.2)) { runState = .idle }
+        }
+    }
+
+    // MARK: Run history trail
+
+    private var runHistoryTrail: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(CodexTheme.textTertiary)
+            ForEach(automation.runHistory) { run in
+                Image(systemName: run.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(run.ok ? Color.green : CodexTheme.errorForeground)
+                    .help(runTooltip(run))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func runTooltip(_ run: AutomationRun) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return (run.ok ? "Succeeded " : "Failed ") + formatter.string(from: run.date)
     }
 
     private var modelLabel: String {
@@ -355,11 +492,29 @@ private struct AutomationEditorSheet: View {
 
     private var isEditing: Bool { seed != nil }
 
-    private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !modelId.isEmpty
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    private var trimmedPrompt: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// First failed validation rule, or `nil` when the form is savable. Drives the
+    /// disabled Save button and the inline footer hint.
+    private var validationMessage: String? {
+        if trimmedName.isEmpty { return "Add a name." }
+        if trimmedName.count > Automation.maxNameLength {
+            return "Name is too long (max \(Automation.maxNameLength))."
+        }
+        if trimmedPrompt.isEmpty { return "Add a prompt." }
+        if trimmedPrompt.count > Automation.maxPromptLength {
+            return "Prompt is too long (max \(Automation.maxPromptLength))."
+        }
+        if modelId.isEmpty { return "Pick a model." }
+        return nil
+    }
+
+    private var canSave: Bool { validationMessage == nil }
 
     private var projectLabel: String {
         guard let projectPath, !projectPath.isEmpty else { return "Home (no project)" }
@@ -396,7 +551,9 @@ private struct AutomationEditorSheet: View {
             Divider().background(CodexTheme.divider)
 
             VStack(alignment: .leading, spacing: 18) {
-                    field("Name") {
+                    field("Name", trailing: AnyView(
+                        counter(trimmedName.count, limit: Automation.maxNameLength)
+                    )) {
                         TextField("", text: $name)
                             .textFieldStyle(.plain)
                             .font(.system(size: 14))
@@ -404,9 +561,16 @@ private struct AutomationEditorSheet: View {
                             .placeholderOverlay("Weekly release notes", visible: name.isEmpty, font: .system(size: 14))
                             .padding(10)
                             .background(inputBackground)
+                            .onChange(of: name) { _, newValue in
+                                if newValue.count > Automation.maxNameLength {
+                                    name = String(newValue.prefix(Automation.maxNameLength))
+                                }
+                            }
                     }
 
-                    field("Prompt") {
+                    field("Prompt", trailing: AnyView(
+                        counter(trimmedPrompt.count, limit: Automation.maxPromptLength)
+                    )) {
                         ZStack(alignment: .topLeading) {
                             if prompt.isEmpty {
                                 Text("Describe what Grok should do each run…")
@@ -422,6 +586,11 @@ private struct AutomationEditorSheet: View {
                                 .scrollContentBackground(.hidden)
                                 .padding(6)
                                 .frame(minHeight: 96)
+                                .onChange(of: prompt) { _, newValue in
+                                    if newValue.count > Automation.maxPromptLength {
+                                        prompt = String(newValue.prefix(Automation.maxPromptLength))
+                                    }
+                                }
                         }
                         .background(inputBackground)
                     }
@@ -459,7 +628,8 @@ private struct AutomationEditorSheet: View {
                                     ForEach(models) { option in
                                         CodexMenuItem(
                                             title: option.menuName,
-                                            systemImage: "cpu",
+                                            subtitle: option.isReasoningModel ? "Reasoning" : nil,
+                                            systemImage: option.isReasoningModel ? "brain" : "cpu",
                                             isSelected: option.id == modelId
                                         ) {
                                             modelId = option.id; close()
@@ -502,6 +672,15 @@ private struct AutomationEditorSheet: View {
 
             // Footer
             HStack(spacing: 10) {
+                if let validationMessage {
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 11, weight: .regular))
+                        Text(validationMessage)
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(CodexTheme.textTertiary)
+                }
                 Spacer()
                 Button(action: onCancel) {
                     Text("Cancel")
@@ -593,14 +772,38 @@ private struct AutomationEditorSheet: View {
 
     // MARK: Reusable pieces
 
-    private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func field<Content: View>(
+        _ title: String,
+        trailing: AnyView? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CodexTheme.textTertiary)
+            HStack(spacing: 8) {
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                if let trailing {
+                    Spacer(minLength: 8)
+                    trailing
+                }
+            }
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A right-aligned "count/limit" counter that turns warning-coloured as it
+    /// approaches the cap. Only renders once you're within ~15% of the limit so
+    /// it stays quiet for short inputs.
+    @ViewBuilder
+    private func counter(_ count: Int, limit: Int) -> some View {
+        let threshold = max(limit - max(limit / 6, 10), 0)
+        if count >= threshold {
+            Text("\(count)/\(limit)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(count >= limit ? CodexTheme.errorForeground : CodexTheme.textTertiary)
+                .monospacedDigit()
+        }
     }
 
     private var inputBackground: some View {
@@ -687,8 +890,6 @@ private struct AutomationEditorSheet: View {
 
     private func save() {
         guard canSave else { return }
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let interval: Int? = scheduleKind == .interval ? intervalMinutes : nil
         let time: String? = scheduleKind == .daily ? timeOfDay : nil
 
@@ -705,7 +906,8 @@ private struct AutomationEditorSheet: View {
                 timeOfDay: time,
                 enabled: enabled,
                 lastRun: seed.lastRun,
-                createdAt: seed.createdAt
+                createdAt: seed.createdAt,
+                runHistory: seed.runHistory          // preserve the run trail on edit
             )
         } else {
             automation = Automation(

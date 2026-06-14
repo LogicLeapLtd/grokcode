@@ -5,9 +5,11 @@ struct SidebarControlsBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
+            // #21 — larger, heavier "Projects" header so the chat column reads
+            // as a titled section rather than a faint caption.
             Text("Projects")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(CodexTheme.textTertiary)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(CodexTheme.textSecondary)
 
             Spacer(minLength: 0)
 
