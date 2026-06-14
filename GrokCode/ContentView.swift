@@ -33,6 +33,13 @@ struct ContentView: View {
                     )
             }
         }
+        .overlay {
+            if model.commandPaletteOpen {
+                CommandPalette()
+                    .zIndex(100)
+            }
+        }
+        .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
         .codexMenuHost()
         .focusEffectDisabled()
         .background(WindowConfigurator())

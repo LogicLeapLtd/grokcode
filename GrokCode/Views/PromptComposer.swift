@@ -8,6 +8,18 @@ struct PromptComposer: View {
     /// Highlights the composer while a file drag hovers over it (#13).
     @State private var isDropTargeted = false
 
+    // MARK: Inline completions (slash commands + @file mentions)
+
+    /// Bounded file index for `@` mentions, rebuilt when the project changes.
+    @State private var fileIndex: [ComposerFileMatch] = []
+    /// The project path the current `fileIndex` was built for (dedupes rescans).
+    @State private var indexedProjectPath: String?
+    /// Highlighted row in the open completion menu (arrow-key navigation).
+    @State private var completionSelection = 0
+    /// When `/model` is chosen, the menu expands into an inline model picker
+    /// instead of navigating away (kept in-lane — no AppViewModel state needed).
+    @State private var showingInlineModelPicker = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !model.pendingHooks.isEmpty {
@@ -88,6 +100,42 @@ struct PromptComposer: View {
         .onAppear { isFocused = true }
     }
 
+    // MARK: - Inline completion model
+
+    /// What the composer is completing right now, derived from the prompt text.
+    /// Suppressed entirely while a run is in flight (the field is for queuing a
+    /// follow-up then, not issuing commands).
+    private var activeCompletion: ComposerCompletion {
+        guard !model.isRunning else { return .none }
+        return ComposerCompletion.detect(in: model.promptText)
+    }
+
+    /// The slash commands matching the current "/query" (empty when not slashing).
+    private var slashMatches: [SlashCommand] {
+        if case let .slash(query) = activeCompletion { return SlashCommand.matching(query) }
+        return []
+    }
+
+    /// The file matches for the current "@query" (empty when not mentioning).
+    private var fileMatches: [ComposerFileMatch] {
+        if case let .file(query) = activeCompletion {
+            return ComposerFileIndex.matches(query, in: fileIndex)
+        }
+        return []
+    }
+
+    /// Whether a completion menu is currently on screen.
+    private var completionMenuVisible: Bool {
+        switch activeCompletion {
+        case .slash:
+            return showingInlineModelPicker ? !model.models.isEmpty : !slashMatches.isEmpty
+        case .file:
+            return !fileMatches.isEmpty
+        case .none:
+            return false
+        }
+    }
+
     private var inputArea: some View {
         // While a run is in flight, Codex keeps the field live so you can queue
         // a follow-up; the placeholder hints at that.
@@ -102,7 +150,27 @@ struct PromptComposer: View {
         .frame(minHeight: 22, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .focused($isFocused)
+        // Keep the completion menu's highlighted row & inline-picker state sane
+        // as the query changes underneath it.
+        .onChange(of: model.promptText) { _, _ in
+            completionSelection = 0
+            // Leaving slash context (e.g. text cleared / a space typed) closes
+            // the inline model picker.
+            if case .slash = activeCompletion {} else { showingInlineModelPicker = false }
+        }
+        .task(id: model.selectedProject?.path.path) { await rebuildFileIndexIfNeeded() }
+        // Arrow / Tab / Return navigation for the completion menu. These run
+        // BEFORE the send-on-return handler below, so when the menu is open
+        // Return accepts a completion instead of sending.
+        .onKeyPress(.upArrow) { moveCompletionSelection(-1) }
+        .onKeyPress(.downArrow) { moveCompletionSelection(1) }
+        .onKeyPress(.tab) { acceptHighlightedCompletion() }
         .onKeyPress(.return, phases: .down) { press in
+            // When the completion menu is open, plain Return accepts the
+            // highlighted row rather than sending the message.
+            if completionMenuVisible, !press.modifiers.contains(.shift) {
+                return acceptHighlightedCompletion()
+            }
             // Respect the send-on-return preference (#13 / Settings):
             //  • sendOnReturn:  plain Return sends; ⇧-Return inserts a newline.
             //  • !sendOnReturn: plain Return inserts a newline; ⌘/⇧-Return sends.
@@ -117,6 +185,12 @@ struct PromptComposer: View {
             return .handled
         }
         .onKeyPress(.escape) {
+            // An open completion menu swallows Esc first (just dismiss it).
+            if completionMenuVisible {
+                if showingInlineModelPicker { showingInlineModelPicker = false }
+                else { dismissCompletionMenu() }
+                return .handled
+            }
             // Esc stops an in-flight run (menus, when open, swallow Esc first).
             if model.isRunning { model.cancelRun(); return .handled }
             return .ignored
@@ -132,6 +206,232 @@ struct PromptComposer: View {
                             visible: model.promptText.isEmpty,
                             alignment: .topLeading,
                             font: CodexTheme.bodyFont)
+        // Completion menu floats above the field (Codex-styled card). The
+        // `.bottom → .top` alignment guide flips it to sit above the anchor.
+        .overlay(alignment: .bottomLeading) {
+            completionMenu
+                .alignmentGuide(.bottom) { d in d[.top] }
+                .offset(y: -6)
+                .animation(.easeOut(duration: 0.12), value: completionMenuVisible)
+                .animation(.easeOut(duration: 0.10), value: completionSelection)
+                .animation(.easeOut(duration: 0.12), value: showingInlineModelPicker)
+        }
+    }
+
+    // MARK: - Completion menu surface
+
+    @ViewBuilder
+    private var completionMenu: some View {
+        if completionMenuVisible {
+            completionCard {
+                switch activeCompletion {
+                case .slash:
+                    if showingInlineModelPicker {
+                        inlineModelRows
+                    } else {
+                        slashRows
+                    }
+                case .file:
+                    fileRows
+                case .none:
+                    EmptyView()
+                }
+            }
+            .frame(maxWidth: 360, alignment: .leading)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    /// The floating card chrome, matched to `CodexMenu`'s host styling.
+    private func completionCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 1) { content() }
+            .padding(5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(CodexTheme.menuBackground)
+                    .shadow(color: CodexTheme.menuShadow, radius: 16, y: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
+            )
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var slashRows: some View {
+        let matches = slashMatches
+        return ForEach(Array(matches.enumerated()), id: \.element.id) { idx, cmd in
+            CompletionRow(
+                title: cmd.title,
+                subtitle: cmd.subtitle,
+                systemImage: cmd.systemImage,
+                isHighlighted: idx == clampedSelection(matches.count)
+            ) { runSlashCommand(cmd) }
+            .onHover { if $0 { completionSelection = idx } }
+        }
+    }
+
+    @ViewBuilder
+    private var inlineModelRows: some View {
+        CodexMenuSectionHeader(title: "Model")
+        ForEach(Array(model.models.enumerated()), id: \.element.id) { idx, option in
+            CompletionRow(
+                title: option.displayName,
+                subtitle: option.isReasoningModel ? "Reasoning" : "Fast",
+                systemImage: option.isReasoningModel ? "brain" : "bolt",
+                isHighlighted: idx == clampedSelection(model.models.count),
+                isSelected: model.selectedModel == option
+            ) {
+                model.selectedModel = option
+                showingInlineModelPicker = false
+                clearSlashText()
+            }
+            .onHover { if $0 { completionSelection = idx } }
+        }
+    }
+
+    private var fileRows: some View {
+        let matches = fileMatches
+        return ForEach(Array(matches.enumerated()), id: \.element.id) { idx, match in
+            CompletionRow(
+                title: match.relativePath.isEmpty ? match.fileName : match.relativePath,
+                subtitle: nil,
+                systemImage: match.iconSystemName,
+                isHighlighted: idx == clampedSelection(matches.count)
+            ) { insertFileMention(match) }
+            .onHover { if $0 { completionSelection = idx } }
+        }
+    }
+
+    // MARK: - Completion logic
+
+    /// Number of rows in the currently-open menu, used to clamp navigation.
+    private var completionRowCount: Int {
+        switch activeCompletion {
+        case .slash: return showingInlineModelPicker ? model.models.count : slashMatches.count
+        case .file: return fileMatches.count
+        case .none: return 0
+        }
+    }
+
+    /// `completionSelection` clamped to a valid index for `count` rows.
+    private func clampedSelection(_ count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return min(max(0, completionSelection), count - 1)
+    }
+
+    /// Move the highlight by `delta`, wrapping. Swallows the key only when the
+    /// menu is open so arrow keys behave normally in plain text.
+    private func moveCompletionSelection(_ delta: Int) -> KeyPress.Result {
+        guard completionMenuVisible, completionRowCount > 0 else { return .ignored }
+        let count = completionRowCount
+        completionSelection = ((clampedSelection(count) + delta) % count + count) % count
+        return .handled
+    }
+
+    /// Run the highlighted row's action. Returns `.handled` when a menu was open.
+    private func acceptHighlightedCompletion() -> KeyPress.Result {
+        guard completionMenuVisible else { return .ignored }
+        let idx = clampedSelection(completionRowCount)
+        switch activeCompletion {
+        case .slash:
+            if showingInlineModelPicker {
+                let options = model.models
+                guard options.indices.contains(idx) else { return .handled }
+                let option = options[idx]
+                model.selectedModel = option
+                showingInlineModelPicker = false
+                clearSlashText()
+            } else {
+                let matches = slashMatches
+                guard matches.indices.contains(idx) else { return .handled }
+                runSlashCommand(matches[idx])
+            }
+        case .file:
+            let matches = fileMatches
+            guard matches.indices.contains(idx) else { return .handled }
+            insertFileMention(matches[idx])
+        case .none:
+            return .ignored
+        }
+        return .handled
+    }
+
+    /// Execute a slash command. Navigation commands clear the slash first; the
+    /// inline-model command flips the menu into a model picker in place.
+    private func runSlashCommand(_ cmd: SlashCommand) {
+        completionSelection = 0
+        switch cmd.kind {
+        case .navigation:
+            clearSlashText()
+            switch cmd.id {
+            case "new":         model.startNewChat()
+            case "search":      model.navigateTo(.search)
+            case "plugins":     model.navigateTo(.plugins)
+            case "automations": model.navigateTo(.automations)
+            case "settings":    model.navigateTo(.settings)
+            default: break
+            }
+        case .action:
+            switch cmd.id {
+            case "clear":
+                model.promptText = ""
+            case "plan":
+                model.isPlanMode.toggle()
+                clearSlashText()
+            default:
+                clearSlashText()
+            }
+        case .inlineModel:
+            // Stay in slash context, but render the model picker rows.
+            showingInlineModelPicker = true
+            completionSelection = max(0, model.models.firstIndex { $0 == model.selectedModel } ?? 0)
+        }
+    }
+
+    /// Replace the trailing `@query` token with the file's `[<path>]` attachment
+    /// token — the exact bracket format the composer already parses into chips.
+    private func insertFileMention(_ match: ComposerFileMatch) {
+        guard let atIndex = model.promptText.lastIndex(of: "@") else { return }
+        let token = "[\(match.absolutePath)]"
+        var text = model.promptText
+        text.replaceSubrange(atIndex..., with: token + " ")
+        model.promptText = text
+        completionSelection = 0
+    }
+
+    /// Clear the whole prompt when it's purely the slash command being run
+    /// (navigation/plan), so the field is empty after we jump away.
+    private func clearSlashText() {
+        if case .slash = ComposerCompletion.detect(in: model.promptText) {
+            model.promptText = ""
+        }
+        showingInlineModelPicker = false
+        completionSelection = 0
+    }
+
+    /// Force the menu shut (Esc with no inline picker open): drop the lone slash.
+    private func dismissCompletionMenu() {
+        if case .slash = activeCompletion { model.promptText = "" }
+        showingInlineModelPicker = false
+        completionSelection = 0
+    }
+
+    /// (Re)build the `@`-mention file index for the selected project, off-main.
+    /// Skipped when there's no project or the index is already current.
+    private func rebuildFileIndexIfNeeded() async {
+        guard let root = model.selectedProject?.path else {
+            fileIndex = []
+            indexedProjectPath = nil
+            return
+        }
+        let path = root.standardizedFileURL.path
+        guard path != indexedProjectPath else { return }
+        let scanned = await Task.detached(priority: .utility) {
+            ComposerFileIndex.scan(root: root)
+        }.value
+        fileIndex = scanned
+        indexedProjectPath = path
     }
 
     private var toolbarRow: some View {
@@ -426,6 +726,61 @@ struct PromptComposer: View {
 private extension AppViewModel {
     var canSend: Bool {
         !promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+// MARK: - Completion menu row
+
+/// A single row in the inline slash/@-mention completion menu. Mirrors
+/// `CodexMenuItem`'s look, but takes an externally-driven `isHighlighted` so the
+/// keyboard (arrow keys) and hover can both steer the selection.
+private struct CompletionRow: View {
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+    var isHighlighted: Bool = false
+    var isSelected: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 16)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 16)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? CodexTheme.hoverBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

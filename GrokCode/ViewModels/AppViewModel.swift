@@ -151,6 +151,16 @@ final class AppViewModel {
         set { permissionMode = newValue ? .plan : .fullAccess }
     }
 
+    /// Whether the ⌘K command palette overlay is presented. Driven by
+    /// `toggleCommandPalette()` (⌘K) and dismissed by the palette surface.
+    /// Transient — not persisted.
+    var commandPaletteOpen = false
+
+    /// ⌘K — show/hide the command palette overlay.
+    func toggleCommandPalette() {
+        commandPaletteOpen.toggle()
+    }
+
     private let grok = GrokCLIService.shared
     /// Set when the user taps Stop so the resulting termination is treated as a
     /// graceful cancel (no error surfaced, queue not auto-advanced).

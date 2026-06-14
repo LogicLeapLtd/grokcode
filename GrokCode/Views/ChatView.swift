@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppViewModel.self) private var model
@@ -10,6 +11,17 @@ struct ChatView: View {
             return String(firstUser.prefix(72))
         }
         return "New chat"
+    }
+
+    /// Settled turns that would actually land in an export — mirrors the filter
+    /// in `ChatExportService.markdown` (skips streaming, queued, and empty
+    /// turns). The export control only enables when this is non-empty so we
+    /// never offer to copy/save an empty document.
+    private var hasExportableMessages: Bool {
+        model.messages.contains { message in
+            !message.isStreaming && !message.isQueued
+                && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     /// Distance (pt) from the very bottom of the scroll content. 0 = pinned to
@@ -142,6 +154,8 @@ struct ChatView: View {
                 }
             }
             Spacer(minLength: 8)
+
+            exportControl
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
@@ -149,6 +163,58 @@ struct ChatView: View {
         .background(CodexTheme.mainBackground)
         .overlay(alignment: .bottom) {
             Rectangle().fill(CodexTheme.divider).frame(height: 1)
+        }
+    }
+
+    // MARK: - Export / share
+
+    /// Trailing-side "Export" control: a custom CodexMenu offering markdown
+    /// copy-to-clipboard and save-to-file. Disabled (dimmed, non-interactive)
+    /// until the conversation has at least one settled, non-empty turn.
+    private var exportControl: some View {
+        CodexMenuTrigger(minWidth: 220, edge: .bottom) { isOpen in
+            HStack(spacing: 5) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 12, weight: .medium))
+                Text("Export")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(isOpen ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Export chat")
+                CodexMenuItem(title: "Copy as Markdown", systemImage: "doc.on.doc") {
+                    copyMarkdown()
+                    close()
+                }
+                CodexMenuItem(title: "Save as Markdown…", systemImage: "arrow.down.doc") {
+                    close()
+                    saveMarkdown()
+                }
+            }
+        }
+        .disabled(!hasExportableMessages)
+        .opacity(hasExportableMessages ? 1 : 0.4)
+        .help(hasExportableMessages ? "Export this chat" : "Nothing to export yet")
+    }
+
+    private func copyMarkdown() {
+        let markdown = ChatExportService.markdown(from: model.messages, title: chatTitle)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown, forType: .string)
+    }
+
+    private func saveMarkdown() {
+        let markdown = ChatExportService.markdown(from: model.messages, title: chatTitle)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = ChatExportService.filename(for: chatTitle)
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+        panel.title = "Export Chat"
+        panel.prompt = "Export"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? markdown.data(using: .utf8)?.write(to: url, options: .atomic)
         }
     }
 }
