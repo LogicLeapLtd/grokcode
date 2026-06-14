@@ -353,6 +353,27 @@ final class AppViewModel {
             return
         }
 
+        // Inject a chat with synthetic tool calls so the ToolCallList renders
+        // deterministically for QA (no real grok turn / focus needed).
+        if env["GROKCODE_SMOKE_TOOLCALLS"] == "1" {
+            var assistant = ChatMessage(role: .assistant,
+                text: "This looks like a small Swift package — two source files and a README.")
+            assistant.toolCalls = [
+                ToolCallEntry(id: "t1", title: "Edit Sources/Foo.swift", kind: "edit",
+                              detail: "- let x = 1\n+ let x = 2", status: .done),
+                ToolCallEntry(id: "t2", title: "Execute ls -la", kind: "execute",
+                              detail: "$ ls -la\nFoo.swift\nBar.swift\nREADME.md", status: .done),
+                ToolCallEntry(id: "t3", title: "Read README.md", kind: "read",
+                              detail: "", status: .running),
+            ]
+            messages = [
+                ChatMessage(role: .user, text: "List the files and describe this project."),
+                assistant,
+            ]
+            navigateTo(.chat)
+            return
+        }
+
         if let g = env["GROKCODE_SMOKE_GROUPBY"], let gb = SidebarGroupBy(rawValue: g) {
             sidebarGroupBy = gb
         }
