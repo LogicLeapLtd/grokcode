@@ -47,6 +47,25 @@ struct PluginsView: View {
             model.refreshPlugins()
             model.syncInstalledFromGrok()
             searchFocused = false
+            // Refresh the community list from the marketplace (remote manifest,
+            // on-disk cache fallback) each time the page appears.
+            Task { await model.loadCommunityPlugins() }
+        }
+        .sheet(isPresented: Binding(
+            get: { model.publishSheetOpen },
+            set: { model.publishSheetOpen = $0 }
+        )) {
+            PublishPluginSheet(
+                onPublish: { entry in
+                    // Persist to the local published store + refresh the catalog,
+                    // and surface a toast — WITHOUT closing the sheet, so its
+                    // success state (copy manifest / open repo) stays visible.
+                    MarketplaceService.shared.publish(entry)
+                    model.refreshPublishedPlugins()
+                    model.pluginToast = "Published \(entry.name)"
+                },
+                onClose: { model.publishSheetOpen = false }
+            )
         }
     }
 
@@ -81,6 +100,7 @@ struct PluginsView: View {
                     .font(CodexTheme.headlineFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                 Spacer(minLength: 16)
+                publishButton
                 rescanButton
             }
             Text("Browse the GrokCode marketplace, or import MCP servers, skills and commands you already use in other tools.")
@@ -90,6 +110,24 @@ struct PluginsView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// Opens the in-app Publish sheet. Prominent (filled) so it reads as the
+    /// page's primary action, sitting just left of the quieter Rescan button.
+    private var publishButton: some View {
+        Button { model.publishSheetOpen = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "paperplane.fill").font(.system(size: 11, weight: .semibold))
+                Text("Publish a plugin").font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(CodexTheme.sendButtonActiveBackground))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 8)
+        .help("Publish your own plugin to the GrokCode marketplace")
     }
 
     private var rescanButton: some View {
@@ -207,6 +245,15 @@ struct PluginsView: View {
     private var importFiltered: [Plugin] { model.importablePlugins.filter(matchesQuery) }
     private var installedFiltered: [Plugin] { model.installedPlugins.filter(matchesQuery) }
 
+    /// Community marketplace plugins (loaded from `MarketplaceService`), with
+    /// `isInstalled` reflecting the installed set so the row's Add/Installed
+    /// control is correct.
+    private var communityFiltered: [Plugin] {
+        model.communityPlugins
+            .map { $0.settingInstalled(installedIDs.contains($0.id)) }
+            .filter(matchesQuery)
+    }
+
     // MARK: Content
 
     @ViewBuilder
@@ -264,12 +311,15 @@ struct PluginsView: View {
     private var tabContent: some View {
         switch tab {
         case .discover:
-            if marketplaceFiltered.isEmpty {
+            if marketplaceFiltered.isEmpty && communityFiltered.isEmpty {
                 emptyState(symbol: "magnifyingglass", title: "No matches",
                            subtitle: "Nothing in the marketplace matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
-                sectionHeaderRow(icon: "sparkles", title: "Curated by GrokCode", count: marketplaceFiltered.count)
-                cardStack(marketplaceFiltered)
+                if !marketplaceFiltered.isEmpty {
+                    sectionHeaderRow(icon: "sparkles", title: "Curated by GrokCode", count: marketplaceFiltered.count)
+                    cardStack(marketplaceFiltered)
+                }
+                communitySection
             }
         case .importing:
             if importFiltered.isEmpty {
@@ -311,11 +361,64 @@ struct PluginsView: View {
             .map { ($0.key, $0.value.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) }
     }
 
+    /// Community marketplace section, shown in Discover below the curated list.
+    /// Lists `communityFiltered` in the same row style as the curated cards
+    /// (with the publisher's author surfaced). When there's nothing to show and
+    /// no active search, a subtle invitation to publish takes its place.
+    @ViewBuilder
+    private var communitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeaderRow(icon: "person.2", title: "Community",
+                             count: communityFiltered.isEmpty ? 0 : communityFiltered.count)
+            if communityFiltered.isEmpty {
+                if isSearching {
+                    Text("No community plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Button { model.publishSheetOpen = true } label: {
+                        Text("No community plugins yet — be the first to publish.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Publish your own plugin to the GrokCode marketplace")
+                }
+            } else {
+                communityCardStack(communityFiltered)
+            }
+        }
+    }
+
+    /// Like `cardStack`, but each row carries a community author caption when the
+    /// entry provided one (preserved on `Plugin.rawConfig["author"]`).
+    private func communityCardStack(_ plugins: [Plugin]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(plugins.enumerated()), id: \.element.id) { index, plugin in
+                if index > 0 {
+                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
+                        .padding(.leading, PluginRow.Metrics.textColumnInset)
+                }
+                PluginRow(plugin: plugin, authorOverride: plugin.rawConfig["author"])
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.sidebarBackground))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private func sectionHeaderRow(icon: String, title: String, count: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.accentOrange)
             Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
-            Text("\(count)").font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+            // A zero count (e.g. an empty Community section) hides the badge
+            // rather than rendering a bare "0".
+            if count > 0 {
+                Text("\(count)").font(.system(size: 12, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+            }
             Spacer(minLength: 0)
         }
     }
@@ -359,6 +462,8 @@ struct PluginsView: View {
 private struct PluginRow: View {
     @Environment(AppViewModel.self) private var model
     let plugin: Plugin
+    /// When set (community rows), shows a "by <author>" caption under the title.
+    var authorOverride: String? = nil
     @State private var showConfigure = false
 
     /// Shared layout constants so the divider inset, icon column and text column
@@ -385,6 +490,16 @@ private struct PluginRow: View {
         plugin.isInstalled && plugin.kind == .mcpServer
     }
 
+    /// The third caption line. Community rows append a "· by <author>" suffix when
+    /// the entry carried one; everything else keeps the standard source·kind line.
+    private var captionText: String {
+        if let author = authorOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !author.isEmpty {
+            return "\(plugin.kind.label) · by \(author)"
+        }
+        return plugin.sourceKindCaption
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: Metrics.iconGutter) {
             icon
@@ -403,7 +518,7 @@ private struct PluginRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Text(plugin.sourceKindCaption)
+                Text(captionText)
                     .font(.system(size: 11))
                     .foregroundStyle(CodexTheme.textTertiary)
                     .lineLimit(1)

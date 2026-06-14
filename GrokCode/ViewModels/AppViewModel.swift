@@ -70,6 +70,16 @@ final class AppViewModel {
     var importablePlugins: [Plugin] = []
     /// Plugins the user has imported/installed (persisted full blobs).
     var installedPlugins: [Plugin] = []
+    /// Community marketplace plugins, loaded from `MarketplaceService` (remote
+    /// manifest, cached on disk). Refreshed on appear via `loadCommunityPlugins()`.
+    /// `isInstalled` reflects the persisted installed set at load time.
+    var communityPlugins: [Plugin] = []
+    /// The user's own published plugins (local published store). Surfaced so the
+    /// Plugins UI can list "Published by you" and re-open the publish sheet.
+    var publishedPlugins: [Plugin] = []
+    /// Drives presentation of the in-app "Publish a plugin" sheet on the Plugins
+    /// page. Transient — not persisted.
+    var publishSheetOpen = false
     /// User-defined automations (saved grok prompts + simple schedules).
     var automations: [Automation] = []
     /// Live filter text for the Plugins page search box.
@@ -173,6 +183,7 @@ final class AppViewModel {
     private let sessionIndex = SessionIndexService()
     private let pluginImport = PluginImportService()
     private let automationService = AutomationService()
+    private let marketplace = MarketplaceService.shared
     private let rootsKey = "grokcode.projectRoots"
     private let selectedProjectPathKey = "grokcode.selectedProjectPath"
     private let workWithoutProjectKey = "grokcode.workWithoutProject"
@@ -238,6 +249,8 @@ final class AppViewModel {
         }
 
         refreshPlugins()
+        refreshPublishedPlugins()
+        await loadCommunityPlugins()
         loadAutomations()
         automationService.startScheduler { [weak self] dueIDs in
             self?.runDueAutomations(dueIDs)
@@ -283,6 +296,13 @@ final class AppViewModel {
             case "hooks": openHooksReview()
             default: break
             }
+        }
+
+        // Open the Plugins page with the publish sheet up so QA can screenshot
+        // the publish flow deterministically.
+        if env["GROKCODE_SMOKE_PUBLISH"] == "1" {
+            navigateTo(.plugins)
+            publishSheetOpen = true
         }
 
         guard let prompt = env["GROKCODE_SMOKE_PROMPT"], !prompt.isEmpty else { return }
@@ -885,6 +905,41 @@ final class AppViewModel {
 
     /// Installed plugins, surfaced in the composer's "+ → Plugins" flyout.
     var activePlugins: [Plugin] { installedPlugins }
+
+    // MARK: - Community marketplace
+
+    /// Load the community marketplace from `MarketplaceService` (remote manifest,
+    /// with on-disk cache fallback) and map each entry to a `Plugin`, tagging
+    /// installed state from the persisted set. Never throws — on any failure the
+    /// service returns `[]` (or the last cached list) and `communityPlugins` is
+    /// simply set to whatever came back. Safe to call on appear / from a Rescan.
+    func loadCommunityPlugins() async {
+        let entries = await marketplace.loadCommunityEntries()
+        let installedIDs = Set(installedPlugins.map(\.id))
+        communityPlugins = entries.map { entry in
+            entry.toPlugin(isInstalled: installedIDs.contains(entry.id))
+        }
+    }
+
+    /// Reload the user's own published plugins from the local published store and
+    /// map them to `Plugin`s (with installed state). Cheap, synchronous.
+    func refreshPublishedPlugins() {
+        let installedIDs = Set(installedPlugins.map(\.id))
+        publishedPlugins = marketplace.loadPublishedEntries().map { entry in
+            entry.toPlugin(isInstalled: installedIDs.contains(entry.id))
+        }
+    }
+
+    /// Publish a plugin the user authored: append it to the local published store
+    /// and refresh `publishedPlugins`. Closes the publish sheet and surfaces a
+    /// toast. (The PR-submission JSON is rendered by `MarketplaceService` for the
+    /// surface lane to copy/open.)
+    func publishPlugin(_ entry: MarketplaceEntry) {
+        marketplace.publish(entry)
+        refreshPublishedPlugins()
+        publishSheetOpen = false
+        pluginToast = "Published \(entry.name)"
+    }
 
     // MARK: - Automations
 
