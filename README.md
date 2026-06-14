@@ -7,7 +7,8 @@
 [![macOS](https://img.shields.io/badge/macOS-15%2B-000000?style=flat&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=flat&logo=swift&logoColor=white)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-native-0A84FF?style=flat&logo=swift&logoColor=white)](https://developer.apple.com/xcode/swiftui/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22C55E?style=flat)](LICENSE)
+[![License: Commercial](https://img.shields.io/badge/License-Commercial-6366F1?style=flat)](LICENSE)
+[![Price: $39](https://img.shields.io/badge/Price-%2439_(%2424_launch)-0A84FF?style=flat)](#pricing)
 
 ![GrokCode chat](docs/chat.png)
 
@@ -51,35 +52,37 @@ It is, deliberately, the ChatGPT‑Codex desktop feel — rebuilt from the groun
 
 ---
 
+## Pricing
+
+GrokCode is a commercial product with a **one‑time** purchase — no subscription.
+
+- **$39** perpetual license — buy once, own it.
+- **$24 launch price** for early adopters.
+- One license activates on up to **2 of your devices**.
+- **7‑day free trial**, no card required — try it before you buy.
+
+> **Buy / start your trial:** _[grokcode download page](https://github.com/logicleaplabs/grokcode) — replace with the published purchase / trial URL._
+
+---
+
 ## Install
 
-### Download (recommended)
+### Download
 
-Grab the latest signed, notarized **`.dmg`** from the Releases page, drag GrokCode to **Applications**, and launch.
+Start the **7‑day free trial** or download your licensed copy from the GrokCode download page. Grab the signed, notarized **`.dmg`**, drag GrokCode to **Applications**, and launch. On first run you'll activate your license key (or begin the trial).
 
-> **Download:** _[Releases → latest `.dmg`](https://github.com/logicleaplabs/grokcode/releases) — replace with the published release URL._
-
-### Build from source
-
-Requires **Xcode** and the **`grok` CLI** installed at `~/.grok/bin/grok`.
-
-```bash
-git clone https://github.com/logicleaplabs/grokcode.git
-cd grokcode
-xcodebuild -project GrokCode.xcodeproj -scheme GrokCode -configuration Release
-```
-
-The built app lands in the Xcode build products directory (or your configured `-derivedDataPath`). Open it and you're running.
+> **Download:** _[grokcode download page](https://github.com/logicleaplabs/grokcode) — replace with the published download URL._
 
 ---
 
 ## Requirements
 
 - **macOS 15 or later** (Apple silicon or Intel).
-- The **`grok` CLI** installed at `~/.grok/bin/grok`.
+- A **GrokCode license** (or an active free trial) — activated on first launch.
+- The **`grok` CLI** installed at `~/.grok/bin/grok`, and an **xAI API key**. GrokCode is a desktop interface for the `grok` CLI — you bring your own `grok` install and xAI account; GrokCode does not provide them.
 - A signed‑in CLI — run **`grok login`** once in your terminal before first launch.
 
-GrokCode talks to your local `grok` install; it stores nothing in the cloud and phones no home.
+GrokCode talks to your local `grok` install; it stores nothing in the cloud and phones no home beyond license activation.
 
 ---
 
@@ -137,6 +140,6 @@ State lives in a single `@Observable @MainActor` view model; the CLI layer spawn
 
 ## License
 
-**MIT** — see [`LICENSE`](LICENSE).
+GrokCode is **commercial, proprietary software** — licensed, not sold. Each purchase grants a personal, non‑transferable license for use on up to **2 devices**. Redistribution and reverse‑engineering are not permitted. See the full [End User License Agreement](LICENSE).
 
 Made by **LogicLeap Labs**.

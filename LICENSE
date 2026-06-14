@@ -1,21 +1,104 @@
-MIT License
+GrokCode End User License Agreement (EULA)
 
-Copyright (c) 2026 LogicLeap Labs
+Copyright (c) 2026 LogicLeap Labs. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This End User License Agreement ("Agreement") is a legal agreement between you
+(either an individual or a single entity, "You") and LogicLeap Labs
+("LogicLeap", "we", "us") for the GrokCode software application, including the
+executable, associated media, and any documentation (collectively, the
+"Software").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+BY DOWNLOADING, INSTALLING, ACTIVATING, OR USING THE SOFTWARE, YOU AGREE TO BE
+BOUND BY THE TERMS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL OR USE
+THE SOFTWARE.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+GrokCode is commercial, proprietary software. It is licensed, not sold.
+
+1. GRANT OF LICENSE
+   Subject to Your compliance with this Agreement and Your payment of the
+   applicable license fee (or Your use during an authorised free trial period),
+   LogicLeap grants You a personal, non-exclusive, non-transferable, revocable
+   license to install and use one copy of the Software for Your own internal or
+   personal purposes.
+
+   Each license purchased entitles You to activate and use the Software on up to
+   two (2) devices that You own or control, for use by a single individual. A
+   license may not be shared between multiple individuals.
+
+2. TRIAL VERSION
+   LogicLeap may make a time-limited evaluation version of the Software
+   available without charge. Any trial is provided solely so You can evaluate the
+   Software, expires automatically at the end of the trial period, and is subject
+   to every term of this Agreement. After the trial expires, continued use
+   requires a paid license.
+
+3. RESTRICTIONS
+   You shall NOT, and shall not permit any third party to:
+   (a) copy, redistribute, sublicense, rent, lease, lend, sell, resell, or
+       otherwise commercially exploit or make the Software available to any
+       third party, except as expressly permitted herein;
+   (b) reverse engineer, decompile, disassemble, or otherwise attempt to derive
+       the source code, underlying ideas, or algorithms of the Software, except
+       to the limited extent applicable law expressly permits despite this
+       restriction;
+   (c) modify, adapt, translate, or create derivative works based on the
+       Software;
+   (d) remove, alter, or obscure any proprietary notices, labels, license keys,
+       or marks on or in the Software;
+   (e) circumvent, disable, or interfere with any license-enforcement,
+       activation, device-limit, or trial-expiry mechanism in the Software, or
+       use any license key You did not lawfully obtain;
+   (f) use the Software in any manner not expressly authorised by this Agreement.
+
+4. OWNERSHIP
+   The Software is licensed, not sold. LogicLeap and its licensors retain all
+   right, title, and interest in and to the Software, including all intellectual
+   property rights therein. No rights are granted to You other than as expressly
+   set out in this Agreement.
+
+5. THIRD-PARTY DEPENDENCIES
+   The Software is a desktop interface for the separate `grok` command-line tool,
+   which You must obtain, install, configure, and authenticate yourself. The
+   `grok` CLI, the xAI service, and any xAI API key or credentials are governed
+   by their own respective terms and are not part of, nor provided under, this
+   Agreement. "Grok" is a trademark of xAI. The Software is unofficial and is not
+   affiliated with, sponsored by, or endorsed by xAI.
+
+6. TERM AND TERMINATION
+   This Agreement is effective until terminated. It terminates automatically and
+   immediately, without notice, if You breach any of its terms. Upon termination
+   You must cease all use of the Software and destroy all copies in Your
+   possession or control. Sections 3, 4, and 7 through 10 survive termination.
+
+7. DISCLAIMER OF WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+   NON-INFRINGEMENT. LOGICLEAP DOES NOT WARRANT THAT THE SOFTWARE WILL BE
+   UNINTERRUPTED, ERROR-FREE, OR SECURE. YOU ASSUME THE ENTIRE RISK ARISING OUT
+   OF YOUR USE OF THE SOFTWARE.
+
+8. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LOGICLEAP
+   BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE
+   DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT
+   OF OR RELATED TO THIS AGREEMENT OR THE SOFTWARE, WHETHER IN CONTRACT, TORT, OR
+   OTHERWISE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. LOGICLEAP'S
+   TOTAL AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL NOT EXCEED THE AMOUNT YOU
+   ACTUALLY PAID FOR THE LICENSE TO THE SOFTWARE.
+
+9. GOVERNING LAW
+   This Agreement shall be governed by and construed in accordance with the laws
+   of [LogicLeap jurisdiction], without regard to its conflict-of-laws
+   principles. You agree to submit to the exclusive jurisdiction of the courts
+   located in [LogicLeap jurisdiction] for the resolution of any dispute arising
+   out of or relating to this Agreement.
+
+10. GENERAL
+    This Agreement constitutes the entire agreement between You and LogicLeap
+    regarding the Software and supersedes all prior or contemporaneous
+    understandings. If any provision is held unenforceable, the remaining
+    provisions remain in full force and effect. LogicLeap's failure to enforce
+    any right or provision is not a waiver of that right or provision.
+
+For licensing questions or support, contact LogicLeap Labs.
