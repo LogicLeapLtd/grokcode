@@ -165,6 +165,46 @@ enum CodexTheme {
         dark:  rgb(0.42, 0.22, 0.20)
     )
 
+    // MARK: - Syntax highlighting (code blocks)
+
+    /// Token colours for lightweight code highlighting. Tuned to read clearly
+    /// against `composerBackground`/code-card surfaces in both appearances:
+    /// comments muted green-grey, strings warm, keywords blue/purple, numbers
+    /// teal, types a distinct hue.
+    static let syntaxKeyword = dynamic(                   // keywords — blue/purple
+        light: rgb(0.50, 0.16, 0.69),
+        dark:  rgb(0.78, 0.58, 0.98)
+    )
+    static let syntaxString = dynamic(                    // string literals — warm
+        light: rgb(0.77, 0.31, 0.11),
+        dark:  rgb(0.95, 0.62, 0.45)
+    )
+    static let syntaxComment = dynamic(                   // comments — muted green-grey
+        light: rgb(0.36, 0.47, 0.39),
+        dark:  rgb(0.50, 0.62, 0.53)
+    )
+    static let syntaxNumber = dynamic(                    // numeric literals — teal
+        light: rgb(0.05, 0.45, 0.50),
+        dark:  rgb(0.40, 0.82, 0.84)
+    )
+    static let syntaxType = dynamic(                      // types — distinct hue (gold/amber)
+        light: rgb(0.40, 0.36, 0.05),
+        dark:  rgb(0.86, 0.78, 0.42)
+    )
+
+    // MARK: - Diff colouring (tool detail cards)
+
+    /// Whole-line diff colours: added lines green, removed lines red. Tuned to
+    /// stay legible on the monospaced detail surfaces in both appearances.
+    static let syntaxDiffAdded = dynamic(                 // "+" lines — green
+        light: rgb(0.13, 0.52, 0.20),
+        dark:  rgb(0.46, 0.84, 0.52)
+    )
+    static let syntaxDiffRemoved = dynamic(              // "-" lines — red
+        light: rgb(0.74, 0.20, 0.16),
+        dark:  rgb(0.96, 0.52, 0.48)
+    )
+
     // MARK: - Glass tint (sidebar vibrancy overlay)
 
     /// A faint tint laid over the behind-window vibrancy so the sidebar reads as

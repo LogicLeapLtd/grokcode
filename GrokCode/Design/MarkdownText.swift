@@ -116,7 +116,7 @@ private struct CodeBlockCard: View {
             .background(CodexTheme.pillBackground)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
+                Text(CodeHighlighter.highlight(code, language: language))
                     .font(.system(size: 12.5, design: .monospaced))
                     .foregroundStyle(CodexTheme.textPrimary)
                     .textSelection(.enabled)

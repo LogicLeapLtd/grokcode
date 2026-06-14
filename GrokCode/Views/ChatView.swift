@@ -660,7 +660,7 @@ private struct ToolCallRow: View {
 
     private var detailCard: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            Text(call.detail)
+            Text(CodeHighlighter.diffAttributed(call.detail))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(CodexTheme.textPrimary)
                 .textSelection(.enabled)
