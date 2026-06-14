@@ -51,9 +51,6 @@ struct SidebarView: View {
             navSection
                 .padding(.bottom, 14)
 
-            newChatButton
-                .padding(.bottom, 10)
-
             projectsSection
 
             Spacer(minLength: 0)
@@ -117,35 +114,6 @@ struct SidebarView: View {
                 .animation(CodexMotion.quickSpring, value: model.activeSidebarSection)
             }
         }
-    }
-
-    /// Visible "New chat" affordance above the chat list (#28). A filled,
-    /// outlined pill that reads as the primary action of the chat column.
-    private var newChatButton: some View {
-        Button { model.startNewChatFromList() } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13, weight: .medium))
-                Text("New chat")
-                    .font(.system(size: 13, weight: .medium))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(CodexTheme.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(CodexTheme.pillBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .codexHoverOverlay(cornerRadius: 9)
     }
 
     private var projectsSection: some View {
@@ -307,10 +275,6 @@ struct SidebarView: View {
                 model.toggleSidebarCollapsed()
             }
             .padding(.bottom, 6)
-
-            railButton(symbol: "square.and.pencil", help: "New chat") {
-                model.startNewChatFromList()
-            }
 
             ForEach(SidebarSection.allCases) { section in
                 railButton(
