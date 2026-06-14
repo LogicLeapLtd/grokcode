@@ -5,56 +5,60 @@ struct HomeView: View {
     @Environment(AppViewModel.self) private var model
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                Spacer(minLength: 64)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 64)
 
-                VStack(spacing: 20) {
-                    Text(headline)
-                        .font(CodexTheme.headlineFont)
-                        .foregroundStyle(CodexTheme.textPrimary)
-                        .multilineTextAlignment(.center)
-                        .id(headline)
-                        .transition(CodexMotion.dropTransition)
-                        .codexStaggeredAppear(index: 0)
+                    VStack(spacing: 20) {
+                        Text(headline)
+                            .font(CodexTheme.headlineFont)
+                            .foregroundStyle(CodexTheme.textPrimary)
+                            .multilineTextAlignment(.center)
+                            .id(headline)
+                            .transition(CodexMotion.dropTransition)
+                            .codexStaggeredAppear(index: 0)
 
-                    if !model.grokAvailable {
-                        GrokInstallGuidanceBanner()
+                        if !model.grokAvailable {
+                            GrokInstallGuidanceBanner()
+                                .frame(maxWidth: CodexTheme.composerMaxWidth)
+                                .codexStaggeredAppear(index: 1)
+                        }
+
+                        PromptComposer()
+                            .codexStaggeredAppear(index: 2)
                             .frame(maxWidth: CodexTheme.composerMaxWidth)
-                            .codexStaggeredAppear(index: 1)
+
+                        if let error = model.errorMessage {
+                            Text(error)
+                                .font(CodexTheme.captionFont)
+                                .foregroundStyle(CodexTheme.errorForeground)
+                                .frame(maxWidth: CodexTheme.composerMaxWidth, alignment: .leading)
+                                .transition(CodexMotion.bannerTransition)
+                        }
+
+                        quickActionRow
+                            .frame(maxWidth: CodexTheme.composerMaxWidth)
+                            .codexStaggeredAppear(index: 3)
+
+                        recentChatsSection
+                            .frame(maxWidth: CodexTheme.composerMaxWidth)
+                            .codexStaggeredAppear(index: 4)
                     }
+                    .padding(.horizontal, 48)
+                    .animation(CodexMotion.pageSpring, value: model.selectedProject?.id)
 
-                    PromptComposer()
-                        .codexStaggeredAppear(index: 2)
-                        .frame(maxWidth: CodexTheme.composerMaxWidth)
-
-                    if let error = model.errorMessage {
-                        Text(error)
-                            .font(CodexTheme.captionFont)
-                            .foregroundStyle(CodexTheme.errorForeground)
-                            .frame(maxWidth: CodexTheme.composerMaxWidth, alignment: .leading)
-                            .transition(CodexMotion.bannerTransition)
-                    }
-
-                    quickActionRow
-                        .frame(maxWidth: CodexTheme.composerMaxWidth)
-                        .codexStaggeredAppear(index: 3)
-
-                    recentChatsSection
-                        .frame(maxWidth: CodexTheme.composerMaxWidth)
-                        .codexStaggeredAppear(index: 4)
+                    Spacer(minLength: 48)
                 }
-                .padding(.horizontal, 48)
-                .animation(CodexMotion.pageSpring, value: model.selectedProject?.id)
-
-                Spacer(minLength: 48)
+                // Fill at least the viewport so the content centres vertically
+                // when it's shorter than the window, and scrolls when taller.
+                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(CodexTheme.mainBackground)
+            .animation(CodexMotion.panelSpring, value: model.errorMessage)
+            .animation(CodexMotion.panelSpring, value: model.grokAvailable)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(CodexTheme.mainBackground)
-        .animation(CodexMotion.panelSpring, value: model.errorMessage)
-        .animation(CodexMotion.panelSpring, value: model.grokAvailable)
     }
 
     private var headline: String {

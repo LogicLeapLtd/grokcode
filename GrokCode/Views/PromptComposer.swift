@@ -175,19 +175,19 @@ struct PromptComposer: View {
         .onKeyPress(.downArrow) { moveCompletionSelection(1) }
         .onKeyPress(.tab) { acceptHighlightedCompletion() }
         .onKeyPress(.return, phases: .down) { press in
-            // When the completion menu is open, plain Return accepts the
-            // highlighted row rather than sending the message.
-            if completionMenuVisible, !press.modifiers.contains(.shift) {
+            let shift = press.modifiers.contains(.shift)
+            let command = press.modifiers.contains(.command)
+            // When the completion menu is open, a plain Return accepts the
+            // highlighted row. ⇧/⌘ bypass it (newline / send).
+            if completionMenuVisible, !shift, !command {
                 return acceptHighlightedCompletion()
             }
-            // Respect the send-on-return preference (#13 / Settings):
-            //  • sendOnReturn:  plain Return sends; ⇧-Return inserts a newline.
-            //  • !sendOnReturn: plain Return inserts a newline; ⌘/⇧-Return sends.
-            let hasSendModifier = press.modifiers.contains(.command) || press.modifiers.contains(.shift)
-            let shouldSend = model.sendOnReturn
-                ? !press.modifiers.contains(.shift)
-                : hasSendModifier
-            guard shouldSend else { return .ignored }
+            // ⇧-Return is always a newline — never sends. Returning .ignored
+            // lets the vertical TextField insert the line break itself.
+            if shift { return .ignored }
+            // ⌘-Return always sends; a plain Return sends only when the
+            // send-on-return preference is enabled (#13 / Settings).
+            guard command || model.sendOnReturn else { return .ignored }
             let trimmed = model.promptText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .ignored }
             model.submit()

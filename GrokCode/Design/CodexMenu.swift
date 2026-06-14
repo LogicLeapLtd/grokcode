@@ -79,6 +79,9 @@ final class CodexMenuController {
 
 private struct CodexMenuHost: ViewModifier {
     @Environment(CodexMenuController.self) private var controller
+    /// Last-measured height of the open card, used to decide which way the menu
+    /// should open and how tall it may be before it has to scroll.
+    @State private var cardHeight: CGFloat = 0
 
     func body(content: Content) -> some View {
         content.overlay {
@@ -89,8 +92,19 @@ private struct CodexMenuHost: ViewModifier {
                     // Clamp left edge so the card stays on-screen (estimate width via minWidth).
                     let x = min(max(8, active.anchor.minX - host.minX),
                                 max(8, geo.size.width - active.minWidth - 8))
-                    let topSpace = max(0, active.anchor.minY - host.minY - gap)   // room above anchor
-                    let belowY = active.anchor.maxY - host.minY + gap             // just below anchor
+                    let topSpace = max(0, active.anchor.minY - host.minY - gap)     // room above anchor
+                    let bottomSpace = max(0, host.maxY - active.anchor.maxY - gap)  // room below anchor
+                    let belowY = active.anchor.maxY - host.minY + gap              // just below anchor
+                    // Honour the requested edge while it fits; otherwise flip to
+                    // whichever side has more room so the card never runs
+                    // off-screen (the bug on the new-chat page).
+                    let needed = cardHeight + gap
+                    let openUp: Bool = {
+                        switch active.edge {
+                        case .top:    return topSpace >= needed || topSpace >= bottomSpace
+                        case .bottom: return !(bottomSpace >= needed || bottomSpace >= topSpace)
+                        }
+                    }()
 
                     ZStack(alignment: .topLeading) {
                         // Dismiss layer — taps outside the card close the menu.
@@ -100,15 +114,15 @@ private struct CodexMenuHost: ViewModifier {
 
                         // Card positioned with only the card itself hittable, so
                         // outside taps fall through to the dismiss layer above.
-                        if active.edge == .top {
+                        if openUp {
                             VStack(spacing: 0) {
                                 Spacer(minLength: 0)
-                                card(active)
+                                clampedCard(active, maxHeight: topSpace)
                             }
                             .frame(height: topSpace, alignment: .bottomLeading)
                             .offset(x: x)
                         } else {
-                            card(active)
+                            clampedCard(active, maxHeight: bottomSpace)
                                 .offset(x: x, y: belowY)
                         }
                     }
@@ -118,6 +132,29 @@ private struct CodexMenuHost: ViewModifier {
             }
         }
         .animation(.easeOut(duration: 0.12), value: controller.active?.id)
+    }
+
+    /// The menu card, measured (to drive edge selection) and — only when it
+    /// genuinely overflows the room on its side — wrapped in a ScrollView and
+    /// height-capped so it can't run off-screen. When it fits it renders plainly
+    /// so its drop shadow isn't clipped by the scroll container.
+    @ViewBuilder
+    private func clampedCard(_ active: CodexMenuController.Active, maxHeight: CGFloat) -> some View {
+        let measured = card(active)
+            .background(
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { cardHeight = g.size.height }
+                        .onChange(of: g.size.height) { _, h in cardHeight = h }
+                }
+            )
+        if maxHeight > 0, cardHeight > maxHeight {
+            ScrollView(.vertical, showsIndicators: false) { measured }
+                .frame(height: maxHeight)
+                .fixedSize(horizontal: true, vertical: false)
+        } else {
+            measured
+        }
     }
 
     private func card(_ active: CodexMenuController.Active) -> some View {

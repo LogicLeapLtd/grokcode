@@ -40,6 +40,16 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     /// Routing for the in-flight prompt's streamed chunks.
     private var promptOnEvent: (@Sendable (GrokStreamEvent) -> Void)?
     private var promptSessionId: String?
+    /// JSON-RPC id of the in-flight `session/prompt`, so the inactivity
+    /// watchdog can fail exactly that request if the turn stalls.
+    private var promptRequestId: Int?
+
+    /// Inactivity watchdog for the in-flight turn. The warm session has no
+    /// per-request timeout, so a mid-turn stall (a hung tool/MCP, or an agent
+    /// callback we can't satisfy) would otherwise leave the UI spinning
+    /// forever. Every streamed chunk / agent callback reschedules it.
+    private var watchdog: DispatchSourceTimer?
+    private let watchdogQueue = DispatchQueue(label: "grok.agent.watchdog")
 
     private static let newline = UInt8(ascii: "\n")
 
@@ -82,12 +92,12 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         }
 
         lock.lock(); promptOnEvent = onEvent; promptSessionId = sid; lock.unlock()
-        defer { lock.lock(); promptOnEvent = nil; promptSessionId = nil; lock.unlock() }
+        defer {
+            stopWatchdog()
+            lock.lock(); promptOnEvent = nil; promptSessionId = nil; lock.unlock()
+        }
 
-        let result = try await request("session/prompt", [
-            "sessionId": sid,
-            "prompt": [["type": "text", "text": text]],
-        ])
+        let result = try await promptRequest(sessionId: sid, text: text)
         let stop = result["stopReason"] as? String
         onEvent(GrokStreamEvent(type: "end", stopReason: stop, sessionId: sid))
         return sid
@@ -208,6 +218,9 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         lock.lock()
         let pending = responders
         responders.removeAll()
+        watchdog?.cancel()
+        watchdog = nil
+        promptRequestId = nil
         process = nil
         stdin = nil
         initialized = false
@@ -239,6 +252,76 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         }
     }
 
+    /// Like `request` but for `session/prompt`: records the request id and arms
+    /// the inactivity watchdog so a stalled turn fails (and the UI recovers)
+    /// instead of hanging forever. The `defer` in `streamPrompt` stops it.
+    private func promptRequest(sessionId sid: String, text: String) async throws -> [String: Any] {
+        let id: Int = { lock.lock(); defer { lock.unlock() }; let i = nextId; nextId += 1; return i }()
+        lock.lock(); promptRequestId = id; lock.unlock()
+        startWatchdog()
+        return try await withCheckedThrowingContinuation { cont in
+            lock.lock()
+            responders[id] = { cont.resume(with: $0) }
+            lock.unlock()
+            do {
+                try writeMessage([
+                    "jsonrpc": "2.0", "id": id, "method": "session/prompt",
+                    "params": ["sessionId": sid, "prompt": [["type": "text", "text": text]]],
+                ])
+            } catch {
+                lock.lock(); responders[id] = nil; lock.unlock()
+                cont.resume(throwing: error)
+            }
+        }
+    }
+
+    // MARK: - Inactivity watchdog
+
+    private func startWatchdog() {
+        lock.lock()
+        watchdog?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: watchdogQueue)
+        timer.setEventHandler { [weak self] in self?.watchdogFired() }
+        timer.schedule(deadline: .now() + GrokCLIService.inactivityTimeout)
+        watchdog = timer
+        timer.resume()
+        lock.unlock()
+    }
+
+    /// Reschedule the deadline on any sign of activity (a streamed chunk or an
+    /// agent callback). No-op when no turn is in flight.
+    private func scheduleWatchdog() {
+        lock.lock()
+        watchdog?.schedule(deadline: .now() + GrokCLIService.inactivityTimeout)
+        lock.unlock()
+    }
+
+    private func stopWatchdog() {
+        lock.lock()
+        watchdog?.cancel()
+        watchdog = nil
+        promptRequestId = nil
+        lock.unlock()
+    }
+
+    /// Fired when the agent has been silent past the timeout: fail the in-flight
+    /// prompt and tell the agent to abandon the turn so the UI recovers.
+    private func watchdogFired() {
+        lock.lock()
+        let id = promptRequestId
+        let sid = promptSessionId
+        let responder = id.flatMap { responders.removeValue(forKey: $0) }
+        watchdog?.cancel()
+        watchdog = nil
+        promptRequestId = nil
+        lock.unlock()
+        if let sid {
+            try? writeMessage(["jsonrpc": "2.0", "method": "session/cancel", "params": ["sessionId": sid]])
+        }
+        responder?(.failure(GrokCLIError.processFailed(
+            "Grok stopped responding after \(Int(GrokCLIService.inactivityTimeout))s.")))
+    }
+
     private func writeMessage(_ object: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: object)
         var line = data
@@ -262,7 +345,12 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     }
 
     private func handleLine(_ data: Data) {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            #if DEBUG
+            NSLog("[GrokAgentSession] undecodable line: \(String(decoding: data, as: UTF8.self))")
+            #endif
+            return
+        }
 
         if let method = obj["method"] as? String {
             if let id = obj["id"] {
@@ -289,6 +377,8 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
               let update = params["update"] as? [String: Any],
               let kind = update["sessionUpdate"] as? String
         else { return }
+
+        scheduleWatchdog()   // any streamed update counts as activity
 
         lock.lock(); let cb = promptOnEvent; lock.unlock()
         guard let cb else { return }
@@ -318,7 +408,7 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
             break
         }
 
-        let text = (update["content"] as? [String: Any])?["text"] as? String
+        let text = chunkText(from: update)
 
         switch kind {
         case "agent_thought_chunk":
@@ -326,8 +416,30 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         case "agent_message_chunk":
             if let text { cb(GrokStreamEvent(type: "text", data: text)) }
         default:
+            #if DEBUG
+            NSLog("[GrokAgentSession] unhandled sessionUpdate kind: \(kind)")
+            #endif
             break
         }
+    }
+
+    /// Pull chunk text from `update.content`, which the agent sends either as a
+    /// single `{type,text}` object or an array of such blocks (the array form is
+    /// the same shape `toolPayload` walks). Returns nil when there's no text.
+    private func chunkText(from update: [String: Any]) -> String? {
+        if let obj = update["content"] as? [String: Any], let t = obj["text"] as? String {
+            return t
+        }
+        if let arr = update["content"] as? [[String: Any]] {
+            let texts = arr.compactMap { item -> String? in
+                if let t = item["text"] as? String, !t.isEmpty { return t }
+                if let inner = item["content"] as? [String: Any],
+                   let t = inner["text"] as? String, !t.isEmpty { return t }
+                return nil
+            }
+            if !texts.isEmpty { return texts.joined() }
+        }
+        return nil
     }
 
     /// Build a `ToolEventPayload` from an ACP `tool_call` / `tool_call_update`
@@ -388,6 +500,7 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     /// The agent occasionally calls back (e.g. a permission prompt). We launched
     /// with `--always-approve`, but answer defensively so a turn never hangs.
     private func handleAgentRequest(method: String, id: Any, params: [String: Any]) {
+        scheduleWatchdog()   // the agent is doing work — keep the turn alive
         var result: [String: Any] = [:]
         if method.contains("permission") {
             let options = params["options"] as? [[String: Any]] ?? []
@@ -397,6 +510,10 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
             } else {
                 result = ["outcome": ["outcome": "cancelled"]]
             }
+        } else {
+            #if DEBUG
+            NSLog("[GrokAgentSession] unhandled agent request: \(method)")
+            #endif
         }
         try? writeMessage(["jsonrpc": "2.0", "id": id, "result": result])
     }
