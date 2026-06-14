@@ -167,6 +167,48 @@ struct GrokModelOption: Identifiable, Hashable {
     }
 }
 
+/// A single tool invocation surfaced inside an assistant turn (Codex-style live
+/// tool-call visibility). Built from ACP `tool_call` / `tool_call_update`
+/// notifications: `tool_call` seeds a running row (id + title); successive
+/// `tool_call_update`s refine the title/kind and attach a human-readable
+/// `detail`, and the row flips to `.done` when the update carries a result (or
+/// the turn ends).
+struct ToolCallEntry: Identifiable, Hashable {
+    /// Lifecycle of a tool row. `.running` until the update clearly completes.
+    enum Status: String, Hashable {
+        case running
+        case done
+    }
+
+    /// The ACP `toolCallId` — stable across the seeding `tool_call` and every
+    /// `tool_call_update`, so the view model can upsert in place.
+    let id: String
+    /// Best title to show (refined by later updates, e.g. "Edit <path>").
+    var title: String
+    /// The update `kind` (e.g. "edit", "execute", "read", "search"); drives the
+    /// row icon. Empty until a `tool_call_update` reports it.
+    var kind: String
+    /// Human-readable expanded detail: for an edit, the newText (and oldText if
+    /// present); for execute, the command + output text. Empty until known.
+    var detail: String
+    /// Running while in flight, done once a result lands / the turn ends.
+    var status: Status
+
+    init(
+        id: String,
+        title: String,
+        kind: String = "",
+        detail: String = "",
+        status: Status = .running
+    ) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.detail = detail
+        self.status = status
+    }
+}
+
 struct ChatMessage: Identifiable, Hashable {
     enum Role: String, Hashable {
         case user
@@ -199,6 +241,9 @@ struct ChatMessage: Identifiable, Hashable {
     var isQueued: Bool
     /// Surfaced failure text when a run errors out.
     var errorText: String?
+    /// Live tool calls grok made during this turn (reads/edits/commands),
+    /// surfaced as expandable rows in chat order. Empty for turns with no tools.
+    var toolCalls: [ToolCallEntry]
 
     init(
         id: UUID = UUID(),
@@ -207,7 +252,8 @@ struct ChatMessage: Identifiable, Hashable {
         reasoning: String = "",
         isStreaming: Bool = false,
         isQueued: Bool = false,
-        errorText: String? = nil
+        errorText: String? = nil,
+        toolCalls: [ToolCallEntry] = []
     ) {
         self.id = id
         self.role = role
@@ -216,6 +262,7 @@ struct ChatMessage: Identifiable, Hashable {
         self.isStreaming = isStreaming
         self.isQueued = isQueued
         self.errorText = errorText
+        self.toolCalls = toolCalls
     }
 
     /// True when nothing has streamed yet and we're still waiting on the model.

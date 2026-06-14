@@ -411,6 +411,13 @@ private struct AssistantMessageBlock: View {
                 )
             }
 
+            // Live tool calls (reads / edits / commands) grok made this turn,
+            // surfaced above the answer in arrival order — each row expands to
+            // its diff/output. See `ToolCallList`.
+            if !message.toolCalls.isEmpty {
+                ToolCallList(toolCalls: message.toolCalls)
+            }
+
             if message.isAwaitingFirstToken {
                 ThinkingIndicator()
             }
@@ -530,6 +537,147 @@ private struct ReasoningBlock: View {
                 elapsed = max(1, Int(Date().timeIntervalSince(start)))
             }
         }
+    }
+}
+
+// MARK: - Tool calls (live read / edit / execute visibility)
+
+/// Vertical stack of the assistant turn's tool-call rows, in arrival order.
+/// Rendered above the answer text so the reader sees grok working
+/// (reading/editing files, running commands) Codex-style.
+private struct ToolCallList: View {
+    let toolCalls: [ToolCallEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(toolCalls) { call in
+                ToolCallRow(call: call)
+            }
+        }
+    }
+}
+
+/// One compact, expandable tool-call row: a kind icon, the (truncated) title,
+/// and a running/done status. Tapping reveals the detail (diff / command +
+/// output) in a monospaced card beneath, styled like the markdown code card.
+private struct ToolCallRow: View {
+    let call: ToolCallEntry
+
+    @State private var expanded = false
+    @State private var hovering = false
+
+    /// SF Symbol per ACP `kind`. Falls back to a generic tool glyph.
+    private var icon: String {
+        switch call.kind {
+        case "edit": "pencil"
+        case "execute": "terminal"
+        case "read": "doc.text"
+        case "search": "magnifyingglass"
+        default: "wrench.and.screwdriver"
+        }
+    }
+
+    private var hasDetail: Bool {
+        !call.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header
+            if expanded, hasDetail {
+                detailCard
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    // MARK: Header row (icon · title · status · chevron)
+
+    private var header: some View {
+        Button {
+            guard hasDetail else { return }
+            withAnimation(CodexMotion.expandSpring) { expanded.toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .frame(width: 14)
+
+                Text(call.title.isEmpty ? "Working…" : call.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 8)
+
+                statusIndicator
+
+                // Disclosure chevron only when there's something to expand.
+                if hasDetail {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(hovering ? CodexTheme.pillBackground : CodexTheme.composerBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasDetail)
+        .onHover { hovering = $0 }
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        switch call.status {
+        case .running:
+            HStack(spacing: 6) {
+                ThinkingDots(color: CodexTheme.textTertiary, size: 4)
+                Text("Running…")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+        case .done:
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CodexTheme.textTertiary)
+        }
+    }
+
+    // MARK: Expanded detail (diff / command + output)
+
+    private var detailCard: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(call.detail)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(CodexTheme.textPrimary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(CodexTheme.composerBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.leading, 10)
     }
 }
 

@@ -17,12 +17,41 @@ nonisolated enum GrokCLIError: LocalizedError {
     }
 }
 
+/// Carried on a `"tool"` `GrokStreamEvent` to surface a live tool call (an ACP
+/// `tool_call` / `tool_call_update`) up to the view model. `id` is the ACP
+/// `toolCallId` (stable across the seed + every refinement); `done` flips true
+/// once the update carries a result (or the turn ends).
+nonisolated struct ToolEventPayload: Equatable, Sendable {
+    /// ACP `toolCallId`, used to upsert the matching row in place.
+    let id: String
+    /// Best title known so far (refined by later updates).
+    let title: String
+    /// Update kind ("edit"/"execute"/"read"/"search"…); empty until reported.
+    let kind: String
+    /// Human-readable expanded detail (diff newText, command + output…); empty
+    /// until a `tool_call_update` provides content.
+    let detail: String
+    /// True once the call has clearly completed.
+    let done: Bool
+
+    init(id: String, title: String, kind: String = "", detail: String = "", done: Bool = false) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.detail = detail
+        self.done = done
+    }
+}
+
 nonisolated struct GrokStreamEvent: Decodable {
     let type: String
     let data: String?
     let stopReason: String?
     let sessionId: String?
     let requestId: String?
+    /// Set only on `type == "tool"` events (the JSON stream never carries this;
+    /// it's populated by the warm `GrokAgentSession` ACP mapping).
+    let tool: ToolEventPayload?
 
     enum CodingKeys: String, CodingKey {
         case type, data, stopReason, sessionId, requestId
@@ -42,17 +71,20 @@ nonisolated struct GrokStreamEvent: Decodable {
             ?? c.decodeIfPresent(String.self, forKey: .sessionIdSnake)
         requestId = try c.decodeIfPresent(String.self, forKey: .requestId)
             ?? c.decodeIfPresent(String.self, forKey: .requestIdSnake)
+        tool = nil
     }
 
     /// Construct an event directly. Used by the warm `GrokAgentSession` client to
     /// map ACP `session/update` notifications onto this shape.
     init(type: String, data: String? = nil, stopReason: String? = nil,
-         sessionId: String? = nil, requestId: String? = nil) {
+         sessionId: String? = nil, requestId: String? = nil,
+         tool: ToolEventPayload? = nil) {
         self.type = type
         self.data = data
         self.stopReason = stopReason
         self.sessionId = sessionId
         self.requestId = requestId
+        self.tool = tool
     }
 }
 

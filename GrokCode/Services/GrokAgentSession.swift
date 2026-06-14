@@ -290,9 +290,35 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
               let kind = update["sessionUpdate"] as? String
         else { return }
 
-        let text = (update["content"] as? [String: Any])?["text"] as? String
         lock.lock(); let cb = promptOnEvent; lock.unlock()
         guard let cb else { return }
+
+        // Live tool-call visibility: a `tool_call` seeds a running row, and each
+        // `tool_call_update` refines its title/kind and attaches detail. These
+        // are handled ahead of the text/thought mapping (whose `content` is a
+        // single object) because a tool update's `content` is an array.
+        switch kind {
+        case "tool_call":
+            if let payload = toolPayload(from: update, done: false) {
+                cb(GrokStreamEvent(type: "tool", tool: payload))
+            }
+            return
+        case "tool_call_update":
+            // Treat an update as completion when it carries result content or an
+            // explicit terminal status (completed/failed/cancelled/error).
+            let statusStr = (update["status"] as? String)?.lowercased() ?? ""
+            let hasContent = (update["content"] as? [[String: Any]])?.isEmpty == false
+            let terminal = ["completed", "complete", "done", "failed", "error", "cancelled", "canceled"]
+                .contains(statusStr)
+            if let payload = toolPayload(from: update, done: hasContent || terminal) {
+                cb(GrokStreamEvent(type: "tool", tool: payload))
+            }
+            return
+        default:
+            break
+        }
+
+        let text = (update["content"] as? [String: Any])?["text"] as? String
 
         switch kind {
         case "agent_thought_chunk":
@@ -302,6 +328,61 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         default:
             break
         }
+    }
+
+    /// Build a `ToolEventPayload` from an ACP `tool_call` / `tool_call_update`
+    /// `update` object. Returns nil only when there's no `toolCallId` to key on.
+    /// `detail` concatenates any diff (newText, and oldText if present) and any
+    /// text content; for an execute call it also surfaces the command from
+    /// `rawInput`.
+    private func toolPayload(from update: [String: Any], done: Bool) -> ToolEventPayload? {
+        guard let id = update["toolCallId"] as? String else { return nil }
+        let title = (update["title"] as? String) ?? ""
+        let kind = (update["kind"] as? String) ?? ""
+
+        var parts: [String] = []
+
+        // For an execute/shell call, lead with the command if rawInput carries one.
+        if let rawInput = update["rawInput"] as? [String: Any] {
+            if let command = rawInput["command"] as? String, !command.isEmpty {
+                parts.append("$ " + command)
+            } else if let command = rawInput["command"] as? [String],
+                      !command.isEmpty {
+                parts.append("$ " + command.joined(separator: " "))
+            }
+        }
+
+        // Render each content item: diffs as newText (with oldText if present),
+        // and text/content blocks as their text.
+        if let content = update["content"] as? [[String: Any]] {
+            for item in content {
+                let itemType = item["type"] as? String
+                switch itemType {
+                case "diff":
+                    let newText = item["newText"] as? String ?? ""
+                    let oldText = item["oldText"] as? String
+                    if let oldText, !oldText.isEmpty {
+                        parts.append("- " + oldText)
+                    }
+                    if !newText.isEmpty {
+                        parts.append("+ " + newText)
+                    }
+                case "content":
+                    if let inner = item["content"] as? [String: Any],
+                       let t = inner["text"] as? String, !t.isEmpty {
+                        parts.append(t)
+                    }
+                default:
+                    // Some updates nest text directly under content[].text.
+                    if let t = item["text"] as? String, !t.isEmpty {
+                        parts.append(t)
+                    }
+                }
+            }
+        }
+
+        let detail = parts.joined(separator: "\n")
+        return ToolEventPayload(id: id, title: title, kind: kind, detail: detail, done: done)
     }
 
     /// The agent occasionally calls back (e.g. a permission prompt). We launched

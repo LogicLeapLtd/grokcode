@@ -1106,13 +1106,48 @@ final class AppViewModel {
             if let data = event.data {
                 messages[index].text += data
             }
+        case "tool":
+            if let tool = event.tool {
+                upsertToolCall(tool, at: index)
+            }
         case "end":
             messages[index].isStreaming = false
+            // Any tool row still showing "running" at turn-end is complete.
+            for i in messages[index].toolCalls.indices
+            where messages[index].toolCalls[i].status == .running {
+                messages[index].toolCalls[i].status = .done
+            }
             if let sessionId = event.sessionId {
                 activeSessionId = sessionId
             }
         default:
             break
+        }
+    }
+
+    /// Insert or update a tool-call row on the assistant message at `index`,
+    /// keyed by the ACP `toolCallId`. A seeding `tool_call` inserts a running
+    /// row; later `tool_call_update`s refine the title/kind/detail in place and
+    /// flip the status to `.done` when the payload reports completion. Refined
+    /// (non-empty) title/kind/detail never overwrite known values with blanks.
+    private func upsertToolCall(_ tool: ToolEventPayload, at index: Int) {
+        let status: ToolCallEntry.Status = tool.done ? .done : .running
+        if let row = messages[index].toolCalls.firstIndex(where: { $0.id == tool.id }) {
+            if !tool.title.isEmpty { messages[index].toolCalls[row].title = tool.title }
+            if !tool.kind.isEmpty { messages[index].toolCalls[row].kind = tool.kind }
+            if !tool.detail.isEmpty { messages[index].toolCalls[row].detail = tool.detail }
+            // Never regress a completed row back to running.
+            if tool.done { messages[index].toolCalls[row].status = .done }
+        } else {
+            messages[index].toolCalls.append(
+                ToolCallEntry(
+                    id: tool.id,
+                    title: tool.title,
+                    kind: tool.kind,
+                    detail: tool.detail,
+                    status: status
+                )
+            )
         }
     }
 
