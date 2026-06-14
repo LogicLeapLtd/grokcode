@@ -65,6 +65,18 @@ final class AppViewModel {
     /// collapsed if it's in this set OR the global `projectsCollapsed` is on.
     /// Persisted under `grokcode.collapsedProjects`.
     var collapsedProjectPaths: Set<String> = []
+    /// Per-branch collapse state for the "By project → branch" grouping. Keys are
+    /// "<project path>::<branch or ∅>". Persisted under `grokcode.collapsedBranches`.
+    var collapsedBranchKeys: Set<String> = []
+    /// Master switch for sidebar collapsibility. When off, project and branch
+    /// headers stay expanded and their chevrons are hidden. Persisted under
+    /// `grokcode.collapsibleGroups` (default on).
+    var collapsibleGroupsEnabled = true {
+        didSet {
+            guard collapsibleGroupsEnabled != oldValue else { return }
+            UserDefaults.standard.set(collapsibleGroupsEnabled, forKey: Self.collapsibleGroupsKey)
+        }
+    }
     /// Plugins discovered from local tool configs (grok/claude/codex/cursor),
     /// with `isInstalled` reflecting the persisted installed set.
     var importablePlugins: [Plugin] = []
@@ -249,12 +261,14 @@ final class AppViewModel {
     private let pinnedProjectsKey = "grokcode.pinnedProjects"
     private let archivedProjectsKey = "grokcode.archivedProjects"
     private let collapsedProjectsKey = "grokcode.collapsedProjects"
+    private let collapsedBranchesKey = "grokcode.collapsedBranches"
     // Appearance / layout preference keys (shared contract).
     fileprivate static let appearanceKey = "grokcode.appearance"
     fileprivate static let sidebarWidthKey = "grokcode.sidebarWidth"
     fileprivate static let sidebarCollapsedKey = "grokcode.sidebarCollapsed"
     fileprivate static let sendOnReturnKey = "grokcode.sendOnReturn"
     fileprivate static let warmSessionKey = "grokcode.useWarmSession"   // shared with GrokCLIService
+    fileprivate static let collapsibleGroupsKey = "grokcode.collapsibleGroups"
     private static let activePageKey = "grokcode.activePage"
     /// First-run flag (shared contract). Unset → show onboarding on launch.
     fileprivate static let hasOnboardedKey = "grokcode.hasOnboarded"
@@ -883,7 +897,8 @@ final class AppViewModel {
     /// Whether a project's chats are hidden in the sidebar. True if the global
     /// collapse is on OR this specific project has been individually collapsed.
     func isProjectCollapsed(_ project: Project) -> Bool {
-        projectsCollapsed || collapsedProjectPaths.contains(project.path.path)
+        guard collapsibleGroupsEnabled else { return false }
+        return projectsCollapsed || collapsedProjectPaths.contains(project.path.path)
     }
 
     /// Flip a single project's collapse state (independent of the global toggle)
@@ -894,6 +909,28 @@ final class AppViewModel {
             collapsedProjectPaths.remove(path)
         } else {
             collapsedProjectPaths.insert(path)
+        }
+        saveSidebarPreferences()
+    }
+
+    /// Stable key for a branch bucket within a project.
+    private func branchKey(_ project: Project, _ branch: String?) -> String {
+        "\(project.path.path)::\(branch ?? "∅")"
+    }
+
+    /// Whether a branch sub-group's chats are hidden. Always false when the
+    /// collapsible-groups feature is off.
+    func isBranchCollapsed(_ project: Project, branch: String?) -> Bool {
+        collapsibleGroupsEnabled && collapsedBranchKeys.contains(branchKey(project, branch))
+    }
+
+    /// Flip a branch sub-group's collapse state and persist it.
+    func toggleBranchCollapsed(_ project: Project, branch: String?) {
+        let key = branchKey(project, branch)
+        if collapsedBranchKeys.contains(key) {
+            collapsedBranchKeys.remove(key)
+        } else {
+            collapsedBranchKeys.insert(key)
         }
         saveSidebarPreferences()
     }
@@ -1352,6 +1389,12 @@ final class AppViewModel {
             collapsedProjectPaths = Set(collapsed)
         }
         projectsCollapsed = UserDefaults.standard.bool(forKey: "grokcode.projectsCollapsed")
+        if let branches = UserDefaults.standard.array(forKey: collapsedBranchesKey) as? [String] {
+            collapsedBranchKeys = Set(branches)
+        }
+        if UserDefaults.standard.object(forKey: Self.collapsibleGroupsKey) != nil {
+            collapsibleGroupsEnabled = UserDefaults.standard.bool(forKey: Self.collapsibleGroupsKey)
+        }
     }
 
     private func saveSidebarPreferences() {
@@ -1361,6 +1404,7 @@ final class AppViewModel {
         UserDefaults.standard.set(Array(pinnedProjectPaths), forKey: pinnedProjectsKey)
         UserDefaults.standard.set(Array(archivedProjectPaths), forKey: archivedProjectsKey)
         UserDefaults.standard.set(Array(collapsedProjectPaths), forKey: collapsedProjectsKey)
+        UserDefaults.standard.set(Array(collapsedBranchKeys), forKey: collapsedBranchesKey)
     }
 
     /// Restore appearance / layout preferences from UserDefaults. Reads each key

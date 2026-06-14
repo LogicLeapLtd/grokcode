@@ -157,6 +157,8 @@ struct SidebarView: View {
                     collapsed: model.isProjectCollapsed(project),
                     groupByBranch: model.sidebarGroupBy == .projectBranch,
                     branchGroups: model.branchGroups(for: project),
+                    collapsibleEnabled: model.collapsibleGroupsEnabled,
+                    isBranchCollapsed: { model.isBranchCollapsed(project, branch: $0.branch) },
                     activeThreadId: model.activeSessionId,
                     renamingThreadID: $renamingThreadID,
                     renameDraft: $renameDraft,
@@ -164,6 +166,7 @@ struct SidebarView: View {
                     isThreadArchived: { archivedThreadIDs.contains($0) },
                     onSelectProject: { model.selectProject(project) },
                     onToggleCollapse: { model.toggleProjectCollapsed(project) },
+                    onToggleBranchCollapse: { model.toggleBranchCollapsed(project, branch: $0.branch) },
                     onSelectThread: { thread in
                         model.selectThread(thread, in: project)
                     },
@@ -213,9 +216,7 @@ struct SidebarView: View {
                                     .font(.system(size: 12))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                if let branch = item.project.gitBranch {
-                                    BranchChip(branch: branch)
-                                }
+                                BranchChip(branch: item.project.gitBranch ?? "none")
                             }
                             .foregroundStyle(CodexTheme.textTertiary)
                         }
@@ -447,6 +448,9 @@ private struct ProjectSidebarBlock: View {
     let collapsed: Bool
     let groupByBranch: Bool
     let branchGroups: [SidebarBranchGroup]
+    /// When false, collapse chevrons are hidden and every header stays expanded.
+    let collapsibleEnabled: Bool
+    let isBranchCollapsed: (SidebarBranchGroup) -> Bool
     let activeThreadId: String?
     @Binding var renamingThreadID: String?
     @Binding var renameDraft: String
@@ -454,33 +458,39 @@ private struct ProjectSidebarBlock: View {
     let isThreadArchived: (String) -> Bool
     let onSelectProject: () -> Void
     let onToggleCollapse: () -> Void
+    let onToggleBranchCollapse: (SidebarBranchGroup) -> Void
     let onSelectThread: (ProjectThread) -> Void
     let onTogglePin: () -> Void
     let onArchive: () -> Void
     let onThreadAction: (ThreadAction, ProjectThread) -> Void
     let onCommitRename: (ProjectThread) -> Void
 
-    // Align sub-rows under the project name. Header lays out as:
-    // leading inset (2) + chevron slot (18) + folder icon (16) + spacing (8) = 44
-    // from the block edge; sub-rows already carry an 8pt horizontal inset, so the
-    // remaining indent to reach the name is 44 - 8 = 36.
-    private let nameIndent: CGFloat = 36
+    // Indent for a project's child rows (chat titles). Deliberately tighter than
+    // aligning fully under the project name — just past the chevron/folder so the
+    // nesting reads clearly without eating horizontal space. Branch sub-headers
+    // sit a touch shallower so their chats nest visibly beneath them.
+    private let nameIndent: CGFloat = 20
+    private let branchHeaderIndent: CGFloat = 12
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             // Header row: a separate leading chevron toggles collapse, while the
             // name area selects the project. Both share a single hover highlight.
             HStack(spacing: 0) {
-                Button(action: onToggleCollapse) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(CodexTheme.textTertiary)
-                        .rotationEffect(.degrees(collapsed ? 0 : 90))
-                        .frame(width: 18, height: 22)
-                        .contentShape(Rectangle())
+                if collapsibleEnabled {
+                    Button(action: onToggleCollapse) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .rotationEffect(.degrees(collapsed ? 0 : 90))
+                            .frame(width: 18, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(collapsed ? "Expand project" : "Collapse project")
+                } else {
+                    Color.clear.frame(width: 18, height: 22)
                 }
-                .buttonStyle(.plain)
-                .help(collapsed ? "Expand project" : "Collapse project")
 
                 Button(action: onSelectProject) {
                     HStack(spacing: 8) {
@@ -496,9 +506,9 @@ private struct ProjectSidebarBlock: View {
                             .truncationMode(.tail)
                             .layoutPriority(1)
 
-                        if let branch = project.gitBranch {
-                            BranchChip(branch: branch)
-                        }
+                        // Always show a branch indicator; "none" when the project
+                        // folder isn't a git repo, so it never implies a branch.
+                        BranchChip(branch: project.gitBranch ?? "none")
 
                         Spacer(minLength: 8)
                     }
@@ -521,8 +531,10 @@ private struct ProjectSidebarBlock: View {
             .id(project.id)
             .animation(CodexMotion.quickSpring, value: collapsed)
             .contextMenu {
-                Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
-                Divider()
+                if collapsibleEnabled {
+                    Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
+                    Divider()
+                }
                 Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
                 Button("Archive", action: onArchive)
             }
@@ -554,21 +566,41 @@ private struct ProjectSidebarBlock: View {
     /// bucket, then that branch's chats.
     private var branchGroupedThreads: some View {
         ForEach(branchGroups) { group in
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(group.branch ?? "No branch")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .foregroundStyle(CodexTheme.textTertiary)
-            .padding(.leading, nameIndent)
-            .padding(.top, 5)
-            .padding(.bottom, 2)
+            let branchCollapsed = isBranchCollapsed(group)
 
-            ForEach(group.threads) { thread in
-                threadRow(thread)
+            Button {
+                if collapsibleEnabled { onToggleBranchCollapse(group) }
+            } label: {
+                HStack(spacing: 4) {
+                    if collapsibleEnabled {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .rotationEffect(.degrees(branchCollapsed ? 0 : 90))
+                            .frame(width: 12)
+                    }
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(group.branch ?? "none")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(CodexTheme.textTertiary)
+                .padding(.leading, branchHeaderIndent)
+                .padding(.trailing, 8)
+                .padding(.top, 5)
+                .padding(.bottom, 2)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!collapsibleEnabled)
+            .animation(CodexMotion.quickSpring, value: branchCollapsed)
+
+            if !branchCollapsed {
+                ForEach(group.threads) { thread in
+                    threadRow(thread)
+                }
             }
         }
     }

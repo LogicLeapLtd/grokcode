@@ -108,6 +108,7 @@ struct HomeView: View {
 private struct QuickActionCard: View {
     let action: HomeQuickAction
     let onTap: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: onTap) {
@@ -132,14 +133,21 @@ private struct QuickActionCard: View {
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(CodexTheme.composerBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(hovering ? CodexTheme.hoverBackground : Color.clear)
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
+                    .strokeBorder(hovering ? CodexTheme.textTertiary.opacity(0.4) : CodexTheme.composerBorder,
+                                  lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(CodexPressableStyle())
+        .onHover { hovering = $0 }
+        .animation(CodexMotion.quickSpring, value: hovering)
     }
 }
 

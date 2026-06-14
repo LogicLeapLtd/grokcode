@@ -281,6 +281,11 @@ struct SettingsView: View {
             toggleRow("Start collapsed",
                       "Launch with the sidebar collapsed to icons.",
                       isOn: Binding(get: { model.sidebarCollapsed }, set: { model.sidebarCollapsed = $0 }))
+
+            toggleRow("Collapsible groups",
+                      "Show chevrons so project and branch headers can collapse and expand their chats.",
+                      isOn: Binding(get: { model.collapsibleGroupsEnabled },
+                                    set: { model.collapsibleGroupsEnabled = $0 }))
         }
     }
 
