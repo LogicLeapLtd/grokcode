@@ -80,13 +80,16 @@ struct HomeView: View {
     private var recentChatsSection: some View {
         let recents = model.recentHomeChats()
         if !recents.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Recent chats")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textSecondary)
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .textCase(.uppercase)
+                    .kerning(0.4)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
 
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     ForEach(recents) { chat in
                         RecentChatRow(chat: chat) { model.openRecentChat(chat) }
                     }
@@ -109,13 +112,13 @@ private struct QuickActionCard: View {
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(CodexTheme.textSecondary)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(action.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                     Text(action.subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(CodexTheme.textTertiary)
                         .lineLimit(1)
                 }
@@ -144,30 +147,28 @@ private struct RecentChatRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 10) {
+            HStack(spacing: 11) {
                 Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: 13.5, weight: .regular))
                     .foregroundStyle(CodexTheme.textTertiary)
-                    .frame(width: 16)
+                    .frame(width: 18)
 
                 Text(chat.title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14.5))
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
 
-                Spacer(minLength: 10)
+                Spacer(minLength: 12)
 
-                Text(chat.projectName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .lineLimit(1)
-
+                // One clean, muted trailing label — branch when it differs from
+                // the obvious context, otherwise just the age.
                 if let branch = chat.branch {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 9.5, weight: .medium))
                         Text(branch)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .lineLimit(1)
                     }
                     .foregroundStyle(CodexTheme.textTertiary)
@@ -175,14 +176,14 @@ private struct RecentChatRow: View {
 
                 if !chat.ageLabel.isEmpty {
                     Text(chat.ageLabel)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12.5))
                         .foregroundStyle(CodexTheme.textTertiary)
-                        .frame(minWidth: 56, alignment: .trailing)
+                        .frame(minWidth: 60, alignment: .trailing)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .codexHover(cornerRadius: 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .codexHover(cornerRadius: 9)
             .contentShape(Rectangle())
         }
         .buttonStyle(CodexPressableStyle())
