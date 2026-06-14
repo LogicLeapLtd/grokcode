@@ -98,6 +98,15 @@ struct PromptComposer: View {
         .animation(CodexMotion.quickSpring, value: model.composerAttachments)
         .animation(CodexMotion.quickSpring, value: isDropTargeted)
         .onAppear { isFocused = true }
+        // Per-project context editor (AGENTS.md / GROK.md). The sheet owns its
+        // own menu host so its dropdowns render above it (see ProjectContextEditor).
+        .sheet(isPresented: Binding(
+            get: { model.projectContextOpen },
+            set: { model.projectContextOpen = $0 }
+        )) {
+            ProjectContextEditor()
+                .environment(model)
+        }
     }
 
     // MARK: - Inline completion model
@@ -698,6 +707,14 @@ struct PromptComposer: View {
                 }
 
                 CodexMenuDivider()
+
+                // Per-project context editor — only meaningful with a project
+                // selected (it edits that project's AGENTS.md / GROK.md).
+                if !model.workWithoutProject, let selected = model.selectedProject {
+                    CodexMenuItem(title: "Edit project context", systemImage: "doc.text") {
+                        close(); model.openProjectContext(for: selected)
+                    }
+                }
 
                 CodexMenuItem(title: "Add new project", systemImage: "folder.badge.plus") {
                     close(); model.addProjectFromPicker()

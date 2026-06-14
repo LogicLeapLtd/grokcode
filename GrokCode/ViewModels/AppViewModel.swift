@@ -171,6 +171,61 @@ final class AppViewModel {
         commandPaletteOpen.toggle()
     }
 
+    // MARK: - Onboarding (shared contract)
+
+    /// Drives the first-run onboarding sheet. Set true during `bootstrap()` on a
+    /// genuine first launch (the `hasOnboarded` flag unset) — but never during a
+    /// GROKCODE_SMOKE_* run, so smoke tests aren't blocked by the sheet. The
+    /// smoke hook may instead set it true explicitly to screenshot onboarding.
+    var onboardingOpen = false
+
+    /// Mark onboarding complete: persist the flag and dismiss the sheet. Safe to
+    /// call more than once.
+    func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: Self.hasOnboardedKey)
+        onboardingOpen = false
+    }
+
+    // MARK: - Project context (shared contract)
+
+    /// Drives presentation of the Project Context editor sheet (edits a project's
+    /// AGENTS.md / GROK.md). Transient — not persisted.
+    var projectContextOpen = false
+
+    /// The working copy of the context file being edited. Loaded by
+    /// `openProjectContext(for:)`, written back by `saveProjectContext()`.
+    var projectContextDraft = ""
+
+    /// The project whose context file is currently being edited (so a save writes
+    /// back to the right place even if `selectedProject` changes meanwhile).
+    private var projectContextEditing: Project?
+
+    /// Load `project`'s context file into the draft and present the editor sheet.
+    func openProjectContext(for project: Project) {
+        projectContextEditing = project
+        projectContextDraft = projectContext.read(project)
+        projectContextOpen = true
+    }
+
+    /// Write the current draft back to the project being edited, then close the
+    /// sheet. No-op (other than closing) if no project is being edited.
+    func saveProjectContext() {
+        if let project = projectContextEditing {
+            projectContext.write(project, projectContextDraft)
+        }
+        projectContextOpen = false
+        projectContextEditing = nil
+    }
+
+    /// The file name of the context file for the project being edited (or the
+    /// selected project), for labelling the editor sheet. Defaults to "AGENTS.md".
+    var projectContextFileName: String {
+        if let project = projectContextEditing ?? selectedProject {
+            return projectContext.fileName(for: project)
+        }
+        return "AGENTS.md"
+    }
+
     private let grok = GrokCLIService.shared
     /// Set when the user taps Stop so the resulting termination is treated as a
     /// graceful cancel (no error surfaced, queue not auto-advanced).
@@ -184,6 +239,7 @@ final class AppViewModel {
     private let pluginImport = PluginImportService()
     private let automationService = AutomationService()
     private let marketplace = MarketplaceService.shared
+    private let projectContext = ProjectContextService()
     private let rootsKey = "grokcode.projectRoots"
     private let selectedProjectPathKey = "grokcode.selectedProjectPath"
     private let workWithoutProjectKey = "grokcode.workWithoutProject"
@@ -200,6 +256,8 @@ final class AppViewModel {
     fileprivate static let sendOnReturnKey = "grokcode.sendOnReturn"
     fileprivate static let warmSessionKey = "grokcode.useWarmSession"   // shared with GrokCLIService
     private static let activePageKey = "grokcode.activePage"
+    /// First-run flag (shared contract). Unset → show onboarding on launch.
+    fileprivate static let hasOnboardedKey = "grokcode.hasOnboarded"
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
@@ -261,7 +319,20 @@ final class AppViewModel {
         // hook's explicit page override still wins.
         restoreActivePage()
 
+        // First-run onboarding (shared contract): show the sheet when the user
+        // has never onboarded — but never during a GROKCODE_SMOKE_* run, so smoke
+        // tests aren't blocked. The smoke hook can still open onboarding itself.
+        if !UserDefaults.standard.bool(forKey: Self.hasOnboardedKey), !Self.isSmokeRun {
+            onboardingOpen = true
+        }
+
         runSmokeTestIfRequested()
+    }
+
+    /// True when any GROKCODE_SMOKE_* environment variable is set — used to
+    /// suppress first-run onboarding during automated smoke runs.
+    private static var isSmokeRun: Bool {
+        ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("GROKCODE_SMOKE_") }
     }
 
     /// Developer-only end-to-end smoke hook used to prove the streaming chat
@@ -303,6 +374,19 @@ final class AppViewModel {
         if env["GROKCODE_SMOKE_PUBLISH"] == "1" {
             navigateTo(.plugins)
             publishSheetOpen = true
+        }
+
+        // Open the first-run onboarding sheet so QA can screenshot it
+        // deterministically (independent of the persisted hasOnboarded flag).
+        if env["GROKCODE_SMOKE_ONBOARDING"] == "1" {
+            onboardingOpen = true
+        }
+
+        // Select the first project and open its Project Context editor so QA can
+        // screenshot the AGENTS.md / GROK.md editing flow deterministically.
+        if env["GROKCODE_SMOKE_PROJECTCONTEXT"] == "1", let first = projects.first {
+            selectProject(first)
+            openProjectContext(for: first)
         }
 
         guard let prompt = env["GROKCODE_SMOKE_PROMPT"], !prompt.isEmpty else { return }

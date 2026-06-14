@@ -39,7 +39,15 @@ struct ContentView: View {
                     .zIndex(100)
             }
         }
+        .overlay {
+            if model.onboardingOpen {
+                OnboardingView()
+                    .transition(.opacity)
+                    .zIndex(200)
+            }
+        }
         .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
+        .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
         .codexMenuHost()
         .focusEffectDisabled()
         .background(WindowConfigurator())
