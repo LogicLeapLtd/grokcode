@@ -1,0 +1,112 @@
+name: Release
+
+# Builds GrokCode (Release) and publishes a GitHub Release with the .dmg
+# attached whenever a tag matching `v*` is pushed (e.g. `git tag v1.0.0 && git push --tags`).
+#
+# NOTE ON SIGNING / NOTARIZATION:
+#   This workflow produces an UNSIGNED build by default, which is fine for
+#   dev / internal distribution but will trigger Gatekeeper warnings on other
+#   Macs. Real Developer ID signing + notarization needs repo SECRETS:
+#     - a "Developer ID Application" certificate (base64 .p12) + its password,
+#       imported into a temporary keychain on the runner, and
+#     - Apple notarytool credentials (Apple ID + app-specific password + team
+#       id, or an App Store Connect API key).
+#   Wire those into scripts/build-dmg.sh (codesign + notarytool steps) once the
+#   secrets exist. Signing is intentionally OPTIONAL here.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required for creating the GitHub Release
+
+jobs:
+  release:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Primary build step — Release configuration into ./build.
+      - name: Build (Release)
+        run: |
+          xcodebuild \
+            -project GrokCode.xcodeproj \
+            -scheme GrokCode \
+            -configuration Release \
+            -derivedDataPath build \
+            clean build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      # Best-effort DMG packaging. If the script is missing or fails we don't
+      # abort the whole release — the build above is the source of truth.
+      - name: Package DMG (best-effort)
+        id: dmg
+        continue-on-error: true
+        run: |
+          chmod +x scripts/build-dmg.sh || true
+          ./scripts/build-dmg.sh
+          DMG_PATH="$(ls -1 dist/GrokCode-*.dmg 2>/dev/null | head -n 1 || true)"
+          echo "dmg_path=${DMG_PATH}" >> "$GITHUB_OUTPUT"
+          if [ -n "${DMG_PATH}" ]; then
+            echo "Built ${DMG_PATH}"
+          else
+            echo "No DMG produced — release will be published without an attached DMG."
+          fi
+
+      # ---------------------------------------------------------------------
+      # Optional (commented) — sign + notarize before packaging. Requires the
+      # repo secrets described at the top of this file.
+      #
+      # - name: Import signing certificate
+      #   env:
+      #     CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+      #     CERT_PASSWORD:    ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+      #     KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      #   run: |
+      #     echo "$CERT_P12_BASE64" | base64 --decode > /tmp/cert.p12
+      #     security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+      #     security default-keychain -s build.keychain
+      #     security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+      #     security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+      #       -T /usr/bin/codesign
+      #     security set-key-partition-list -S apple-tool:,apple: \
+      #       -s -k "$KEYCHAIN_PASSWORD" build.keychain
+      #   # ...then run codesign + xcrun notarytool submit --wait + stapler staple
+      #   # (see scripts/build-dmg.sh NEXT STEPS for the exact commands).
+      # ---------------------------------------------------------------------
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: GrokCode ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            dist/GrokCode-*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Alternative to the action above, using the gh CLI directly:
+      #
+      #   - name: Publish via gh CLI
+      #     env:
+      #       GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+      #       TAG_NAME:  ${{ github.ref_name }}   # pass via env, never inline in run:
+      #     run: |
+      #       gh release create "$TAG_NAME" \
+      #         dist/GrokCode-*.dmg \
+      #         --title "GrokCode $TAG_NAME" \
+      #         --generate-notes

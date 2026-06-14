@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# GrokCode .gitignore — Swift / Xcode macOS app
+# ---------------------------------------------------------------------------
+# Note: files already tracked by git are NOT affected by these rules. This only
+# stops the build/derived/user-state noise that keeps reappearing in `git status`.
+
+# Build output
+build/
+DerivedData/
+.build/
+dist/
+
+# Xcode user-specific state
+*.xcuserstate
+xcuserdata/
+*.xcuserdatad/
+
+# Xcode / Swift derived & intermediate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# CocoaPods (only if ever used)
+Pods/
+
+# Carthage (only if ever used)
+Carthage/Build/
+
+# Distribution / packaging artifacts
+*.dmg
+*.pkg
+*.app.zip
+
+# macOS finder / system cruft
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Editor / tooling
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs & temp
+*.log
+*.tmp
