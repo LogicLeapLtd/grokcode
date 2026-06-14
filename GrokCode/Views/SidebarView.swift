@@ -83,10 +83,14 @@ struct SidebarView: View {
                 .foregroundStyle(CodexTheme.textSecondary)
                 .frame(width: 28, height: 26)
                 .codexHover(cornerRadius: 7)
+                // The toggle sits up in the macOS title-bar drag strip; without
+                // this, a mouse-down starts a window drag instead of clicking it
+                // (the NSView added here is consulted for the drag decision).
+                .background(NonDraggableRegion())
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Collapse sidebar")
+        .help(model.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")
     }
 
     private var navSection: some View {

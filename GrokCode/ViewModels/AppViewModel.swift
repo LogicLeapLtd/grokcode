@@ -45,6 +45,9 @@ final class AppViewModel {
     var isRunning = false
     var errorMessage: String?
     var activePage: MainPage = .home
+    /// The page the user was on before opening Settings, so "Back to app" returns
+    /// there instead of guessing from whether `messages` happens to be empty.
+    var pageBeforeSettings: MainPage = .home
     var activeSidebarSection: SidebarSection?
     var showSettings = false
     var searchQuery = ""
@@ -194,6 +197,9 @@ final class AppViewModel {
     /// Mark onboarding complete: persist the flag and dismiss the sheet. Safe to
     /// call more than once.
     func completeOnboarding() {
+        // Persist the model / permission / effort picked during onboarding as the
+        // launch defaults — previously these were dropped, so the choice was lost.
+        persistDefaults()
         UserDefaults.standard.set(true, forKey: Self.hasOnboardedKey)
         onboardingOpen = false
     }
@@ -521,6 +527,9 @@ final class AppViewModel {
     }
 
     func navigateTo(_ page: MainPage) {
+        if page == .settings, activePage != .settings {
+            pageBeforeSettings = activePage
+        }
         activePage = page
         switch page {
         case .home, .chat, .settings:
@@ -575,11 +584,15 @@ final class AppViewModel {
     }
 
     func selectThread(_ thread: ProjectThread, in project: Project) {
+        guard !isRunning else { return }   // don't swap the transcript mid-stream
         selectedProject = project
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
         activeSessionId = thread.id
         sessionModelId = nil   // unknown which model this thread used
         errorMessage = nil
+        // Load the past conversation so the chat opens populated, not blank.
+        // (Setting activeSessionId alone only told the *next* prompt to resume.)
+        messages = sessionIndex.loadMessages(for: thread.id) ?? []
         navigateTo(.chat)
     }
 

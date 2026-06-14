@@ -26,6 +26,19 @@ struct VisualEffectView: NSViewRepresentable {
 /// Makes the host window non-opaque (so behind-window vibrancy shows through)
 /// AND extends the content under the title bar so there's no transparent/dead
 /// strip at the top.
+/// A transparent backing whose NSView reports `mouseDownCanMoveWindow = false`,
+/// so controls placed in the macOS title-bar drag region (e.g. the sidebar
+/// collapse toggle sitting up by the traffic lights) receive clicks instead of
+/// the window starting a drag on mouse-down. Apply via `.background(...)`.
+struct NonDraggableRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { _NonDraggableNSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class _NonDraggableNSView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+    }
+}
+
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()

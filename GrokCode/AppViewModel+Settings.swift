@@ -67,8 +67,11 @@ extension AppViewModel {
 
     /// Flip a server's enabled flag in `~/.grok/config.toml`, then return the
     /// reloaded list so the caller can refresh its `@State`.
-    func setMCPServer(_ server: MCPServerInfo, enabled: Bool) async -> [MCPServerInfo] {
-        await Self.mcpBridge.setEnabled(name: server.name, enabled: enabled)
+    /// Returns the reloaded list on success, or nil if the config write failed
+    /// (so the UI can keep the optimistic state and surface an error).
+    func setMCPServer(_ server: MCPServerInfo, enabled: Bool) async -> [MCPServerInfo]? {
+        let ok = await Self.mcpBridge.setEnabled(name: server.name, enabled: enabled)
+        guard ok else { return nil }
         return await Self.mcpBridge.list()
     }
 
@@ -210,11 +213,10 @@ private final class MCPConfigBridge: @unchecked Sendable {
         }
     }
 
-    func setEnabled(name: String, enabled: Bool) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    func setEnabled(name: String, enabled: Bool) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                self.writeEnabledFlag(name: name, enabled: enabled)
-                continuation.resume()
+                continuation.resume(returning: self.writeEnabledFlag(name: name, enabled: enabled))
             }
         }
     }
@@ -262,14 +264,15 @@ private final class MCPConfigBridge: @unchecked Sendable {
     /// Rewrite the `enabled = …` line inside `[mcp_servers.<name>]`. If the table
     /// exists but has no `enabled` key, insert one right after the header. Leaves
     /// the file untouched if the table can't be found.
-    private func writeEnabledFlag(name: String, enabled: Bool) {
+    @discardableResult
+    private func writeEnabledFlag(name: String, enabled: Bool) -> Bool {
         let url = configURL
-        guard let original = try? String(contentsOf: url, encoding: .utf8) else { return }
+        guard let original = try? String(contentsOf: url, encoding: .utf8) else { return false }
         let header = "[mcp_servers.\(name)]"
         var lines = original.components(separatedBy: "\n")
         guard let headerIdx = lines.firstIndex(where: {
             $0.trimmingCharacters(in: .whitespaces) == header
-        }) else { return }
+        }) else { return false }
 
         let desired = "enabled = \(enabled)"
         var didEdit = false
@@ -289,7 +292,12 @@ private final class MCPConfigBridge: @unchecked Sendable {
             lines.insert(desired, at: headerIdx + 1)
         }
         let updated = lines.joined(separator: "\n")
-        try? updated.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
     }
 }
 

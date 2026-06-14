@@ -133,7 +133,12 @@ struct SettingsView: View {
     }
 
     private var backButton: some View {
-        Button { model.navigateTo(model.messages.isEmpty ? .home : .chat) } label: {
+        Button {
+            // Return to wherever the user was before opening Settings; only fall
+            // back to Home if that was a chat with no live conversation.
+            let target = model.pageBeforeSettings
+            model.navigateTo(target == .chat && model.messages.isEmpty ? .home : target)
+        } label: {
             HStack(spacing: 7) {
                 Image(systemName: "arrow.left").font(.system(size: 12, weight: .medium))
                 Text("Back to app").font(.system(size: 13))
@@ -775,8 +780,12 @@ struct SettingsView: View {
             mcpServers[i] = MCPServerInfo(name: server.name, detail: server.detail, enabled: !server.enabled)
         }
         Task {
-            let refreshed = await model.setMCPServer(server, enabled: !server.enabled)
-            mcpServers = refreshed
+            if let refreshed = await model.setMCPServer(server, enabled: !server.enabled) {
+                mcpServers = refreshed
+            } else {
+                // Write failed — keep the optimistic state and tell the user.
+                showToast("Couldn't update \(server.name) — check ~/.grok/config.toml")
+            }
         }
     }
 
@@ -838,7 +847,7 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 16)
-            Button { isOn.wrappedValue.toggle() } label: {
+            Button { withAnimation(CodexMotion.quickSpring) { isOn.wrappedValue.toggle() } } label: {
                 MiniSwitch(isOn: isOn.wrappedValue)
             }
             .buttonStyle(.plain)
