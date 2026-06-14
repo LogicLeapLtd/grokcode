@@ -135,14 +135,15 @@ private struct QuickActionCard: View {
                     .fill(CodexTheme.composerBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(hovering ? CodexTheme.hoverBackground : Color.clear)
+                            .fill(hovering ? CodexTheme.navHighlight : Color.clear)
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(hovering ? CodexTheme.textTertiary.opacity(0.4) : CodexTheme.composerBorder,
+                    .strokeBorder(hovering ? CodexTheme.textTertiary.opacity(0.55) : CodexTheme.composerBorder,
                                   lineWidth: 1)
             )
+            .shadow(color: CodexTheme.shadowColor.opacity(hovering ? 0.28 : 0), radius: 6, y: 2)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(CodexPressableStyle())

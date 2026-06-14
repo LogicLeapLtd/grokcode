@@ -18,8 +18,10 @@ struct SidebarView: View {
         Group {
             if model.sidebarCollapsed {
                 collapsedRail
+                    .transition(.opacity)
             } else {
                 expandedBody
+                    .transition(.opacity)
             }
         }
         .frame(width: model.effectiveSidebarWidth)
@@ -59,16 +61,19 @@ struct SidebarView: View {
                 .padding(.top, 8)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 30)          // clearance for the traffic lights (full-size content)
+        .padding(.top, 8)           // toggle sits up in the traffic-light row
         .padding(.bottom, 14)
     }
 
-    /// Top-of-sidebar row with the collapse toggle (#23).
+    /// Top-of-sidebar row with the collapse toggle (#23). Sits at the very top so
+    /// the toggle lines up with the macOS window controls and there's no dead
+    /// strip above the nav.
     private var header: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
             collapseToggle
         }
+        .frame(height: 28)
     }
 
     private var collapseToggle: some View {
@@ -500,7 +505,7 @@ private struct ProjectSidebarBlock: View {
                             .frame(width: 16)
 
                         Text(project.displayName)
-                            .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
                             .foregroundStyle(CodexTheme.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.tail)

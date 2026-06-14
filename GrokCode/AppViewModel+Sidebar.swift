@@ -26,9 +26,10 @@ extension AppViewModel {
 
     // MARK: - Collapse (#23)
 
-    /// Width of the collapsed icon rail. Kept here (not in CodexTheme, which the
-    /// Theme lane owns) so the sidebar can size its rail consistently.
-    var collapsedSidebarWidth: Double { 56 }
+    /// Width of the collapsed icon rail. Wide enough that the rail still covers
+    /// the macOS traffic-light buttons (≈x20–68) when collapsed, so they sit on
+    /// the sidebar glass rather than spilling onto the main pane.
+    var collapsedSidebarWidth: Double { 72 }
 
     /// Effective sidebar width accounting for the collapsed rail (#22/#23).
     var effectiveSidebarWidth: Double {
