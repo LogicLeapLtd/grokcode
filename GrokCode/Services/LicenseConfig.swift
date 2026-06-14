@@ -14,8 +14,8 @@ enum LicenseConfig {
 
     /// Your Lemon Squeezy store subdomain, i.e. the `xxxx` in
     /// `https://xxxx.lemonsqueezy.com`. Used to build store/account links.
-    // TODO(owner): set your Lemon Squeezy store subdomain, e.g. "grokcode".
-    static let storeSubdomain = "YOUR_STORE"
+    // Set 2026-06-14: LogicLeap store, grokcode.lemonsqueezy.com (store #407620).
+    static let storeSubdomain = "grokcode"
 
     /// The hosted Lemon Squeezy checkout URL for the GrokCode product/variant,
     /// pre-seeding the Founder's launch discount so the "Buy" button lands on the
@@ -24,16 +24,18 @@ enum LicenseConfig {
     ///
     /// Format (replace the path with your real buy URL):
     ///   https://YOUR_STORE.lemonsqueezy.com/buy/XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
-    // TODO(owner): replace with your real Lemon Squeezy checkout/buy URL.
+    // Set 2026-06-14: GrokCode variant cba78c61-9924-4036-b512-34fec10f373f,
+    // FOUNDER40 ($15 off → $24) verified applying at checkout.
     static let checkoutURL = URL(
-        string: "https://YOUR_STORE.lemonsqueezy.com/buy/REPLACE-WITH-VARIANT-UUID?checkout[discount_code]=FOUNDER40"
+        string: "https://grokcode.lemonsqueezy.com/checkout/buy/cba78c61-9924-4036-b512-34fec10f373f?checkout[discount_code]=FOUNDER40"
     )!
 
     /// The Lemon Squeezy product *variant* id this build licenses against. The
     /// validate response includes `meta.variant_id`; comparing it lets you reject
     /// a key bought for a *different* product. Leave as 0 to skip the variant
     /// check (any valid key for your store is accepted).
-    // TODO(owner): set the numeric Lemon Squeezy variant id for GrokCode (or leave 0 to skip the check).
+    // Intentionally 0: the grokcode store sells only GrokCode, so any valid store
+    // key IS a GrokCode key. Set the numeric variant id here if you add more products.
     static let productVariantId: Int = 0
 
     // MARK: - Policy (pre-agreed defaults — safe to tune)
