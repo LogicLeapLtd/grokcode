@@ -880,6 +880,20 @@ final class AppViewModel {
         saveSidebarPreferences()
     }
 
+    /// Restore an archived project back into the active sidebar list.
+    func unarchiveProject(_ project: Project) {
+        archivedProjectPaths.remove(project.path.path)
+        saveSidebarPreferences()
+    }
+
+    /// Projects the user has archived (full blobs, for the Settings "Archived"
+    /// page). Ordered by name so the list is stable.
+    var archivedProjects: [Project] {
+        projects
+            .filter { archivedProjectPaths.contains($0.path.path) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     /// Codex "Archive all chats" — archive every currently-active project.
     func archiveAllProjects() {
         for project in projects where !archivedProjectPaths.contains(project.path.path) {

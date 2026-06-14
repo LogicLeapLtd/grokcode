@@ -3,13 +3,16 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Full-page Settings surface (routed via `MainPage.settings`). Left section
-/// nav + scrolling content pane, styled with CodexTheme tokens and the custom
-/// menu engine. Transient state (MCP server list, cache size, toast,
-/// confirmations) is held here as `@State`, fed by `AppViewModel+Settings`.
+/// Full-page Settings surface (routed via `MainPage.settings`). Modeled on the
+/// ChatGPT Codex desktop layout: a grouped left nav (Personal / Integrations /
+/// Coding / Archived) with "Back to app" + a settings search, and a scrolling
+/// content pane. Every page maps to a real GrokCode feature — styled with
+/// CodexTheme tokens and the custom menu engine. Transient state (MCP list,
+/// storage size, toast, confirmations, nav search) is held here as `@State`.
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var model
     @State private var section: Section = .general
+    @State private var navQuery = ""
 
     // Transient, view-local state (no new AppViewModel stored props).
     @State private var mcpServers: [MCPServerInfo] = []
@@ -19,35 +22,58 @@ struct SettingsView: View {
     @State private var toastWork: DispatchWorkItem?
     @State private var confirmingClear = false
 
+    /// Nav groups, mirroring Codex's settings sidebar sections.
+    enum NavGroup: String, CaseIterable, Identifiable {
+        case personal = "Personal"
+        case integrations = "Integrations"
+        case coding = "Coding"
+        case archived = "Archived"
+        var id: String { rawValue }
+    }
+
     enum Section: String, CaseIterable, Identifiable {
         case general = "General"
-        case sidebar = "Sidebar"
-        case performance = "Performance"
-        case data = "Data"
+        case appearance = "Appearance"
+        case personalization = "Personalization"
+        case shortcuts = "Keyboard shortcuts"
+        case mcp = "MCP servers"
         case hooks = "Hooks"
         case cli = "Grok CLI"
-        case shortcuts = "Shortcuts"
+        case data = "Data"
+        case archived = "Archived chats"
         case about = "About"
 
         var id: String { rawValue }
+
         var icon: String {
             switch self {
             case .general: "slider.horizontal.3"
-            case .sidebar: "sidebar.left"
-            case .performance: "bolt"
-            case .data: "externaldrive"
+            case .appearance: "circle.lefthalf.filled"
+            case .personalization: "person.crop.circle"
+            case .shortcuts: "keyboard"
+            case .mcp: "puzzlepiece.extension"
             case .hooks: "bolt.horizontal"
             case .cli: "terminal"
-            case .shortcuts: "keyboard"
+            case .data: "externaldrive"
+            case .archived: "archivebox"
             case .about: "info.circle"
+            }
+        }
+
+        /// The nav group this page lives under, or nil for the standalone footer
+        /// item (About).
+        var group: NavGroup? {
+            switch self {
+            case .general, .appearance, .personalization, .shortcuts: .personal
+            case .mcp: .integrations
+            case .hooks, .cli, .data: .coding
+            case .archived: .archived
+            case .about: nil
             }
         }
     }
 
     var body: some View {
-        // Center the whole nav + content block at the shared page width so
-        // Settings lines up at the same gutters as every other detail page,
-        // instead of full-bleeding edge to edge.
         HStack(spacing: 0) {
             sidebar
             Rectangle().fill(CodexTheme.divider).frame(width: 1)
@@ -59,53 +85,117 @@ struct SettingsView: View {
         .background(CodexTheme.mainBackground)
     }
 
-    /// Shared page width: the section nav (204pt + 1pt divider) plus the
-    /// 820pt content column from `PageScaffold`, so the content rhythm matches
-    /// the other detail pages while the nav sits to its left.
-    private static let navWidth: CGFloat = 204
+    private static let navWidth: CGFloat = 220
     private static let pageMaxWidth: CGFloat = navWidth + 1 + 820
 
     // MARK: - Section nav
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Settings")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(CodexTheme.textTertiary)
-                .padding(.horizontal, 10)
-                .padding(.top, 18)
-                .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 4) {
+            backButton
+            searchField
 
-            ForEach(Section.allCases) { item in
-                Button { withAnimation(CodexMotion.quickSpring) { section = item } } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 13))
-                            .foregroundStyle(section == item ? CodexTheme.textPrimary : CodexTheme.textSecondary)
-                            .frame(width: 18)
-                        Text(item.rawValue)
-                            .font(.system(size: 13, weight: section == item ? .medium : .regular))
-                            .foregroundStyle(CodexTheme.textPrimary)
-                        Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    if navQuery.isEmpty {
+                        ForEach(NavGroup.allCases) { group in
+                            let items = Section.allCases.filter { $0.group == group }
+                            if !items.isEmpty {
+                                groupHeader(group.rawValue)
+                                ForEach(items) { navRow($0) }
+                            }
+                        }
+                        Rectangle().fill(CodexTheme.divider)
+                            .frame(height: 1).padding(.horizontal, 8).padding(.vertical, 8)
+                        navRow(.about)
+                    } else {
+                        let matches = Section.allCases.filter {
+                            $0.rawValue.localizedCaseInsensitiveContains(navQuery)
+                        }
+                        if matches.isEmpty {
+                            Text("No matches")
+                                .font(.system(size: 12))
+                                .foregroundStyle(CodexTheme.textTertiary)
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                        } else {
+                            ForEach(matches) { navRow($0) }
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(section == item ? CodexTheme.navHighlight : .clear)
-                    )
-                    .codexHover(cornerRadius: 7)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
-
-            Spacer(minLength: 0)
+            .scrollIndicators(.never)
         }
         .padding(8)
         .frame(width: Self.navWidth)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(CodexTheme.sidebarBackground)
+    }
+
+    private var backButton: some View {
+        Button { model.navigateTo(model.messages.isEmpty ? .home : .chat) } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "arrow.left").font(.system(size: 12, weight: .medium))
+                Text("Back to app").font(.system(size: 13))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(CodexTheme.textSecondary)
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .codexHover(cornerRadius: 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12)).foregroundStyle(CodexTheme.textTertiary)
+            TextField("", text: $navQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(CodexTheme.textPrimary)
+                .placeholderOverlay("Search settings…", visible: navQuery.isEmpty)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(CodexTheme.composerBackground))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+        .padding(.horizontal, 2)
+        .padding(.bottom, 4)
+    }
+
+    private func groupHeader(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(CodexTheme.textTertiary)
+            .kerning(0.4)
+            .padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 3)
+    }
+
+    private func navRow(_ item: Section) -> some View {
+        Button { withAnimation(CodexMotion.quickSpring) { section = item } } label: {
+            HStack(spacing: 9) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(section == item ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                    .frame(width: 18)
+                Text(item.rawValue)
+                    .font(.system(size: 13, weight: section == item ? .medium : .regular))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(section == item ? CodexTheme.navHighlight : .clear)
+            )
+            .codexHover(cornerRadius: 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Content pane
@@ -116,12 +206,14 @@ struct SettingsView: View {
                 Group {
                     switch section {
                     case .general: generalSection
-                    case .sidebar: sidebarSection
-                    case .performance: performanceSection
-                    case .data: dataSection
+                    case .appearance: appearanceSection
+                    case .personalization: personalizationSection
+                    case .shortcuts: shortcutsSection
+                    case .mcp: mcpSection
                     case .hooks: hooksSection
                     case .cli: cliSection
-                    case .shortcuts: shortcutsSection
+                    case .data: dataSection
+                    case .archived: archivedSection
                     case .about: aboutSection
                     }
                 }
@@ -134,6 +226,14 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .bottom) { toastBanner }
+        // Personalization opens the project-context editor; bind its sheet here
+        // since the composer (which normally hosts it) isn't mounted on Settings.
+        .sheet(isPresented: Binding(
+            get: { model.projectContextOpen },
+            set: { model.projectContextOpen = $0 }
+        )) {
+            ProjectContextEditor()
+        }
     }
 
     // MARK: - General
@@ -141,20 +241,6 @@ struct SettingsView: View {
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             sectionTitle("General")
-
-            settingRow("Appearance", "Match the system, or force light / dark.") {
-                CodexMenuTrigger(minWidth: 180) { _ in
-                    fieldLabel(model.appearance.label)
-                } menu: { close in
-                    CodexMenuContainer {
-                        ForEach(AppAppearance.allCases) { option in
-                            CodexMenuItem(title: option.label, isSelected: model.appearance == option) {
-                                model.appearance = option; close()
-                            }
-                        }
-                    }
-                }
-            }
 
             settingRow("Default model", "Used when starting a new chat.") {
                 CodexMenuTrigger(minWidth: 240) { _ in
@@ -233,13 +319,29 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Sidebar
+    // MARK: - Appearance
 
-    private var sidebarSection: some View {
+    private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Sidebar")
+            sectionTitle("Appearance")
 
-            settingRow("Default grouping", "How chats are organised in the sidebar.") {
+            settingRow("Theme", "Match the system, or force light / dark.") {
+                CodexMenuTrigger(minWidth: 180) { _ in
+                    fieldLabel(model.appearance.label)
+                } menu: { close in
+                    CodexMenuContainer {
+                        ForEach(AppAppearance.allCases) { option in
+                            CodexMenuItem(title: option.label, isSelected: model.appearance == option) {
+                                model.appearance = option; close()
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider().background(CodexTheme.divider).padding(.vertical, 2)
+
+            settingRow("Sidebar grouping", "How chats are organised in the sidebar.") {
                 CodexMenuTrigger(minWidth: 240) { _ in
                     fieldLabel(model.sidebarGroupBy.label)
                 } menu: { close in
@@ -289,21 +391,51 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Performance
+    // MARK: - Personalization
 
-    private var performanceSection: some View {
+    private var personalizationSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Performance")
+            sectionTitle("Personalization")
 
-            toggleRow("Warm Grok session",
-                      "Keep a Grok agent running in the background so MCP boots once and follow-up prompts stream instantly.",
-                      isOn: Binding(get: { model.warmSessionEnabled }, set: { model.warmSessionEnabled = $0 }))
+            Text("Give Grok extra context for a project. GrokCode loads each project's \(model.projectContextFileName) on every run in that project — use it for house style, architecture notes, and standing instructions.")
+                .font(.system(size: 12)).foregroundStyle(CodexTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Divider().background(CodexTheme.divider).padding(.vertical, 2)
+            if let project = model.selectedProject {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Project context")
+                            .font(.system(size: 13, weight: .medium)).foregroundStyle(CodexTheme.textPrimary)
+                        Text("Edit \(project.name)'s \(model.projectContextFileName).")
+                            .font(.system(size: 11)).foregroundStyle(CodexTheme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 16)
+                    pillButton("Edit context", icon: "square.and.pencil") {
+                        model.openProjectContext(for: project)
+                    }
+                }
+            } else {
+                cardContainer {
+                    Text("Select a project to edit its context file.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 12)
+                }
+            }
+        }
+    }
+
+    // MARK: - MCP servers
+
+    private var mcpSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            sectionTitle("MCP servers")
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("MCP servers")
+                    Text("Servers")
                         .font(.system(size: 13, weight: .medium)).foregroundStyle(CodexTheme.textPrimary)
                     if mcpLoading {
                         ProgressView().controlSize(.small)
@@ -326,7 +458,7 @@ struct SettingsView: View {
             mcpList
         }
         .task(id: section) {
-            if section == .performance, mcpServers.isEmpty { reloadMCP() }
+            if section == .mcp, mcpServers.isEmpty { reloadMCP() }
         }
     }
 
@@ -374,6 +506,56 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Hooks
+
+    private var hooksSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            sectionTitle("Hooks")
+            HooksReviewContent(showsHeader: false)
+        }
+    }
+
+    // MARK: - Grok CLI
+
+    private var cliSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            sectionTitle("Grok CLI")
+
+            HStack(spacing: 8) {
+                Image(systemName: model.grokAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(model.grokAvailable ? Color.green : CodexTheme.accentOrange)
+                Text(model.grokAvailable ? "Grok CLI detected" : "Grok CLI not found")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(CodexTheme.textPrimary)
+            }
+
+            cardContainer {
+                VStack(spacing: 0) {
+                    infoCardRow("Path", model.grokBinaryPath)
+                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
+                    infoCardRow("Models available", "\(model.models.count)")
+                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
+                    infoCardRow("Recent sessions", "\(model.sessions.count)")
+                }
+            }
+
+            HStack(spacing: 10) {
+                pillButton("Run grok login", icon: "person.badge.key") { model.runGrokLogin() }
+                Spacer(minLength: 0)
+            }
+
+            Divider().background(CodexTheme.divider).padding(.vertical, 2)
+
+            toggleRow("Warm Grok session",
+                      "Keep a Grok agent running in the background so MCP boots once and follow-up prompts stream instantly.",
+                      isOn: Binding(get: { model.warmSessionEnabled }, set: { model.warmSessionEnabled = $0 }))
+
+            Text("If the CLI isn't detected, install it or run `grok login` in a terminal to authenticate.")
+                .font(.system(size: 12)).foregroundStyle(CodexTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     // MARK: - Data
 
     private var dataSection: some View {
@@ -415,51 +597,61 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Hooks
+    // MARK: - Archived chats
 
-    private var hooksSection: some View {
+    private var archivedSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Hooks")
-            HooksReviewContent(showsHeader: false)
-        }
-    }
+            sectionTitle("Archived chats")
 
-    // MARK: - Grok CLI
-
-    private var cliSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Grok CLI")
-
-            HStack(spacing: 8) {
-                Image(systemName: model.grokAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(model.grokAvailable ? Color.green : CodexTheme.accentOrange)
-                Text(model.grokAvailable ? "Grok CLI detected" : "Grok CLI not found")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(CodexTheme.textPrimary)
-            }
-
-            cardContainer {
-                VStack(spacing: 0) {
-                    infoCardRow("Path", model.grokBinaryPath)
-                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
-                    infoCardRow("Models available", "\(model.models.count)")
-                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
-                    infoCardRow("Recent sessions", "\(model.sessions.count)")
+            let archived = model.archivedProjects
+            if archived.isEmpty {
+                cardContainer {
+                    Text("No archived projects.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 12)
+                }
+            } else {
+                cardContainer {
+                    VStack(spacing: 0) {
+                        ForEach(Array(archived.enumerated()), id: \.element.id) { index, project in
+                            if index > 0 {
+                                Rectangle().fill(CodexTheme.divider).frame(height: 1)
+                            }
+                            HStack(spacing: 10) {
+                                Image(systemName: "archivebox")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(CodexTheme.textTertiary)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(project.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(CodexTheme.textPrimary)
+                                    Text(project.path.path)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(CodexTheme.textTertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                Spacer(minLength: 12)
+                                pillButton("Unarchive", icon: "tray.and.arrow.up") {
+                                    model.unarchiveProject(project)
+                                }
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                        }
+                    }
                 }
             }
 
-            HStack(spacing: 10) {
-                pillButton("Run grok login", icon: "person.badge.key") { model.runGrokLogin() }
-                Spacer(minLength: 0)
-            }
-
-            Text("If the CLI isn't detected, install it or run `grok login` in a terminal to authenticate.")
+            Text("Archived projects are hidden from the sidebar. Unarchive one to bring it back.")
                 .font(.system(size: 12)).foregroundStyle(CodexTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    // MARK: - Shortcuts
+    // MARK: - Keyboard shortcuts
 
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -490,6 +682,8 @@ struct SettingsView: View {
 
     private static let shortcutItems: [(label: String, keys: [String])] = [
         ("New chat", ["⌘", "N"]),
+        ("Send message", ["⌘", "⏎"]),
+        ("Newline in composer", ["⇧", "⏎"]),
         ("Search", ["⌘", "F"]),
         ("Settings", ["⌘", ","]),
         ("Home", ["⌘", "1"]),
