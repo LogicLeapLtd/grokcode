@@ -30,26 +30,18 @@ struct PluginsView: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // One shared centered container (no full-bleed). The header, search field,
+        // segmented control and the result list all live in the same capped,
+        // centered column so widths/gutters match every other detail surface.
+        PageScaffold(spacing: 20) {
             header
-            searchField.padding(.top, 20)
-            segmentedControl.padding(.top, 16)
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 26) {
-                    content
-                }
-                .padding(.top, 22)
-                .padding(.bottom, 48)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            searchField
+            segmentedControl
+            LazyVStack(alignment: .leading, spacing: 22) {
+                content
             }
-            .scrollIndicators(.visible)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 48)
-        .padding(.top, 44)
-        .frame(maxWidth: 820)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(CodexTheme.mainBackground)
         .overlay(alignment: .bottom) { toastOverlay }
         .onAppear {
             model.refreshPlugins()
@@ -80,18 +72,23 @@ struct PluginsView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Title row + Rescan, aligned on the title's baseline so the action
+            // sits level with the heading rather than floating against a
+            // multi-line subtitle.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Plugins")
                     .font(CodexTheme.headlineFont)
                     .foregroundStyle(CodexTheme.textPrimary)
-                Text("Browse the GrokCode marketplace, or import MCP servers, skills and commands you already use in other tools.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(CodexTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 16)
+                rescanButton
             }
-            Spacer(minLength: 12)
-            rescanButton
+            Text("Browse the GrokCode marketplace, or import MCP servers, skills and commands you already use in other tools.")
+                .font(.system(size: 14))
+                .foregroundStyle(CodexTheme.textSecondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -327,13 +324,17 @@ struct PluginsView: View {
         VStack(spacing: 0) {
             ForEach(Array(plugins.enumerated()), id: \.element.id) { index, plugin in
                 if index > 0 {
-                    Rectangle().fill(CodexTheme.divider).frame(height: 1).padding(.leading, 52)
+                    // Inset the divider to line up with the start of the title
+                    // column (icon tile width + leading padding + gutter).
+                    Rectangle().fill(CodexTheme.divider).frame(height: 1)
+                        .padding(.leading, PluginRow.Metrics.textColumnInset)
                 }
                 PluginRow(plugin: plugin)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.mainBackground))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.sidebarBackground))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func sourceBadge(_ source: PluginSource) -> some View {
@@ -346,16 +347,10 @@ struct PluginsView: View {
     }
 
     private func emptyState(symbol: String, title: String, subtitle: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 34, weight: .light)).foregroundStyle(CodexTheme.textTertiary)
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
-            Text(subtitle)
-                .font(.system(size: 14)).foregroundStyle(CodexTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 440)
-        }
-        .frame(maxWidth: .infinity, minHeight: 360, alignment: .center)
+        // Shared centered empty-state from the page-scaffold contract, so "No
+        // matches" / "Nothing to import" sit centered in the column rather than
+        // pinned to a corner.
+        PageEmptyState(systemImage: symbol, title: title, message: subtitle, minHeight: 320)
     }
 }
 
@@ -365,6 +360,16 @@ private struct PluginRow: View {
     @Environment(AppViewModel.self) private var model
     let plugin: Plugin
     @State private var showConfigure = false
+
+    /// Shared layout constants so the divider inset, icon column and text column
+    /// stay on one consistent grid across every row.
+    enum Metrics {
+        static let horizontalPadding: CGFloat = 14
+        static let iconSize: CGFloat = 38
+        static let iconGutter: CGFloat = 12
+        /// Where the title/subtitle column starts, measured from the card edge.
+        static let textColumnInset: CGFloat = horizontalPadding + iconSize + iconGutter
+    }
 
     private var tint: Color {
         Color(red: plugin.sourceTool.tint.red, green: plugin.sourceTool.tint.green, blue: plugin.sourceTool.tint.blue)
@@ -381,12 +386,12 @@ private struct PluginRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: Metrics.iconGutter) {
             icon
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(plugin.displayName)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                     if plugin.isRemoteServer { tag("Remote") }
@@ -403,14 +408,21 @@ private struct PluginRow: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .lineLimit(1)
             }
-            Spacer(minLength: 12)
-            if canConfigure { configureButton }
-            actionControl
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                if canConfigure { configureButton }
+                actionControl
+            }
+            .layoutPriority(1)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Metrics.horizontalPadding)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .codexHover(cornerRadius: 11)
+        // Hover background drawn behind the row content; clears on mouse-exit
+        // (CodexHoverHighlight uses .onHover { hovering = $0 }), so no sticky
+        // highlight lingers after the cursor leaves.
+        .codexHover(cornerRadius: 0)
         .sheet(isPresented: $showConfigure) {
             PluginConfigureSheet(plugin: plugin)
         }

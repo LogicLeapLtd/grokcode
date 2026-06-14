@@ -60,6 +60,11 @@ final class AppViewModel {
     var sidebarSort: SidebarSort = .lastActive
     var pinnedProjectPaths: Set<String> = []
     var archivedProjectPaths: Set<String> = []
+    /// Per-project sidebar collapse state. Holds the `project.path.path` of every
+    /// project the user has individually collapsed. A project is considered
+    /// collapsed if it's in this set OR the global `projectsCollapsed` is on.
+    /// Persisted under `grokcode.collapsedProjects`.
+    var collapsedProjectPaths: Set<String> = []
     /// Plugins discovered from local tool configs (grok/claude/codex/cursor),
     /// with `isInstalled` reflecting the persisted installed set.
     var importablePlugins: [Plugin] = []
@@ -166,6 +171,7 @@ final class AppViewModel {
     private let sidebarSortKey = "grokcode.sidebarSort"
     private let pinnedProjectsKey = "grokcode.pinnedProjects"
     private let archivedProjectsKey = "grokcode.archivedProjects"
+    private let collapsedProjectsKey = "grokcode.collapsedProjects"
     // Appearance / layout preference keys (shared contract).
     fileprivate static let appearanceKey = "grokcode.appearance"
     fileprivate static let sidebarWidthKey = "grokcode.sidebarWidth"
@@ -688,6 +694,9 @@ final class AppViewModel {
            let mode = PermissionMode(rawValue: raw) { permissionMode = mode }
         if let raw = d.string(forKey: "grokcode.defaultEffort"),
            let effort = EffortLevel(rawValue: raw) { effortLevel = effort }
+        if let collapsed = d.array(forKey: collapsedProjectsKey) as? [String] {
+            collapsedProjectPaths = Set(collapsed)
+        }
     }
 
     func addProjectFromPicker() {
@@ -734,6 +743,24 @@ final class AppViewModel {
     func toggleProjectsCollapsed() {
         projectsCollapsed.toggle()
         UserDefaults.standard.set(projectsCollapsed, forKey: "grokcode.projectsCollapsed")
+    }
+
+    /// Whether a project's chats are hidden in the sidebar. True if the global
+    /// collapse is on OR this specific project has been individually collapsed.
+    func isProjectCollapsed(_ project: Project) -> Bool {
+        projectsCollapsed || collapsedProjectPaths.contains(project.path.path)
+    }
+
+    /// Flip a single project's collapse state (independent of the global toggle)
+    /// and persist the per-project set.
+    func toggleProjectCollapsed(_ project: Project) {
+        let path = project.path.path
+        if collapsedProjectPaths.contains(path) {
+            collapsedProjectPaths.remove(path)
+        } else {
+            collapsedProjectPaths.insert(path)
+        }
+        saveSidebarPreferences()
     }
 
     var sidebarProjectGroups: [SidebarProjectGroup] {
@@ -1116,6 +1143,9 @@ final class AppViewModel {
         if let archived = UserDefaults.standard.array(forKey: archivedProjectsKey) as? [String] {
             archivedProjectPaths = Set(archived)
         }
+        if let collapsed = UserDefaults.standard.array(forKey: collapsedProjectsKey) as? [String] {
+            collapsedProjectPaths = Set(collapsed)
+        }
         projectsCollapsed = UserDefaults.standard.bool(forKey: "grokcode.projectsCollapsed")
     }
 
@@ -1125,6 +1155,7 @@ final class AppViewModel {
         UserDefaults.standard.set(sidebarSort.rawValue, forKey: sidebarSortKey)
         UserDefaults.standard.set(Array(pinnedProjectPaths), forKey: pinnedProjectsKey)
         UserDefaults.standard.set(Array(archivedProjectPaths), forKey: archivedProjectsKey)
+        UserDefaults.standard.set(Array(collapsedProjectPaths), forKey: collapsedProjectsKey)
     }
 
     /// Restore appearance / layout preferences from UserDefaults. Reads each key

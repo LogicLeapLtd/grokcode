@@ -132,6 +132,7 @@ struct SidebarView: View {
                 .padding(.trailing, 6)   // gutter so the scrollbar sits past the rows, not over them
                 .animation(CodexMotion.expandSpring, value: model.sidebarProjectGroups.count)
                 .animation(CodexMotion.expandSpring, value: model.projectsCollapsed)
+                .animation(CodexMotion.expandSpring, value: model.collapsedProjectPaths)
             }
             .scrollIndicators(.visible)
         }
@@ -153,7 +154,7 @@ struct SidebarView: View {
                     project: project,
                     isSelected: model.selectedProject?.id == project.id,
                     isPinned: model.isPinned(project),
-                    collapsed: model.projectsCollapsed,
+                    collapsed: model.isProjectCollapsed(project),
                     groupByBranch: model.sidebarGroupBy == .projectBranch,
                     branchGroups: model.branchGroups(for: project),
                     activeThreadId: model.activeSessionId,
@@ -162,6 +163,7 @@ struct SidebarView: View {
                     isThreadPinned: { pinnedThreadIDs.contains($0) },
                     isThreadArchived: { archivedThreadIDs.contains($0) },
                     onSelectProject: { model.selectProject(project) },
+                    onToggleCollapse: { model.toggleProjectCollapsed(project) },
                     onSelectThread: { thread in
                         model.selectThread(thread, in: project)
                     },
@@ -234,6 +236,9 @@ struct SidebarView: View {
                             in: item.project
                         )
                     }
+                    // Bind hover state to the row identity so a recycled slot
+                    // can't keep a stale highlight after the cursor leaves.
+                    .id(item.id)
                 }
             }
         }
@@ -448,49 +453,76 @@ private struct ProjectSidebarBlock: View {
     let isThreadPinned: (String) -> Bool
     let isThreadArchived: (String) -> Bool
     let onSelectProject: () -> Void
+    let onToggleCollapse: () -> Void
     let onSelectThread: (ProjectThread) -> Void
     let onTogglePin: () -> Void
     let onArchive: () -> Void
     let onThreadAction: (ThreadAction, ProjectThread) -> Void
     let onCommitRename: (ProjectThread) -> Void
 
-    // Folder icon (16) + spacing (8) + row inset (8) → align sub-rows under the name.
-    private let nameIndent: CGFloat = 24
+    // Align sub-rows under the project name. Header lays out as:
+    // leading inset (2) + chevron slot (18) + folder icon (16) + spacing (8) = 44
+    // from the block edge; sub-rows already carry an 8pt horizontal inset, so the
+    // remaining indent to reach the name is 44 - 8 = 36.
+    private let nameIndent: CGFloat = 36
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Button(action: onSelectProject) {
-                HStack(spacing: 8) {
-                    Image(systemName: isPinned ? "pin.fill" : "folder")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(CodexTheme.textSecondary)
-                        .frame(width: 16)
-
-                    Text(project.displayName)
-                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                        .foregroundStyle(CodexTheme.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(1)
-
-                    if let branch = project.gitBranch {
-                        BranchChip(branch: branch)
-                    }
-
-                    Spacer(minLength: 8)
+            // Header row: a separate leading chevron toggles collapse, while the
+            // name area selects the project. Both share a single hover highlight.
+            HStack(spacing: 0) {
+                Button(action: onToggleCollapse) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        .frame(width: 18, height: 22)
+                        .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isSelected ? CodexTheme.navHighlight : Color.clear)
-                )
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .help(collapsed ? "Expand project" : "Collapse project")
+
+                Button(action: onSelectProject) {
+                    HStack(spacing: 8) {
+                        Image(systemName: isPinned ? "pin.fill" : "folder")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(CodexTheme.textSecondary)
+                            .frame(width: 16)
+
+                        Text(project.displayName)
+                            .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                            .foregroundStyle(CodexTheme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(1)
+
+                        if let branch = project.gitBranch {
+                            BranchChip(branch: branch)
+                        }
+
+                        Spacer(minLength: 8)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(.leading, 2)
+            .padding(.trailing, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? CodexTheme.navHighlight : Color.clear)
+            )
+            .contentShape(Rectangle())
             .codexHover(cornerRadius: 7)
+            // Key the header's hover state to the project so a recycled row in
+            // the LazyVStack can't retain a stale highlight from another project.
+            .id(project.id)
+            .animation(CodexMotion.quickSpring, value: collapsed)
             .contextMenu {
+                Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
+                Divider()
                 Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
                 Button("Archive", action: onArchive)
             }
@@ -586,6 +618,9 @@ private struct ProjectSidebarBlock: View {
                 .contextMenu { rowContextMenu(thread) }
             }
         }
+        // Tie hover state to the row's identity so a recycled LazyVStack slot
+        // can't carry a stale "hovering" highlight onto a different chat.
+        .id(thread.id)
     }
 
     /// Inline rename text field shown in place of the row (#27 Rename).

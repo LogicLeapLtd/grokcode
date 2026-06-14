@@ -28,33 +28,27 @@ struct AutomationsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                header
+        PageScaffold(spacing: 28) {
+            header
 
-                if model.automations.isEmpty {
-                    emptyState
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(Array(model.automations.enumerated()), id: \.element.id) { index, automation in
-                            AutomationCard(
-                                automation: automation,
-                                onToggle: { model.toggleAutomation(automation) },
-                                onRun: { await model.runAutomationNow(automation) },
-                                onEdit: { editorMode = .edit(automation) },
-                                onDelete: { model.deleteAutomation(automation) }
-                            )
-                            .codexStaggeredAppear(index: index)
-                        }
+            if model.automations.isEmpty {
+                emptyState
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(Array(model.automations.enumerated()), id: \.element.id) { index, automation in
+                        AutomationCard(
+                            automation: automation,
+                            onToggle: { model.toggleAutomation(automation) },
+                            onRun: { await model.runAutomationNow(automation) },
+                            onEdit: { editorMode = .edit(automation) },
+                            onDelete: { model.deleteAutomation(automation) }
+                        )
+                        .codexStaggeredAppear(index: index)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(48)
-            .frame(maxWidth: 760)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(CodexTheme.mainBackground)
         .onAppear {
             model.loadAutomations()
             // QA: auto-open the editor so the modal can be captured.
@@ -118,26 +112,17 @@ struct AutomationsView: View {
             .buttonStyle(CodexPressableStyle())
         .codexHoverOverlay(cornerRadius: 9)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "gearshape.2")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(CodexTheme.textSecondary)
-
-            Text("No automations yet")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(CodexTheme.textPrimary)
-
-            Text("Create an automation to run a saved Grok prompt on demand, every few minutes, or once a day.")
-                .font(CodexTheme.bodyFont)
-                .foregroundStyle(CodexTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-
+        PageEmptyState(
+            systemImage: "gearshape.2",
+            title: "No automations yet",
+            message: "Create an automation to run a saved Grok prompt on demand, every few minutes, or once a day."
+        ) {
             Button {
                 editorMode = .create
             } label: {
@@ -147,30 +132,18 @@ struct AutomationsView: View {
                     Text("New automation")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(CodexTheme.textPrimary)
+                .foregroundStyle(CodexTheme.sendButtonActiveForeground)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(CodexTheme.pillBackground)
+                        .fill(CodexTheme.sendButtonActiveBackground)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle())
-        .codexHoverOverlay(cornerRadius: 9)
-            .padding(.top, 4)
+            .codexHoverOverlay(cornerRadius: 9)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
-        .padding(.horizontal, 24)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(CodexTheme.sidebarBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(CodexTheme.divider, lineWidth: 1)
-        )
     }
 }
 

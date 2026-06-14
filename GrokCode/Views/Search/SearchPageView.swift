@@ -9,6 +9,14 @@ struct SearchPageView: View {
     /// Return opens it.
     @State private var highlightedIndex: Int?
 
+    /// Index of the row the cursor is *currently* over, or `nil` when the cursor
+    /// is over no row. This is kept separate from `highlightedIndex` (keyboard)
+    /// so a hover highlight can NEVER stick after the mouse leaves: every row
+    /// resets this on `onHover(false)`, and the active query/result identity is
+    /// what each row matches against, so a stale index can't paint a phantom
+    /// highlight on a different row.
+    @State private var hoveredIndex: Int?
+
     private let projectLimit = 12
     private let sessionLimit = 12
 
@@ -17,10 +25,11 @@ struct SearchPageView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        PageScaffold(maxWidth: 720, scrolls: false) {
             Text("Search")
                 .font(CodexTheme.headlineFont)
                 .foregroundStyle(CodexTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             searchField
 
@@ -34,10 +43,13 @@ struct SearchPageView: View {
                             resultsSection("Projects") {
                                 ForEach(Array(projects.enumerated()), id: \.element.id) { offset, project in
                                     let index = offset
-                                    ProjectResultRow(project: project, highlighted: highlightedIndex == index)
+                                    ProjectResultRow(project: project, highlighted: isHighlighted(index))
                                         .id(AppViewModel.SearchResult.project(project).id)
+                                        .contentShape(Rectangle())
                                         .onTapGesture { open(at: index) }
-                                        .onHover { if $0 { highlightedIndex = index } }
+                                        .onHover { hovering in
+                                            updateHover(index, hovering: hovering)
+                                        }
                                 }
                             }
                         }
@@ -50,11 +62,14 @@ struct SearchPageView: View {
                                         session: session,
                                         projectName: model.projectName(forSessionID: session.id),
                                         dateLabel: model.searchAgeLabel(for: session.updated ?? session.created),
-                                        highlighted: highlightedIndex == index
+                                        highlighted: isHighlighted(index)
                                     )
                                     .id(AppViewModel.SearchResult.session(session).id)
+                                    .contentShape(Rectangle())
                                     .onTapGesture { open(at: index) }
-                                    .onHover { if $0 { highlightedIndex = index } }
+                                    .onHover { hovering in
+                                        updateHover(index, hovering: hovering)
+                                    }
                                 }
                             }
                         }
@@ -69,6 +84,7 @@ struct SearchPageView: View {
                                 .foregroundStyle(CodexTheme.textTertiary)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: highlightedIndex) { _, new in
                     guard let new, results.indices.contains(new) else { return }
@@ -78,15 +94,37 @@ struct SearchPageView: View {
                 }
             }
         }
-        .padding(48)
-        .frame(maxWidth: 640)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(CodexTheme.mainBackground)
         .onAppear { isFocused = true }
         .onChange(of: model.searchQuery) { _, _ in
             // Reset the highlight to the first result whenever the query changes,
-            // so Return after typing opens the top hit.
+            // so Return after typing opens the top hit. Also drop any stale hover
+            // index — the rows underneath the cursor have changed identity.
             highlightedIndex = results.isEmpty ? nil : 0
+            hoveredIndex = nil
+        }
+    }
+
+    // MARK: Highlight state
+
+    /// A row is highlighted when the cursor is actively over it, OR (when the
+    /// cursor is over nothing) when it's the keyboard-selected row. Active hover
+    /// always wins so the pointer's row lights up immediately; once the cursor
+    /// leaves every row, `hoveredIndex` is `nil` and we fall back to keyboard.
+    private func isHighlighted(_ index: Int) -> Bool {
+        if let hoveredIndex {
+            return hoveredIndex == index
+        }
+        return highlightedIndex == index
+    }
+
+    private func updateHover(_ index: Int, hovering: Bool) {
+        if hovering {
+            hoveredIndex = index
+        } else if hoveredIndex == index {
+            // Only clear if we're the row that was last marked hovered. This
+            // avoids a race in Lazy/stacked containers where an enter event for
+            // the next row arrives before the exit event for the previous one.
+            hoveredIndex = nil
         }
     }
 
@@ -118,6 +156,7 @@ struct SearchPageView: View {
                 if model.searchQuery.isEmpty { return .ignored }
                 model.clearSearch()
                 highlightedIndex = nil
+                hoveredIndex = nil
                 return .handled
             }
 
@@ -125,6 +164,7 @@ struct SearchPageView: View {
                 Button {
                     model.clearSearch()
                     highlightedIndex = nil
+                    hoveredIndex = nil
                     isFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -136,6 +176,7 @@ struct SearchPageView: View {
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(CodexTheme.composerBackground)
@@ -151,7 +192,11 @@ struct SearchPageView: View {
     private func moveHighlight(by delta: Int) {
         let count = results.count
         guard count > 0 else { highlightedIndex = nil; return }
-        let current = highlightedIndex ?? (delta > 0 ? -1 : count)
+        // Keyboard nav takes over from wherever the cursor last was, then the
+        // pointer is no longer the source of truth until it moves again.
+        let base = hoveredIndex ?? highlightedIndex
+        hoveredIndex = nil
+        let current = base ?? (delta > 0 ? -1 : count)
         let next = min(max(current + delta, 0), count - 1)
         highlightedIndex = next
     }
@@ -170,6 +215,7 @@ struct SearchPageView: View {
                 .foregroundStyle(CodexTheme.textSecondary)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -209,10 +255,10 @@ private struct ProjectResultRow: View {
                     .foregroundStyle(CodexTheme.textTertiary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(rowBackground)
-        .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -277,13 +323,13 @@ private struct SessionResultRow: View {
 
             Spacer(minLength: 8)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(highlighted ? CodexTheme.navHighlight : .clear)
         )
-        .contentShape(Rectangle())
     }
 
     private var dot: some View {

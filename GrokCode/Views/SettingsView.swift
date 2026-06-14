@@ -45,14 +45,25 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        // Center the whole nav + content block at the shared page width so
+        // Settings lines up at the same gutters as every other detail page,
+        // instead of full-bleeding edge to edge.
         HStack(spacing: 0) {
             sidebar
             Rectangle().fill(CodexTheme.divider).frame(width: 1)
             content
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: Self.pageMaxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxHeight: .infinity)
         .background(CodexTheme.mainBackground)
     }
+
+    /// Shared page width: the section nav (204pt + 1pt divider) plus the
+    /// 820pt content column from `PageScaffold`, so the content rhythm matches
+    /// the other detail pages while the nav sits to its left.
+    private static let navWidth: CGFloat = 204
+    private static let pageMaxWidth: CGFloat = navWidth + 1 + 820
 
     // MARK: - Section nav
 
@@ -92,7 +103,7 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(8)
-        .frame(width: 204)
+        .frame(width: Self.navWidth)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(CodexTheme.sidebarBackground)
     }
@@ -101,7 +112,7 @@ struct SettingsView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 0) {
                 Group {
                     switch section {
                     case .general: generalSection
@@ -116,11 +127,12 @@ struct SettingsView: View {
                 }
                 .codexPage("settings-\(section.rawValue)")
             }
-            .padding(.horizontal, 40)
-            .padding(.vertical, 36)
-            .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 40)
+            .padding(.top, 36)
+            .padding(.bottom, 40)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .bottom) { toastBanner }
     }
 
@@ -401,7 +413,7 @@ struct SettingsView: View {
     // MARK: - Hooks
 
     private var hooksSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             sectionTitle("Hooks")
             HooksReviewContent(showsHeader: false)
         }
@@ -410,7 +422,7 @@ struct SettingsView: View {
     // MARK: - Grok CLI
 
     private var cliSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             sectionTitle("Grok CLI")
 
             HStack(spacing: 8) {
@@ -445,7 +457,7 @@ struct SettingsView: View {
     // MARK: - Shortcuts
 
     private var shortcutsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             sectionTitle("Keyboard shortcuts")
             cardContainer {
                 VStack(spacing: 0) {
@@ -486,7 +498,7 @@ struct SettingsView: View {
     // MARK: - About
 
     private var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             sectionTitle("About")
 
             HStack(spacing: 14) {
