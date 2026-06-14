@@ -43,6 +43,17 @@ nonisolated struct GrokStreamEvent: Decodable {
         requestId = try c.decodeIfPresent(String.self, forKey: .requestId)
             ?? c.decodeIfPresent(String.self, forKey: .requestIdSnake)
     }
+
+    /// Construct an event directly. Used by the warm `GrokAgentSession` client to
+    /// map ACP `session/update` notifications onto this shape.
+    init(type: String, data: String? = nil, stopReason: String? = nil,
+         sessionId: String? = nil, requestId: String? = nil) {
+        self.type = type
+        self.data = data
+        self.stopReason = stopReason
+        self.sessionId = sessionId
+        self.requestId = requestId
+    }
 }
 
 /// Thread-safe holder for the per-run streaming state. The stdout readability
@@ -109,6 +120,12 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
     /// stall (auth hang, never-ending run) and terminate it so the UI recovers.
     static let inactivityTimeout: TimeInterval = 180
 
+    /// Whether to route prompts through the warm `grok agent stdio` session
+    /// (MCP boots once instead of per message). Settings can disable it.
+    static var useWarmSession: Bool {
+        UserDefaults.standard.object(forKey: "grokcode.useWarmSession") as? Bool ?? true
+    }
+
     private let grokPath: String
     private let processLock = NSLock()
     private var runningProcess: Process?
@@ -150,6 +167,15 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         sessionId: String?,
         onEvent: @escaping @Sendable (GrokStreamEvent) -> Void
     ) async throws -> String? {
+        // Fast path: the long-lived `grok agent stdio` session keeps MCP warm,
+        // so prompts after the first stream instantly. Plan mode (read-only) and
+        // Pursue-goal (`--check`) need the one-shot path's `--permission-mode` /
+        // `--check`, so they fall through to the per-message process below.
+        if Self.useWarmSession, permissionMode != .plan, !check {
+            return try await GrokAgentSession.shared.streamPrompt(
+                prompt, cwd: cwd, model: model, sessionId: sessionId, onEvent: onEvent)
+        }
+
         var args = [
             "-p", prompt,
             "-m", model,
@@ -171,6 +197,9 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
     }
 
     func cancel() {
+        // Stop the warm in-flight turn (no-op if the one-shot path is in use)…
+        GrokAgentSession.shared.cancel()
+        // …and terminate any one-shot process.
         processLock.lock()
         didCancel = true
         let process = runningProcess

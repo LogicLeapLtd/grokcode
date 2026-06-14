@@ -83,6 +83,10 @@ final class AppViewModel {
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
+        // Boot the warm grok session now so MCP is ready before the first send.
+        if grokAvailable, GrokCLIService.useWarmSession {
+            GrokAgentSession.shared.prewarm()
+        }
         restoreDefaults()
         trustedHookIDs = hooksService.loadTrustedIDs()
         refreshHooks()
@@ -143,6 +147,14 @@ final class AppViewModel {
     private func runSmokeTestIfRequested() {
         let env = ProcessInfo.processInfo.environment
 
+        // Warm-session self-test: 3 harmless prompts through the real
+        // GrokCLIService → GrokAgentSession path, against the empty scratch dir
+        // (full access there is safe — nothing to modify). Logs timing to stderr.
+        if env["GROKCODE_SMOKE_WARMTEST"] == "1" {
+            runWarmSelfTest()
+            return
+        }
+
         if let g = env["GROKCODE_SMOKE_GROUPBY"], let gb = SidebarGroupBy(rawValue: g) {
             sidebarGroupBy = gb
         }
@@ -187,6 +199,31 @@ final class AppViewModel {
                 self?.promptText = queued
                 self?.submit()
             }
+        }
+    }
+
+    /// Dev/QA: drive 3 prompts through the warm session and print timing. Proves
+    /// MCP boots once (1st prompt) and 2nd/3rd start fast. stderr only.
+    private func runWarmSelfTest() {
+        let cwd = Self.noProjectScratchDirectory()
+        let model = selectedModel?.id ?? "grok-composer-2.5-fast"
+        func log(_ s: String) { FileHandle.standardError.write(Data(("[WARMTEST] " + s + "\n").utf8)) }
+        log("starting (model=\(model))")
+        Task {
+            var sid: String?
+            for i in 1...3 {
+                let start = Date()
+                do {
+                    sid = try await GrokCLIService.shared.streamPrompt(
+                        "Reply with exactly the word: pong. Do not use any tools.",
+                        cwd: cwd, model: model, permissionMode: .fullAccess,
+                        effort: .medium, check: false, sessionId: sid) { _ in }
+                    log("prompt \(i): \(String(format: "%.2f", Date().timeIntervalSince(start)))s sid=\(sid ?? "nil")")
+                } catch {
+                    log("prompt \(i) ERROR after \(String(format: "%.2f", Date().timeIntervalSince(start)))s: \(error.localizedDescription)")
+                }
+            }
+            log("DONE")
         }
     }
 
