@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ChatView: View {
     @Environment(AppViewModel.self) private var model
@@ -19,7 +20,7 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
                         ForEach(model.messages) { message in
-                            MessageBlock(message: message)
+                            MessageBlock(message: message, onRetry: { model.retryLast() })
                                 .id(message.id)
                         }
                         Color.clear.frame(height: 1).id("bottom-anchor")
@@ -92,13 +93,14 @@ struct ChatView: View {
 
 private struct MessageBlock: View {
     let message: ChatMessage
+    var onRetry: () -> Void = {}
 
     var body: some View {
         switch message.role {
         case .user:
             UserMessageBlock(message: message)
         default:
-            AssistantMessageBlock(message: message)
+            AssistantMessageBlock(message: message, onRetry: onRetry)
         }
     }
 }
@@ -143,6 +145,8 @@ private struct UserMessageBlock: View {
 
 private struct AssistantMessageBlock: View {
     let message: ChatMessage
+    var onRetry: () -> Void = {}
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -158,18 +162,58 @@ private struct AssistantMessageBlock: View {
             }
 
             if !message.text.isEmpty {
-                Text(message.text)
-                    .font(CodexTheme.bodyFont)
-                    .foregroundStyle(CodexTheme.textPrimary)
+                MarkdownText(text: message.text)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if let errorText = message.errorText {
-                ErrorBlock(text: errorText)
+                ErrorBlock(text: errorText, onRetry: onRetry)
+            }
+
+            // Hover-revealed actions under a finished answer.
+            if !message.text.isEmpty && !message.isStreaming {
+                AssistantActions(text: message.text, onRegenerate: onRetry)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(.easeOut(duration: 0.12), value: hovering)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Copy / Regenerate row shown under a completed assistant answer.
+private struct AssistantActions: View {
+    let text: String
+    var onRegenerate: () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            actionButton(copied ? "checkmark" : "doc.on.doc", copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                withAnimation(CodexMotion.quickSpring) { copied = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { copied = false }
+            }
+            actionButton("arrow.clockwise", "Regenerate", action: onRegenerate)
+        }
+        .padding(.top, 2)
+    }
+
+    private func actionButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .medium))
+                Text(title).font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(CodexTheme.textTertiary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .codexHover(cornerRadius: 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -180,7 +224,15 @@ private struct ReasoningBlock: View {
     let isStreaming: Bool
 
     @State private var manualExpanded: Bool?
+    @State private var start = Date()
+    @State private var elapsed: Int?
     private var isExpanded: Bool { manualExpanded ?? isStreaming }
+
+    private var label: String {
+        if isStreaming { return "Thinking…" }
+        if let elapsed { return "Thought for \(elapsed)s" }
+        return "Thought process"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -195,7 +247,7 @@ private struct ReasoningBlock: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(CodexTheme.textTertiary)
                     }
-                    Text(isStreaming ? "Thinking…" : "Thought process")
+                    Text(label)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(CodexTheme.textSecondary)
                     Image(systemName: "chevron.right")
@@ -207,11 +259,8 @@ private struct ReasoningBlock: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                Text(reasoning)
-                    .font(.system(size: 13.5, weight: .regular))
-                    .foregroundStyle(CodexTheme.textSecondary)
+                MarkdownText(text: reasoning, font: .system(size: 13.5), color: CodexTheme.textSecondary)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 10)
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
@@ -219,6 +268,12 @@ private struct ReasoningBlock: View {
                             .frame(width: 2)
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .onAppear { start = Date() }
+        .onChange(of: isStreaming) { _, streaming in
+            if !streaming, elapsed == nil {
+                elapsed = max(1, Int(Date().timeIntervalSince(start)))
             }
         }
     }
@@ -273,20 +328,39 @@ private struct ThinkingDots: View {
 
 private struct ErrorBlock: View {
     let text: String
+    var onRetry: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(CodexTheme.errorForeground)
+                Text(text)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(CodexTheme.errorForeground)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(action: onRetry) {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold))
+                    Text("Retry").font(.system(size: 12, weight: .semibold))
+                }
                 .foregroundStyle(CodexTheme.errorForeground)
-            Text(text)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(CodexTheme.errorForeground)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(CodexTheme.errorBorder, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(CodexTheme.errorBackground)

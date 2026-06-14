@@ -83,6 +83,11 @@ struct PromptComposer: View {
             model.submit()
             return .handled
         }
+        .onKeyPress(.escape) {
+            // Esc stops an in-flight run (menus, when open, swallow Esc first).
+            if model.isRunning { model.cancelRun(); return .handled }
+            return .ignored
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .placeholderOverlay(model.isRunning ? "Queue a follow-up…" : "Do anything",
                             visible: model.promptText.isEmpty,

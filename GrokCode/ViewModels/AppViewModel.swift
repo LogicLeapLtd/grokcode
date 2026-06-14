@@ -336,6 +336,17 @@ final class AppViewModel {
         }
     }
 
+    /// Re-send the most recent user message — backs the error "Retry" button and
+    /// the answer "Regenerate" action. Drops a trailing assistant bubble first.
+    func retryLast() {
+        guard !isRunning else { return }
+        if messages.last?.role == .assistant {
+            messages.removeLast()
+        }
+        guard let lastUser = messages.last(where: { $0.role == .user })?.text, !lastUser.isEmpty else { return }
+        Task { await runPrompt(userText: lastUser) }
+    }
+
     private func runPrompt(userText: String, retriedNewSession: Bool = false) async {
         guard let model = selectedModel else { return }
         let cwd: URL
