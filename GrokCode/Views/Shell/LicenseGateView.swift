@@ -85,7 +85,10 @@ private struct TrialBanner: View {
             .buttonStyle(CodexPressableStyle())
             .codexHoverOverlay(cornerRadius: 12)
         }
-        .padding(.horizontal, 16)
+        // Leading inset clears the macOS traffic-light buttons (the window uses a
+        // transparent title bar, so the banner sits under them at top-left).
+        .padding(.leading, 82)
+        .padding(.trailing, 16)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(CodexTheme.composerShellBackground)
