@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# GrokCode .gitignore — Swift / Xcode macOS app
+# Codessa .gitignore — Swift / Xcode macOS app
 # ---------------------------------------------------------------------------
 # Note: files already tracked by git are NOT affected by these rules. This only
 # stops the build/derived/user-state noise that keeps reappearing in `git status`.

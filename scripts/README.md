@@ -1,6 +1,6 @@
 # scripts/
 
-Release engineering helpers for GrokCode.
+Release engineering helpers for Codessa.
 
 ## `build-dmg.sh`
 
@@ -19,11 +19,11 @@ What it does:
 
 1. `xcodebuild ... -configuration Release -derivedDataPath build clean build`
 2. Reads `MARKETING_VERSION` from the build settings (falls back to `1.0`).
-3. Locates the built `GrokCode.app` and stages it (with an `/Applications`
+3. Locates the built `Codessa.app` and stages it (with an `/Applications`
    drag-target symlink).
-4. Writes `dist/GrokCode-<version>.dmg` via `hdiutil` (UDZO, compressed).
+4. Writes `dist/Codessa-<version>.dmg` via `hdiutil` (UDZO, compressed).
 
-Output: `dist/GrokCode-<version>.dmg`.
+Output: `dist/Codessa-<version>.dmg`.
 
 > A nicer styled DMG (custom window, icon positions, background) can be produced
 > with Homebrew's `create-dmg` — see the commented block inside `build-dmg.sh`.
@@ -41,16 +41,16 @@ Macs. To distribute publicly:
    ```bash
    codesign --deep --force --options runtime --timestamp \
      --sign "Developer ID Application: Your Name (TEAMID)" \
-     build/Build/Products/Release/GrokCode.app
+     build/Build/Products/Release/Codessa.app
 
    codesign --verify --deep --strict --verbose=2 \
-     build/Build/Products/Release/GrokCode.app
+     build/Build/Products/Release/Codessa.app
    ```
 
 2. **Store** notarytool credentials once (keychain profile):
 
    ```bash
-   xcrun notarytool store-credentials "GrokCodeNotary" \
+   xcrun notarytool store-credentials "CodessaNotary" \
      --apple-id "you@example.com" \
      --team-id "TEAMID" \
      --password "app-specific-password"
@@ -59,15 +59,15 @@ Macs. To distribute publicly:
 3. **Notarize** the DMG and wait:
 
    ```bash
-   xcrun notarytool submit dist/GrokCode-<version>.dmg \
-     --keychain-profile "GrokCodeNotary" --wait
+   xcrun notarytool submit dist/Codessa-<version>.dmg \
+     --keychain-profile "CodessaNotary" --wait
    ```
 
 4. **Staple** the ticket so it validates offline:
 
    ```bash
-   xcrun stapler staple dist/GrokCode-<version>.dmg
-   xcrun stapler validate dist/GrokCode-<version>.dmg
+   xcrun stapler staple dist/Codessa-<version>.dmg
+   xcrun stapler validate dist/Codessa-<version>.dmg
    ```
 
 The exact commands also live as inline notes at the bottom of `build-dmg.sh`.

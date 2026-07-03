@@ -1,6 +1,6 @@
 <div align="center">
 
-# GrokCode
+# Codessa
 
 **A native macOS home for the Grok CLI. The ChatGPT‑Codex desktop experience, reimagined for Grok.**
 
@@ -10,17 +10,17 @@
 [![License: Commercial](https://img.shields.io/badge/License-Commercial-6366F1?style=flat)](LICENSE)
 [![Price: $39](https://img.shields.io/badge/Price-%2439_(%2424_launch)-0A84FF?style=flat)](#pricing)
 
-![GrokCode chat](docs/chat.png)
+![Codessa chat](docs/chat.png)
 
 </div>
 
 ---
 
-## Why GrokCode
+## Why Codessa
 
-The `grok` CLI is fast — until every prompt pays a fresh **~30‑second cold start** while MCP servers boot from scratch. GrokCode kills that tax. It opens **one warm `grok agent stdio` session** when the app launches, keeps it alive, and streams every prompt down the same live ACP connection. MCP boots **once**; from then on reasoning and answers start arriving the instant you hit return.
+The `grok` CLI is fast — until every prompt pays a fresh **~30‑second cold start** while MCP servers boot from scratch. Codessa kills that tax. It opens **one warm `grok agent stdio` session** when the app launches, keeps it alive, and streams every prompt down the same live ACP connection. MCP boots **once**; from then on reasoning and answers start arriving the instant you hit return.
 
-On top of that warm core, GrokCode wraps the CLI in a real, native macOS app: markdown chat with copyable code blocks, a ⌘K command palette, slash‑commands and `@file` mentions, a plugin marketplace, scheduled automations, and project + git‑branch organisation — all keyboard‑driven, in full light and dark mode.
+On top of that warm core, Codessa wraps the CLI in a real, native macOS app: markdown chat with copyable code blocks, a ⌘K command palette, slash‑commands and `@file` mentions, a plugin marketplace, scheduled automations, and project + git‑branch organisation — all keyboard‑driven, in full light and dark mode.
 
 It is, deliberately, the ChatGPT‑Codex desktop feel — rebuilt from the ground up for Grok.
 
@@ -54,7 +54,7 @@ It is, deliberately, the ChatGPT‑Codex desktop feel — rebuilt from the groun
 
 ## Pricing
 
-GrokCode is a commercial product with a **one‑time** purchase — no subscription.
+Codessa is a commercial product with a **one‑time** purchase — no subscription.
 
 - **$39** perpetual license — buy once, own it.
 - **$24 launch price** for early adopters.
@@ -69,7 +69,7 @@ GrokCode is a commercial product with a **one‑time** purchase — no subscript
 
 ### Download
 
-Start the **7‑day free trial** or download your licensed copy from the GrokCode download page. Grab the signed, notarized **`.dmg`**, drag GrokCode to **Applications**, and launch. On first run you'll activate your license key (or begin the trial).
+Start the **7‑day free trial** or download your licensed copy from the Codessa download page. Grab the signed, notarized **`.dmg`**, drag Codessa to **Applications**, and launch. On first run you'll activate your license key (or begin the trial).
 
 > **Download:** _[grokcode download page](https://github.com/logicleaplabs/grokcode) — replace with the published download URL._
 
@@ -78,11 +78,11 @@ Start the **7‑day free trial** or download your licensed copy from the GrokCod
 ## Requirements
 
 - **macOS 15 or later** (Apple silicon or Intel).
-- A **GrokCode license** (or an active free trial) — activated on first launch.
-- The **`grok` CLI** installed at `~/.grok/bin/grok`, and an **xAI API key**. GrokCode is a desktop interface for the `grok` CLI — you bring your own `grok` install and xAI account; GrokCode does not provide them.
+- A **Codessa license** (or an active free trial) — activated on first launch.
+- The **`grok` CLI** installed at `~/.grok/bin/grok`, and an **xAI API key**. Codessa is a desktop interface for the `grok` CLI — you bring your own `grok` install and xAI account; Codessa does not provide them.
 - A signed‑in CLI — run **`grok login`** once in your terminal before first launch.
 
-GrokCode talks to your local `grok` install; it stores nothing in the cloud and phones no home beyond license activation.
+Codessa talks to your local `grok` install; it stores nothing in the cloud and phones no home beyond license activation.
 
 ---
 
@@ -102,7 +102,7 @@ GrokCode talks to your local `grok` install; it stores nothing in the cloud and 
 
 ## Plugins / Marketplace
 
-GrokCode ships a built‑in marketplace for **MCP servers**, organised into three tabs:
+Codessa ships a built‑in marketplace for **MCP servers**, organised into three tabs:
 
 - **Discover** — browse community plugins pulled live from the public marketplace manifest.
 - **Import** — add a custom MCP server by command, args, URL, and environment.
@@ -122,7 +122,7 @@ The marketplace is just a single JSON file — anyone can contribute by adding a
 
 ## Architecture
 
-GrokCode is a focused, native stack:
+Codessa is a focused, native stack:
 
 - **SwiftUI** for the entire interface — windows, sidebar, chat, modals, and theming.
 - **A custom menu / motion engine** (`CodexTheme` + `CodexMotion`) providing the named springs and design tokens that give the app its consistent, Codex‑like feel across light and dark.
@@ -134,12 +134,12 @@ State lives in a single `@Observable @MainActor` view model; the CLI layer spawn
 
 ## Disclaimer
 
-**Unofficial.** GrokCode is an independent, community project. It is **not affiliated with, sponsored by, or endorsed by xAI.** "Grok" is a trademark of xAI. GrokCode simply provides a desktop interface for the `grok` CLI that you install and run yourself.
+**Unofficial.** Codessa is an independent, community project. It is **not affiliated with, sponsored by, or endorsed by xAI.** "Grok" is a trademark of xAI. Codessa simply provides a desktop interface for the `grok` CLI that you install and run yourself.
 
 ---
 
 ## License
 
-GrokCode is **commercial, proprietary software** — licensed, not sold. Each purchase grants a personal, non‑transferable license for use on up to **2 devices**. Redistribution and reverse‑engineering are not permitted. See the full [End User License Agreement](LICENSE).
+Codessa is **commercial, proprietary software** — licensed, not sold. Each purchase grants a personal, non‑transferable license for use on up to **2 devices**. Redistribution and reverse‑engineering are not permitted. See the full [End User License Agreement](LICENSE).
 
 Made by **LogicLeap Labs**.

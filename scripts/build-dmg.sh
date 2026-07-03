@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# build-dmg.sh — Build GrokCode (Release) and package it into a .dmg
+# build-dmg.sh — Build Codessa (Release) and package it into a .dmg
 # ---------------------------------------------------------------------------
 # Dependency-free: uses only xcodebuild + hdiutil (both ship with Xcode/macOS).
 # No Homebrew, no create-dmg required. See the NEXT STEPS notes at the bottom
@@ -14,13 +14,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-PROJECT="GrokCode.xcodeproj"
-SCHEME="GrokCode"
+PROJECT="Codessa.xcodeproj"
+SCHEME="Codessa"
 CONFIGURATION="Release"
 DERIVED_DATA="build"
-APP_NAME="GrokCode.app"
+APP_NAME="Codessa.app"
 DIST_DIR="dist"
-VOLNAME="GrokCode"
+VOLNAME="Codessa"
 
 echo "==> Building ${SCHEME} (${CONFIGURATION})"
 
@@ -80,7 +80,7 @@ ln -s /Applications "${STAGING_DIR}/Applications" || true
 # 5) Build the DMG with hdiutil (dependency-free, compressed UDZO)
 # ---------------------------------------------------------------------------
 mkdir -p "${DIST_DIR}"
-DMG_PATH="${DIST_DIR}/GrokCode-${VERSION}.dmg"
+DMG_PATH="${DIST_DIR}/Codessa-${VERSION}.dmg"
 
 echo "==> Creating ${DMG_PATH}"
 hdiutil create \
@@ -100,13 +100,13 @@ echo ""
 #
 #   brew install create-dmg
 #   create-dmg \
-#     --volname "GrokCode" \
+#     --volname "Codessa" \
 #     --window-pos 200 120 --window-size 600 400 \
 #     --icon-size 100 \
-#     --icon "GrokCode.app" 150 190 \
-#     --hide-extension "GrokCode.app" \
+#     --icon "Codessa.app" 150 190 \
+#     --hide-extension "Codessa.app" \
 #     --app-drop-link 450 190 \
-#     "dist/GrokCode-${VERSION}.dmg" \
+#     "dist/Codessa-${VERSION}.dmg" \
 #     "${STAGING_DIR}/"
 # ---------------------------------------------------------------------------
 
@@ -132,7 +132,7 @@ echo ""
 #
 # 2) Store notarytool credentials once (keychain profile):
 #
-#      xcrun notarytool store-credentials "GrokCodeNotary" \
+#      xcrun notarytool store-credentials "CodessaNotary" \
 #        --apple-id "you@example.com" \
 #        --team-id "TEAMID" \
 #        --password "app-specific-password"
@@ -140,7 +140,7 @@ echo ""
 # 3) Notarize the DMG and wait for the result:
 #
 #      xcrun notarytool submit "${DMG_PATH}" \
-#        --keychain-profile "GrokCodeNotary" \
+#        --keychain-profile "CodessaNotary" \
 #        --wait
 #
 # 4) Staple the notarization ticket to the DMG (and/or the .app):
