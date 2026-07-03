@@ -20,6 +20,17 @@ struct SidebarView: View {
     @State private var hoveredRailItem: String?
     @State private var sidebarScrollOffset: CGFloat = 0
     @State private var sidebarScrollContentHeight: CGFloat = 0
+    /// Threads (flat list) whose subagent rows are expanded. Subagents start
+    /// collapsed so a busy chat doesn't flood the sidebar by default.
+    @State private var expandedFlatSubagentIDs: Set<String> = []
+
+    private func toggleFlatSubagents(_ id: String) {
+        if expandedFlatSubagentIDs.contains(id) {
+            expandedFlatSubagentIDs.remove(id)
+        } else {
+            expandedFlatSubagentIDs.insert(id)
+        }
+    }
 
     var body: some View {
         Group {
@@ -161,10 +172,7 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(active ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(active ? CodexTheme.navHighlight : Color.clear)
             .shortcutHint(shortcutKeys(for: section),
                           alignment: .trailing,
                           x: section == .newChat ? -40 : -8,
@@ -172,7 +180,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover()
+        .codexHover(cornerRadius: 0)
         .opacity(locked ? 0.5 : 1)
         .help(locked ? "\(section.title) requires the full app" : section.title)
         .animation(CodexMotion.quickSpring, value: active)
@@ -289,8 +297,18 @@ struct SidebarView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 1) {
                             flatThreadRow(item)
-                            ForEach(item.subThreads) { sub in
-                                flatSubagentRow(sub)
+                            if !item.subThreads.isEmpty {
+                                let expanded = expandedFlatSubagentIDs.contains(item.id)
+                                subagentToggleRow(count: item.subThreads.count,
+                                                   isExpanded: expanded,
+                                                   leadingInset: 12) {
+                                    toggleFlatSubagents(item.id)
+                                }
+                                if expanded {
+                                    ForEach(item.subThreads) { sub in
+                                        flatSubagentRow(sub)
+                                    }
+                                }
                             }
                         }
                     }
@@ -335,14 +353,11 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isActive ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 7)
+        .codexHover(cornerRadius: 0)
         .contextMenu {
             threadContextMenu(
                 ProjectThread(id: item.id, title: item.title, ageLabel: item.ageLabel),
@@ -391,14 +406,11 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isActive ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 7)
+        .codexHover(cornerRadius: 0)
         .help(item.title)
         .id(item.id)
     }
@@ -420,15 +432,12 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(model.activePage == .settings ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(model.activePage == .settings ? CodexTheme.navHighlight : Color.clear)
             .shortcutHint(["⌘", ","], alignment: .trailing, x: -8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover()
+        .codexHover(cornerRadius: 0)
     }
 
     // MARK: - Collapsed rail (#23)
@@ -824,6 +833,33 @@ private struct PendingChatRow: View {
     }
 }
 
+// MARK: - Subagent collapse toggle
+
+/// A small tappable "N subagents" row that shows/hides the nested subagent rows
+/// beneath a chat. Subagents default to collapsed (see the callers' `@State`),
+/// so a chat that spawned many subagents doesn't flood the sidebar by default.
+private func subagentToggleRow(count: Int, isExpanded: Bool, leadingInset: CGFloat,
+                                action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: 12)
+            Text("\(count) subagent\(count == 1 ? "" : "s")")
+                .font(.system(size: 10.5, weight: .medium))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(CodexTheme.textTertiary)
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 8)
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .animation(CodexMotion.quickSpring, value: isExpanded)
+}
+
 // MARK: - Subagent chip
 
 /// A small "sparkles" chip naming a subagent's agent type (e.g. "Explore"),
@@ -879,6 +915,9 @@ private struct ProjectSidebarBlock: View {
 
     /// Reveals the trailing "+" (new chat) button while the row is hovered.
     @State private var rowHovering = false
+    /// Threads whose subagent rows are expanded. Subagents start collapsed so a
+    /// busy chat doesn't flood the sidebar with nested rows by default.
+    @State private var expandedSubagentThreadIDs: Set<String> = []
 
     // Indent for a project's child rows (chat titles). Deliberately tighter than
     // aligning fully under the project name — just past the chevron/folder so the
@@ -1052,8 +1091,22 @@ private struct ProjectSidebarBlock: View {
         } else {
             VStack(alignment: .leading, spacing: 1) {
                 singleThreadRow(thread)
-                ForEach(thread.subThreads) { sub in
-                    subagentRow(sub)
+                if !thread.subThreads.isEmpty {
+                    let expanded = expandedSubagentThreadIDs.contains(thread.id)
+                    subagentToggleRow(count: thread.subThreads.count,
+                                      isExpanded: expanded,
+                                      leadingInset: nameIndent) {
+                        if expanded {
+                            expandedSubagentThreadIDs.remove(thread.id)
+                        } else {
+                            expandedSubagentThreadIDs.insert(thread.id)
+                        }
+                    }
+                    if expanded {
+                        ForEach(thread.subThreads) { sub in
+                            subagentRow(sub)
+                        }
+                    }
                 }
             }
         }
@@ -1092,15 +1145,12 @@ private struct ProjectSidebarBlock: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isActive ? CodexTheme.navHighlight : Color.clear)
-                    )
+                    .background(isActive ? CodexTheme.navHighlight : Color.clear)
                     .opacity(isThreadArchived(thread.id) ? 0.45 : 1)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .codexHover(cornerRadius: 7)
+                .codexHover(cornerRadius: 0)
                 .contextMenu { rowContextMenu(thread) }
             }
         }
@@ -1143,14 +1193,11 @@ private struct ProjectSidebarBlock: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isActive ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 7)
+        .codexHover(cornerRadius: 0)
         .help(thread.title)
         .contextMenu { rowContextMenu(thread) }
         .id(thread.id)
