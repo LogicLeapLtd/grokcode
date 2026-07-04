@@ -241,7 +241,15 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
     }
 
     var providerMenuName: String {
-        "\(providerName) · \(menuName)"
+        Self.providerScopedName(providerName: providerName, modelName: menuName)
+    }
+
+    static func providerScopedName(providerName: String, modelName: String) -> String {
+        let provider = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty else { return model.isEmpty ? "Model" : model }
+        guard !model.isEmpty else { return provider }
+        return model.startsWithProviderName(provider) ? model : "\(provider) · \(model)"
     }
 
     var reasoningDescriptor: ProviderOptionDescriptor? {
@@ -260,6 +268,17 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         let lower = id.lowercased()
         if lower.contains("grok-4") || lower.contains("reasoning") { return true }
         return !Self.knownFastModelIDs.contains(id)
+    }
+}
+
+private extension String {
+    func startsWithProviderName(_ providerName: String) -> Bool {
+        let model = folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let provider = providerName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        guard model.hasPrefix(provider) else { return false }
+        guard model.count > provider.count else { return true }
+        let separator = model[model.index(model.startIndex, offsetBy: provider.count)]
+        return separator == " " || separator == "-" || separator == "·" || separator == ":" || separator == "("
     }
 }
 

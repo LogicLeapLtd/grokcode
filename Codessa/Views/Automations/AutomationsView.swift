@@ -380,7 +380,7 @@ private struct AutomationCard: View {
     private var modelLabel: String {
         let provider = AgentProvider.known.first { $0.id == automation.providerId }?.shortName ?? automation.providerId
         let model = GrokModelOption(id: automation.modelId, isDefault: false).displayName
-        return "\(provider) · \(model)"
+        return GrokModelOption.providerScopedName(providerName: provider, modelName: model)
     }
 
     private func metaChip(systemImage: String, text: String) -> some View {
@@ -506,7 +506,10 @@ private struct AutomationEditorSheet: View {
 
     private var modelLabel: String {
         currentModels.first(where: { $0.id == modelId })?.providerMenuName
-            ?? "\(providerLabel(providerId)) · \(modelId.isEmpty ? "Model" : modelId)"
+            ?? GrokModelOption.providerScopedName(
+                providerName: providerLabel(providerId),
+                modelName: modelId.isEmpty ? "Model" : GrokModelOption(id: modelId, isDefault: false).displayName
+            )
     }
 
     private var currentModels: [GrokModelOption] {
