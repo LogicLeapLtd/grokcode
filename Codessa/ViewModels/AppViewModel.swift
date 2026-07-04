@@ -64,6 +64,11 @@ final class AppViewModel {
     /// conversation starts, before grok persists the session. Cleared once the
     /// real session is indexed (see `attachThreadsToProjects`) or the run fails.
     var pendingChat: PendingChat?
+    /// Chats started with "Don't work in a project" — their session `cwd` is the
+    /// isolated no-project scratch directory, so `attachThreadsToProjects` can't
+    /// match them to any discovered project. Surfaced instead in the sidebar's
+    /// standalone "Chats" section, below the projects list.
+    var noProjectThreads: [ProjectThread] = []
     var grokAvailable = false
     var pendingHooks: [PendingHook] = []
     var trustedHookIDs: Set<String> = []
@@ -707,6 +712,35 @@ final class AppViewModel {
         // (Setting activeSessionId alone only told the *next* prompt to resume.)
         messages = sessionIndex.loadMessages(for: thread.id) ?? []
         navigateTo(.chat)
+    }
+
+    /// Open a chat from the sidebar's standalone "Chats" section — a session
+    /// started with "Don't work in a project", so unlike `selectThread` there's
+    /// no project to attach it to.
+    func selectNoProjectThread(_ thread: ProjectThread) {
+        guard !isRunning else { return }
+        selectedProject = nil
+        workWithoutProject = true
+        UserDefaults.standard.set(true, forKey: workWithoutProjectKey)
+        activeSessionId = thread.id
+        sessionModelId = nil
+        errorMessage = nil
+        messages = sessionIndex.loadMessages(for: thread.id) ?? []
+        navigateTo(.chat)
+    }
+
+    /// Rename a no-project thread in-memory (mirrors `renameThread`).
+    func renameNoProjectThread(_ thread: ProjectThread, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = noProjectThreads.firstIndex(where: { $0.id == thread.id }) else { return }
+        noProjectThreads[index].title = trimmed
+    }
+
+    /// Remove a no-project thread from the sidebar (in-memory, mirrors `deleteThread`).
+    func deleteNoProjectThread(_ thread: ProjectThread) {
+        noProjectThreads.removeAll { $0.id == thread.id }
+        if activeSessionId == thread.id { startNewChat() }
     }
 
     func startNewChat() {
@@ -1558,6 +1592,8 @@ final class AppViewModel {
            let idx = projects.firstIndex(where: { $0.id == selected.id }) {
             selectedProject = projects[idx]
         }
+
+        noProjectThreads = sessionIndex.threads(for: Self.noProjectScratchDirectory(), in: indexed, limit: 200)
     }
 
     private func sortedSidebarProjects(includeArchived: Bool) -> [Project] {

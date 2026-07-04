@@ -201,6 +201,20 @@ struct SidebarView: View {
                             } else {
                                 groupedProjectList
                             }
+
+                            if !model.noProjectThreads.isEmpty {
+                                NoProjectChatsSection(
+                                    threads: model.noProjectThreads,
+                                    activeThreadId: showsThreadSelection ? model.activeSessionId : nil,
+                                    renamingThreadID: $renamingThreadID,
+                                    renameDraft: $renameDraft,
+                                    isThreadPinned: { pinnedThreadIDs.contains($0) },
+                                    isThreadArchived: { archivedThreadIDs.contains($0) },
+                                    onSelectThread: { model.selectNoProjectThread($0) },
+                                    onThreadAction: handleNoProjectThreadAction,
+                                    onCommitRename: commitNoProjectRename
+                                )
+                            }
                         }
                         .padding(.top, 2)
                         .padding(.trailing, 2)
@@ -637,6 +651,35 @@ struct SidebarView: View {
         renamingThreadID = nil
         renameDraft = ""
         model.renameThread(thread, to: draft, in: project)
+    }
+
+    /// Mirrors `handleThreadAction`/`commitRename` for the standalone "Chats"
+    /// section, whose threads have no project to route the action through.
+    private func handleNoProjectThreadAction(_ action: ThreadAction, thread: ProjectThread) {
+        switch action {
+        case .rename:
+            renamingThreadID = thread.id
+            renameDraft = thread.title
+        case .delete:
+            model.deleteNoProjectThread(thread)
+        case .archive:
+            archivedThreadIDs.insert(thread.id)
+        case .unarchive:
+            archivedThreadIDs.remove(thread.id)
+        case .pin:
+            pinnedThreadIDs.insert(thread.id)
+        case .unpin:
+            pinnedThreadIDs.remove(thread.id)
+        case .copy:
+            model.copyThreadTitle(thread)
+        }
+    }
+
+    private func commitNoProjectRename(_ thread: ProjectThread) {
+        let draft = renameDraft
+        renamingThreadID = nil
+        renameDraft = ""
+        model.renameNoProjectThread(thread, to: draft)
     }
 
     /// Shared context-menu builder used by the flat list (the grouped list builds
@@ -1205,6 +1248,213 @@ private struct ProjectSidebarBlock: View {
     }
 
     /// Inline rename text field shown in place of the row (#27 Rename).
+    private func renameField(_ thread: ProjectThread) -> some View {
+        TextField("", text: $renameDraft)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(CodexTheme.textPrimary)
+            .padding(.leading, nameIndent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(CodexTheme.composerBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
+            )
+            .onSubmit { onCommitRename(thread) }
+            .onExitCommand { renamingThreadID = nil }
+    }
+
+    @ViewBuilder
+    private func rowContextMenu(_ thread: ProjectThread) -> some View {
+        Button("Rename") { onThreadAction(.rename, thread) }
+        if isThreadPinned(thread.id) {
+            Button("Unpin") { onThreadAction(.unpin, thread) }
+        } else {
+            Button("Pin") { onThreadAction(.pin, thread) }
+        }
+        if isThreadArchived(thread.id) {
+            Button("Unarchive") { onThreadAction(.unarchive, thread) }
+        } else {
+            Button("Archive") { onThreadAction(.archive, thread) }
+        }
+        Button("Copy") { onThreadAction(.copy, thread) }
+        Divider()
+        Button("Delete", role: .destructive) { onThreadAction(.delete, thread) }
+    }
+}
+
+// MARK: - No-project chats section
+
+/// Standalone sidebar section, below the projects list, for chats started with
+/// "Don't work in a project". These sessions have no project to nest under, so
+/// they get their own collapsible "Chats" header and a flat list of rows —
+/// otherwise mirrors `ProjectSidebarBlock`'s thread/subagent rows.
+private struct NoProjectChatsSection: View {
+    let threads: [ProjectThread]
+    let activeThreadId: String?
+    @Binding var renamingThreadID: String?
+    @Binding var renameDraft: String
+    let isThreadPinned: (String) -> Bool
+    let isThreadArchived: (String) -> Bool
+    let onSelectThread: (ProjectThread) -> Void
+    let onThreadAction: (ThreadAction, ProjectThread) -> Void
+    let onCommitRename: (ProjectThread) -> Void
+
+    @State private var collapsed = false
+    /// Threads whose subagent rows are expanded. Subagents start collapsed so a
+    /// busy chat doesn't flood the sidebar with nested rows by default.
+    @State private var expandedSubagentThreadIDs: Set<String> = []
+
+    private let nameIndent: CGFloat = 20
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Button {
+                collapsed.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        .frame(width: 18, height: 22)
+                    Text("Chats")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 2)
+                .padding(.trailing, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(collapsed ? "Expand chats" : "Collapse chats")
+
+            if !collapsed {
+                ForEach(threads) { thread in
+                    threadRow(thread)
+                }
+            }
+        }
+        .padding(.top, 8)
+        .animation(CodexMotion.quickSpring, value: collapsed)
+    }
+
+    /// A chat row plus any subagent chats it spawned, nested beneath it.
+    @ViewBuilder
+    private func threadRow(_ thread: ProjectThread) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            singleThreadRow(thread)
+            if !thread.subThreads.isEmpty {
+                let expanded = expandedSubagentThreadIDs.contains(thread.id)
+                subagentToggleRow(count: thread.subThreads.count,
+                                  isExpanded: expanded,
+                                  leadingInset: nameIndent) {
+                    if expanded {
+                        expandedSubagentThreadIDs.remove(thread.id)
+                    } else {
+                        expandedSubagentThreadIDs.insert(thread.id)
+                    }
+                }
+                if expanded {
+                    ForEach(thread.subThreads) { sub in
+                        subagentRow(sub)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func singleThreadRow(_ thread: ProjectThread) -> some View {
+        let isActive = activeThreadId == thread.id
+        let isRenaming = renamingThreadID == thread.id
+
+        Group {
+            if isRenaming {
+                renameField(thread)
+            } else {
+                Button { onSelectThread(thread) } label: {
+                    HStack(spacing: 8) {
+                        if isThreadPinned(thread.id) {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(CodexTheme.textTertiary)
+                        }
+                        Text(thread.title)
+                            .font(.system(size: 13))
+                            .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .padding(.leading, isThreadPinned(thread.id) ? 0 : nameIndent)
+
+                        Spacer(minLength: 8)
+
+                        Text(thread.ageLabel)
+                            .font(.system(size: 12))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .fixedSize()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(isActive ? CodexTheme.navHighlight : Color.clear)
+                    .opacity(isThreadArchived(thread.id) ? 0.45 : 1)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .codexHover(cornerRadius: 0)
+                .contextMenu { rowContextMenu(thread) }
+            }
+        }
+        .id(thread.id)
+    }
+
+    @ViewBuilder
+    private func subagentRow(_ thread: ProjectThread) -> some View {
+        let isActive = activeThreadId == thread.id
+
+        Button { onSelectThread(thread) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .padding(.leading, nameIndent)
+
+                if let agent = thread.agentName, !agent.isEmpty {
+                    SubagentChip(name: agent)
+                }
+
+                Text(thread.title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text(thread.ageLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isActive ? CodexTheme.navHighlight : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .codexHover(cornerRadius: 0)
+        .help(thread.title)
+        .contextMenu { rowContextMenu(thread) }
+        .id(thread.id)
+    }
+
     private func renameField(_ thread: ProjectThread) -> some View {
         TextField("", text: $renameDraft)
             .textFieldStyle(.plain)
