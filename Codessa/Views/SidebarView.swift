@@ -49,6 +49,9 @@ struct SidebarView: View {
     /// Inline-rename state (#27): the row being edited and its draft text.
     @State private var renamingThreadID: String?
     @State private var renameDraft: String = ""
+    /// Project pending a rename via the context menu, and its draft label.
+    @State private var projectPendingRename: Project?
+    @State private var projectRenameDraft: String = ""
     /// Live drag width so the resize feels immediate (committed to the model).
     @State private var dragStartWidth: Double?
     /// Collapsed-rail item currently showing its outside-the-sidebar tooltip.
@@ -89,6 +92,21 @@ struct SidebarView: View {
         }
         .frame(width: currentSidebarWidth, alignment: .leading)
         .clipped()
+        .alert("Rename project", isPresented: Binding(
+            get: { projectPendingRename != nil },
+            set: { if !$0 { projectPendingRename = nil } }
+        )) {
+            TextField("Project name", text: $projectRenameDraft)
+            Button("Cancel", role: .cancel) { projectPendingRename = nil }
+            Button("Rename") {
+                if let project = projectPendingRename {
+                    model.renameProject(project, to: projectRenameDraft)
+                }
+                projectPendingRename = nil
+            }
+        } message: {
+            Text("Set a custom name for this project in the sidebar. This doesn't rename the folder on disk.")
+        }
         .background {
             // Translucent "liquid glass" sidebar that samples the desktop behind
             // the (non-opaque) window — see WindowConfigurator on ContentView.
@@ -320,6 +338,13 @@ struct SidebarView: View {
                     },
                     onTogglePin: { model.togglePinProject(project) },
                     onArchive: { model.archiveProject(project) },
+                    onRevealInFinder: { model.revealProjectInFinder(project) },
+                    onCreateWorktree: { model.createWorktree(for: project) },
+                    onBeginRename: {
+                        projectRenameDraft = project.name
+                        projectPendingRename = project
+                    },
+                    onRemove: { model.removeProjectFromSidebar(project) },
                     onThreadAction: { action, thread in
                         handleThreadAction(action, thread: thread, in: project)
                     },
@@ -449,7 +474,9 @@ struct SidebarView: View {
                         .font(.system(size: SidebarMetrics.detailFont))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    BranchChip(branch: item.project.gitBranch ?? "none")
+                    if let branch = item.project.gitBranch {
+                        BranchChip(branch: branch)
+                    }
                 }
                 .foregroundStyle(CodexTheme.textTertiary)
             }
@@ -1193,6 +1220,10 @@ private struct ProjectSidebarBlock: View {
     let onSelectThread: (ProjectThread) -> Void
     let onTogglePin: () -> Void
     let onArchive: () -> Void
+    let onRevealInFinder: () -> Void
+    let onCreateWorktree: () -> Void
+    let onBeginRename: () -> Void
+    let onRemove: () -> Void
     let onThreadAction: (ThreadAction, ProjectThread) -> Void
     let onCommitRename: (ProjectThread) -> Void
 
@@ -1254,9 +1285,9 @@ private struct ProjectSidebarBlock: View {
 
                         Spacer(minLength: 8)
 
-                        // Keep the branch slot visible so project rows retain
-                        // their familiar anchor even in the compact layout.
-                        BranchChip(branch: project.gitBranch ?? "none")
+                        if let branch = project.gitBranch {
+                            BranchChip(branch: branch)
+                        }
                     }
                     .contentShape(Rectangle())
                 }
@@ -1294,8 +1325,38 @@ private struct ProjectSidebarBlock: View {
                     Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
                     Divider()
                 }
-                Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
-                Button("Archive", action: onArchive)
+                Button {
+                    onTogglePin()
+                } label: {
+                    Label(isPinned ? "Unpin project" : "Pin project",
+                          systemImage: isPinned ? "pin.slash" : "pin")
+                }
+                Button {
+                    onRevealInFinder()
+                } label: {
+                    Label("Reveal in Finder", systemImage: "folder")
+                }
+                Button {
+                    onCreateWorktree()
+                } label: {
+                    Label("Create permanent worktree", systemImage: "arrow.triangle.branch")
+                }
+                Button {
+                    onBeginRename()
+                } label: {
+                    Label("Rename project", systemImage: "pencil")
+                }
+                Divider()
+                Button {
+                    onArchive()
+                } label: {
+                    Label("Archive chats", systemImage: "archivebox")
+                }
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Label("Remove", systemImage: "xmark")
+                }
             }
 
             if !collapsed {

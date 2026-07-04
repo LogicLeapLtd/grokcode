@@ -111,6 +111,14 @@ final class AppViewModel {
     var sidebarSort: SidebarSort = .lastActive
     var pinnedProjectPaths: Set<String> = []
     var archivedProjectPaths: Set<String> = []
+    /// Project paths the user has explicitly removed from the sidebar. Unlike
+    /// archiving (recoverable from Settings), a removed project is hidden from the
+    /// list entirely until it's re-added. Persisted under `grokcode.hiddenProjects`.
+    var hiddenProjectPaths: Set<String> = []
+    /// Custom display names keyed by `project.path.path`. Renaming a project sets a
+    /// label override here — it never touches the folder on disk. Persisted under
+    /// `grokcode.projectNameOverrides`.
+    var projectNameOverrides: [String: String] = [:]
     /// Per-project sidebar collapse state. Holds the `project.path.path` of every
     /// project the user has individually collapsed. A project is considered
     /// collapsed if it's in this set OR the global `projectsCollapsed` is on.
@@ -453,6 +461,8 @@ final class AppViewModel {
     private let sidebarSortKey = "grokcode.sidebarSort"
     private let pinnedProjectsKey = "grokcode.pinnedProjects"
     private let archivedProjectsKey = "grokcode.archivedProjects"
+    private let hiddenProjectsKey = "grokcode.hiddenProjects"
+    private let projectNameOverridesKey = "grokcode.projectNameOverrides"
     private let collapsedProjectsKey = "grokcode.collapsedProjects"
     private let seenProjectPathsKey = "grokcode.seenProjectPaths"
     private let collapsedBranchesKey = "grokcode.collapsedBranches"
@@ -1466,6 +1476,104 @@ final class AppViewModel {
         saveSidebarPreferences()
     }
 
+    // MARK: - Project context-menu actions
+
+    /// Open the project's folder in Finder, selecting it.
+    func revealProjectInFinder(_ project: Project) {
+        NSWorkspace.shared.activateFileViewerSelecting([project.path])
+    }
+
+    /// Remove a project from the sidebar entirely. Non-destructive on disk — the
+    /// folder is untouched; it's simply hidden until re-added. If the project is a
+    /// top-level scan root, drop the root too so it doesn't immediately reappear.
+    func removeProjectFromSidebar(_ project: Project) {
+        let path = project.path.path
+        hiddenProjectPaths.insert(path)
+        pinnedProjectPaths.remove(path)
+        if selectedProject?.path.path == path {
+            clearProjectSelection()
+        }
+        saveSidebarPreferences()
+        if projectRoots.contains(where: { $0.standardizedFileURL == project.path }) {
+            removeProjectRoot(project.path)
+        }
+    }
+
+    /// Set a custom sidebar display name for a project (label only — never renames
+    /// the folder on disk). Passing a blank name clears the override.
+    func renameProject(_ project: Project, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = project.path.path
+        if trimmed.isEmpty || trimmed == project.path.lastPathComponent {
+            projectNameOverrides.removeValue(forKey: path)
+        } else {
+            projectNameOverrides[path] = trimmed
+        }
+        saveSidebarPreferences()
+    }
+
+    /// Create a permanent git worktree for the project on a new branch, then add
+    /// it to the sidebar as its own project. Runs `git` off the main actor;
+    /// failures surface on `errorMessage`.
+    func createWorktree(for project: Project) {
+        let repo = project.path
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                AppViewModel.addGitWorktree(forRepoAt: repo)
+            }.value
+            await MainActor.run {
+                guard let self else { return }
+                if let dest = result.url {
+                    self.addProjectRoot(dest)
+                } else {
+                    self.errorMessage = result.error ?? "git worktree add failed."
+                }
+            }
+        }
+    }
+
+    /// Runs `git worktree add -b <branch> <dest>` for the given repo, choosing a
+    /// non-colliding sibling directory and branch name. Returns the new worktree
+    /// URL on success or a human-readable error message on failure.
+    private nonisolated static func addGitWorktree(forRepoAt repo: URL) -> (url: URL?, error: String?) {
+        let fm = FileManager.default
+        // Confirm the folder is inside a git working tree first.
+        guard gitBranch(for: repo) != nil else {
+            return (nil, "\(repo.lastPathComponent) is not a git repository.")
+        }
+
+        let parent = repo.deletingLastPathComponent()
+        let base = repo.lastPathComponent
+        var index = 1
+        var branch = "worktree-\(index)"
+        var dest = parent.appendingPathComponent("\(base)-\(branch)")
+        while fm.fileExists(atPath: dest.path) {
+            index += 1
+            branch = "worktree-\(index)"
+            dest = parent.appendingPathComponent("\(base)-\(branch)")
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", repo.path, "worktree", "add", "-b", branch, dest.path]
+        let pipe = Pipe()
+        proc.standardError = pipe
+        proc.standardOutput = pipe
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return (nil, "Couldn't run git: \(error.localizedDescription)")
+        }
+        guard proc.terminationStatus == 0 else {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return (nil, output.isEmpty ? "git worktree add failed." : output)
+        }
+        return (dest.standardizedFileURL, nil)
+    }
+
     /// Projects the user has archived (full blobs, for the Settings "Archived"
     /// page). Ordered by name so the list is stable.
     var archivedProjects: [Project] {
@@ -2069,6 +2177,17 @@ final class AppViewModel {
 
     private func sortedSidebarProjects(includeArchived: Bool) -> [Project] {
         var result = projects
+            // Removed projects never appear in the active or archived lists.
+            .filter { !hiddenProjectPaths.contains($0.path.path) }
+            // Apply any custom display-name overrides set via "Rename project".
+            .map { project -> Project in
+                guard let custom = projectNameOverrides[project.path.path], !custom.isEmpty else {
+                    return project
+                }
+                var renamed = project
+                renamed.name = custom
+                return renamed
+            }
 
         if includeArchived {
             result = result.filter { archivedProjectPaths.contains($0.path.path) }
@@ -2198,6 +2317,12 @@ final class AppViewModel {
         if let archived = UserDefaults.standard.array(forKey: archivedProjectsKey) as? [String] {
             archivedProjectPaths = Set(archived)
         }
+        if let hidden = UserDefaults.standard.array(forKey: hiddenProjectsKey) as? [String] {
+            hiddenProjectPaths = Set(hidden)
+        }
+        if let overrides = UserDefaults.standard.dictionary(forKey: projectNameOverridesKey) as? [String: String] {
+            projectNameOverrides = overrides
+        }
         if let collapsed = UserDefaults.standard.array(forKey: collapsedProjectsKey) as? [String] {
             collapsedProjectPaths = Set(collapsed)
         }
@@ -2219,6 +2344,8 @@ final class AppViewModel {
         UserDefaults.standard.set(sidebarSort.rawValue, forKey: sidebarSortKey)
         UserDefaults.standard.set(Array(pinnedProjectPaths), forKey: pinnedProjectsKey)
         UserDefaults.standard.set(Array(archivedProjectPaths), forKey: archivedProjectsKey)
+        UserDefaults.standard.set(Array(hiddenProjectPaths), forKey: hiddenProjectsKey)
+        UserDefaults.standard.set(projectNameOverrides, forKey: projectNameOverridesKey)
         UserDefaults.standard.set(Array(collapsedProjectPaths), forKey: collapsedProjectsKey)
         UserDefaults.standard.set(Array(collapsedBranchKeys), forKey: collapsedBranchesKey)
     }
