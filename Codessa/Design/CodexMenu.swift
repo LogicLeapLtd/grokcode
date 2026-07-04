@@ -175,6 +175,10 @@ private struct CodexMenuHost: ViewModifier {
             .fixedSize(horizontal: false, vertical: true)
             .liquidGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous),
                          fallback: CodexTheme.menuBackground)
+            // Clip the content (incl. the overflow ScrollView) to the same rounded
+            // shape — without this the square content corners poke out a hair past
+            // the rounded background, reading as sharp corners on the card.
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
@@ -443,6 +447,7 @@ struct CodexFlyoutItem<Sub: View>: View {
                         .frame(minWidth: 190, alignment: .leading)
                         .liquidGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous),
                                      fallback: CodexTheme.menuBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
