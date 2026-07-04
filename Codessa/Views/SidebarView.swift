@@ -90,6 +90,7 @@ struct SidebarView: View {
                 .padding(.bottom, 2)
 
             navSection
+                .padding(.horizontal, 8)
                 .padding(.bottom, 14)
 
             projectsSection
