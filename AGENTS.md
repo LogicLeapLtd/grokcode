@@ -1,6 +1,6 @@
 # Codessa — Agent Guide
 
-> Kept in sync with `AGENTS.md` (same content). Update both when this changes.
+> Kept in sync with `CLAUDE.md` (same content). Update both when this changes.
 
 Native macOS SwiftUI app — a front-end for the Grok CLI.
 
