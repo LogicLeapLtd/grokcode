@@ -99,6 +99,13 @@ private nonisolated final class StreamState: @unchecked Sendable {
     private var didTimeout = false
     private var didFinish = false
 
+    /// Rolling tail of raw stdout. Grok normally streams newline-delimited JSON
+    /// events here, but when it dies early it can emit a plain-text error (or a
+    /// malformed line we can't decode) on stdout with nothing on stderr. Keeping
+    /// the tail lets us surface that instead of a generic exit-code message.
+    private var stdoutTail = ""
+    private static let stdoutTailLimit = 4000
+
     private static let newline = UInt8(ascii: "\n")
 
     /// Append incoming stdout bytes; returns whatever complete (newline-
@@ -107,6 +114,10 @@ private nonisolated final class StreamState: @unchecked Sendable {
     /// or drop an event.
     func appendStdout(_ data: Data, flush: Bool) -> [Data] {
         lock.lock(); defer { lock.unlock() }
+        stdoutTail += String(decoding: data, as: UTF8.self)
+        if stdoutTail.count > Self.stdoutTailLimit {
+            stdoutTail = String(stdoutTail.suffix(Self.stdoutTailLimit))
+        }
         buffer.append(data)
         var lines: [Data] = []
         while let nl = buffer.firstIndex(of: Self.newline) {
@@ -137,11 +148,11 @@ private nonisolated final class StreamState: @unchecked Sendable {
 
     /// Atomically claim completion exactly once. Returns nil if another thread
     /// already finished; otherwise the snapshot needed to resume.
-    func claimFinish() -> (timedOut: Bool, sessionId: String?, stderr: String)? {
+    func claimFinish() -> (timedOut: Bool, sessionId: String?, stderr: String, stdoutTail: String)? {
         lock.lock(); defer { lock.unlock() }
         if didFinish { return nil }
         didFinish = true
-        return (didTimeout, sessionId, stderr)
+        return (didTimeout, sessionId, stderr, stdoutTail)
     }
 }
 
@@ -393,9 +404,15 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
                 } else if proc.terminationStatus == 0 || snapshot.sessionId != nil {
                     continuation.resume(returning: snapshot.sessionId)
                 } else {
-                    let err = snapshot.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Prefer stderr, but fall back to whatever Grok left on stdout
+                    // (a plain-text error or an undecodable line) so we surface the
+                    // real reason rather than a generic exit-code message.
+                    var detail = snapshot.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if detail.isEmpty {
+                        detail = snapshot.stdoutTail.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
                     continuation.resume(throwing: GrokCLIError.processFailed(
-                        CLIProcessMessage.friendly(name: "Grok", exitCode: proc.terminationStatus, stderr: err)))
+                        CLIProcessMessage.friendly(name: "Grok", exitCode: proc.terminationStatus, stderr: detail)))
                 }
             }
 

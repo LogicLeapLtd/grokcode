@@ -1,5 +1,7 @@
 # Changelog
 
+- Grok error messages are now specific instead of the generic "hit a temporary failure" banner. The warm agent session used to discard the agent process's stderr and report a bland "the process exited" — it now keeps a rolling tail of stderr and surfaces the actual crash / auth / rate-limit reason (with the exit code) when the process dies. The one-shot streaming path also falls back to whatever Grok wrote to stdout (a plain-text or undecodable error line) when stderr is empty, so the real diagnostic is shown rather than boilerplate.
+
 - Tightened the composer toolbar so long model names (e.g. "Grok Composer 2.5 Fast") no longer overflow the row. The mode dropdown no longer echoes the selected model beside the mode name — it just shows the mode (Execute, Plan, …) — and the model pill now truncates gracefully instead of expanding to the model's full intrinsic width.
 
 - Starting a chat no longer empties the sidebar. Previously the "With chats" filter would collapse the whole project list down to just the active project the instant a chat began (the optimistic "New chat" placeholder made it the only project "with chats"). Pending placeholders are now ignored when deciding which projects to show, so every project stays visible and the sort simply floats the active one to the top. The owning project also auto-expands when a chat starts, so the new chat is immediately visible instead of hidden under a collapsed project row.

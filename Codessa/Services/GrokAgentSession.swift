@@ -54,6 +54,13 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     private var watchdog: DispatchSourceTimer?
     private let watchdogQueue = DispatchQueue(label: "grok.agent.watchdog")
 
+    /// Rolling tail of the agent process's stderr. The `grok agent` process
+    /// writes crash traces / auth failures / rate-limit notices here; capturing
+    /// the last few KB lets us surface the *actual* reason when the process dies,
+    /// instead of a generic "the process exited" banner.
+    private var stderrTail = ""
+    private static let stderrTailLimit = 4000
+
     private static let newline = UInt8(ascii: "\n")
 
     init() {
@@ -205,9 +212,14 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
             guard !data.isEmpty else { return }
             self?.ingest(data)
         }
-        // Drain stderr so the pipe never fills and blocks the agent.
-        errPipe.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
-        p.terminationHandler = { [weak self] _ in self?.handleTermination() }
+        // Drain stderr so the pipe never fills and blocks the agent — and keep a
+        // rolling tail of it so a crash/auth/rate-limit reason can be surfaced.
+        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.appendStderrTail(String(decoding: data, as: UTF8.self))
+        }
+        p.terminationHandler = { [weak self] proc in self?.handleTermination(exitCode: proc.terminationStatus) }
 
         do {
             try p.run()
@@ -220,6 +232,7 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         process = p
         stdin = inPipe.fileHandleForWriting
         buffer = Data()
+        stderrTail = ""
         initialized = false
         currentSessionId = nil
         currentModel = nil
@@ -246,7 +259,7 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         lock.lock(); initialized = true; lock.unlock()
     }
 
-    private func handleTermination() {
+    private func handleTermination(exitCode: Int32) {
         lock.lock()
         let pending = responders
         responders.removeAll()
@@ -260,10 +273,28 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         currentModel = nil
         promptOnEvent = nil
         promptSessionId = nil
+        let tail = stderrTail.trimmingCharacters(in: .whitespacesAndNewlines)
         lock.unlock()
         // Fail anything still waiting so the UI surfaces an error / retries.
+        // Lead with the friendly exit-code summary, but append whatever the agent
+        // actually wrote to stderr (crash trace, auth failure, rate-limit notice)
+        // so the reason is concrete rather than "the process exited".
+        var message = CLIProcessMessage.friendly(name: "The Grok agent", exitCode: exitCode, stderr: tail)
+        if tail.isEmpty {
+            message = "The Grok agent process exited (code \(exitCode)) without reporting a reason. Try again; if it persists, run `grok agent` in a terminal to see the error."
+        }
         for (_, responder) in pending {
-            responder(.failure(GrokCLIError.processFailed("The grok agent process exited.")))
+            responder(.failure(GrokCLIError.processFailed(message)))
+        }
+    }
+
+    /// Append to the rolling stderr tail, trimming from the front so it stays
+    /// bounded. Called off the reader queue; guarded by `lock`.
+    private func appendStderrTail(_ text: String) {
+        lock.lock(); defer { lock.unlock() }
+        stderrTail += text
+        if stderrTail.count > Self.stderrTailLimit {
+            stderrTail = String(stderrTail.suffix(Self.stderrTailLimit))
         }
     }
 
