@@ -1,7 +1,7 @@
 # Changelog
 
 - Composer "+" (add attachment) button is now circular instead of a rounded square.
-- Home quick-action cards: all labels now render at the same font size ("Browse plugins" no longer auto-shrinks to fit).
+- Home quick-action cards: removed the redundant "New chat" card (the Home page is already the new-chat surface) and made all remaining labels render at the same font size ("Browse plugins" no longer auto-shrinks to fit).
 - Composer toolbar: pills now size to their content (no more truncated mode/permission labels or "Full access" wrapping); model pill drops the "(default)" suffix.
 
 All notable changes to Codessa are documented in this file.

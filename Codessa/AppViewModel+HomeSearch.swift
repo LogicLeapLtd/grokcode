@@ -72,9 +72,6 @@ extension AppViewModel {
     /// specially (it resets the conversation) — see `runQuickAction(_:)`.
     var homeQuickActions: [HomeQuickAction] {
         [
-            HomeQuickAction(id: "new", title: "New chat",
-                            subtitle: "Start a fresh conversation",
-                            systemImage: "plus.bubble", page: .home),
             HomeQuickAction(id: "plugins", title: "Browse plugins",
                             subtitle: "Add tools & MCP servers",
                             systemImage: "shippingbox", page: .plugins),
@@ -87,14 +84,9 @@ extension AppViewModel {
         ]
     }
 
-    /// Run a Home quick-action: "New chat" clears the conversation; everything
-    /// else navigates to its page.
+    /// Run a Home quick-action: navigate to its page.
     func runQuickAction(_ action: HomeQuickAction) {
-        if action.id == "new" {
-            startNewChat()
-        } else {
-            navigateTo(action.page)
-        }
+        navigateTo(action.page)
     }
 
     // MARK: Home — Grok install guidance (#31)
