@@ -176,10 +176,6 @@ struct SidebarView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(active ? CodexTheme.navHighlight : Color.clear)
-            .shortcutHint(shortcutKeys(for: section),
-                          alignment: .trailing,
-                          x: section == .newChat ? -40 : -8,
-                          enabled: !locked)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -693,15 +689,6 @@ struct SidebarView: View {
 
     private func isLimited(_ section: SidebarSection) -> Bool {
         limitedMode && section == .automations
-    }
-
-    private func shortcutKeys(for section: SidebarSection) -> [String]? {
-        switch section {
-        case .newChat: ["⌘", "N"]
-        case .search: ["⌘", "F"]
-        case .plugins: ["⌘", "3"]
-        case .automations: ["⌘", "4"]
-        }
     }
 
     private func handleThreadAction(_ action: ThreadAction, thread: ProjectThread, in project: Project) {

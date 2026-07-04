@@ -607,7 +607,6 @@ struct PromptComposer: View {
                 }
             }
         }
-        .shortcutHint(["⇧", "⌘", "M"], title: "Mode", alignment: .topTrailing, x: -8, y: -13)
     }
 
     // Codex-style combined control: "<Model> <Effort> ⌄" with one dropdown.
@@ -703,7 +702,6 @@ struct PromptComposer: View {
         .disabled(!model.isRunning && !model.canSend)
         .animation(CodexMotion.quickSpring, value: model.isRunning)
         .animation(CodexMotion.quickSpring, value: model.canSend)
-        .shortcutHint(["⌘", "↩"], title: "Send", alignment: .topTrailing, x: 4, y: -10, enabled: model.canSend && !model.isRunning)
     }
 
     private var contextStrip: some View {

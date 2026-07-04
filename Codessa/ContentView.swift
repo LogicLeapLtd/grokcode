@@ -6,7 +6,6 @@ struct ContentView: View {
     /// License/trial gate. Owned here as a `@StateObject` so its lifetime matches
     /// the primary window and its published state drives the paywall/banner.
     @StateObject private var license = LicenseManager()
-    @State private var commandKeyPressed = false
 
     var body: some View {
         ZStack {
@@ -101,11 +100,9 @@ struct ContentView: View {
         .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
         .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
         .animation(.easeOut(duration: 0.18), value: model.fullScreenImagePath)
-        .environment(\.commandKeyPressed, commandKeyPressed)
         .environmentObject(license)
         .codexMenuHost()
         .focusEffectDisabled()
-        .background(CommandKeyObserver(isPressed: $commandKeyPressed))
         .background(WindowConfigurator())
         .preferredColorScheme(model.appearance.colorScheme)
     }

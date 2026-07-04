@@ -661,6 +661,11 @@ struct SettingsView: View {
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             sectionTitle("Keyboard shortcuts")
+
+            Text("Every shortcut available in Codessa. These work whenever the app is focused.")
+                .font(.system(size: 12)).foregroundStyle(CodexTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             cardContainer {
                 VStack(spacing: 0) {
                     let items = Self.shortcutItems
@@ -687,6 +692,7 @@ struct SettingsView: View {
 
     private static let shortcutItems: [(label: String, keys: [String])] = [
         ("New chat", ["⌘", "N"]),
+        ("Command palette", ["⌘", "K"]),
         ("Send message", ["⌘", "⏎"]),
         ("Newline in composer", ["⇧", "⏎"]),
         ("Search", ["⌘", "F"]),

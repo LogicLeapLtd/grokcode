@@ -166,22 +166,11 @@ private struct QuickActionCard: View {
                                   lineWidth: 1)
             )
             .shadow(color: CodexTheme.focusAccent.opacity(hovering ? 0.10 : 0), radius: 10, y: 3)
-            .shortcutHint(shortcutKeys, alignment: .topTrailing, x: -7, y: -13)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(CodexPressableStyle())
         .onHover { hovering = $0 }
         .animation(CodexMotion.quickSpring, value: hovering)
-    }
-
-    private var shortcutKeys: [String]? {
-        switch action.id {
-        case "new": ["⌘", "N"]
-        case "plugins": ["⌘", "3"]
-        case "search": ["⌘", "F"]
-        case "automations": ["⌘", "4"]
-        default: nil
-        }
     }
 }
 
