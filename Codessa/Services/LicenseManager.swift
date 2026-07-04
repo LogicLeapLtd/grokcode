@@ -56,6 +56,13 @@ final class LicenseManager: ObservableObject {
         max(0, LicenseConfig.trialDays - daysSinceTrialStart())
     }
 
+    /// Codessa is free. The licensing gate is permanently unlocked: no trial
+    /// countdown, no paywall, no limited mode, and no launch-time calls to the
+    /// Lemon Squeezy activate/validate endpoints. The full activation machinery
+    /// below is kept intact (just unreachable) so the app can be re-monetised
+    /// later by flipping this single flag back to `false`.
+    static let isFree = true
+
     /// Developer escape hatch: unconditionally unlocks the app, bypassing the
     /// trial/license gate entirely. Active in DEBUG builds, or in ANY build when
     /// the process is launched with `GROKCODE_DEV_UNLOCK=1` in its environment.
@@ -71,7 +78,7 @@ final class LicenseManager: ObservableObject {
 
     /// True while the user may use the full app (trial running OR licensed).
     var isUnlocked: Bool {
-        if Self.devUnlock || hasOwnerUnlock { return true }
+        if Self.isFree || Self.devUnlock || hasOwnerUnlock { return true }
         switch status {
         case .trial, .licensed: return true
         case .checking: return true   // never block during the launch check
@@ -83,7 +90,7 @@ final class LicenseManager: ObservableObject {
     /// remains usable in this state; paid/full-version affordances can key off
     /// this without hard-blocking the whole shell.
     var isInLimitedMode: Bool {
-        if Self.devUnlock || hasOwnerUnlock { return false }
+        if Self.isFree || Self.devUnlock || hasOwnerUnlock { return false }
         switch status {
         case .expired, .invalid: return true
         case .checking, .trial, .licensed: return false
@@ -160,6 +167,16 @@ final class LicenseManager: ObservableObject {
     /// start on first run, then either re-validates an existing key online or
     /// resolves the trial/expired state locally.
     func bootstrap() {
+        // Free build: settle straight into a permanently-licensed state without
+        // stamping a trial or calling the licensing server. Everything below is
+        // retained for a future paid build (flip `isFree` to re-enable it).
+        if Self.isFree {
+            activeLicenseKey = ""
+            lastError = nil
+            status = .licensed
+            return
+        }
+
         if hasOwnerUnlock {
             activeLicenseKey = "Owner"
             lastError = nil
