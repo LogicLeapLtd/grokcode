@@ -249,7 +249,16 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !provider.isEmpty else { return model.isEmpty ? "Model" : model }
         guard !model.isEmpty else { return provider }
-        return model.startsWithProviderName(provider) ? model : "\(provider) · \(model)"
+        return hasProviderPrefix(modelName: model, providerName: provider) ? model : "\(provider) · \(model)"
+    }
+
+    private static func hasProviderPrefix(modelName: String, providerName: String) -> Bool {
+        let model = modelName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let provider = providerName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        guard model.hasPrefix(provider) else { return false }
+        guard model.count > provider.count else { return true }
+        let separator = model[model.index(model.startIndex, offsetBy: provider.count)]
+        return separator == " " || separator == "-" || separator == "·" || separator == ":" || separator == "("
     }
 
     var reasoningDescriptor: ProviderOptionDescriptor? {
@@ -268,17 +277,6 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         let lower = id.lowercased()
         if lower.contains("grok-4") || lower.contains("reasoning") { return true }
         return !Self.knownFastModelIDs.contains(id)
-    }
-}
-
-private extension String {
-    func startsWithProviderName(_ providerName: String) -> Bool {
-        let model = folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        let provider = providerName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        guard model.hasPrefix(provider) else { return false }
-        guard model.count > provider.count else { return true }
-        let separator = model[model.index(model.startIndex, offsetBy: provider.count)]
-        return separator == " " || separator == "-" || separator == "·" || separator == ":" || separator == "("
     }
 }
 
