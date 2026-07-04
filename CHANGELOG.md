@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-04
+
+### Changed
+- **Final provider-label cleanup**: kept model menu labels from repeating the
+  provider name while removing the Swift actor-isolation warning introduced by
+  the helper extension.
+
 ## [1.4.0] - 2026-07-04
 
 ### Added
