@@ -5,6 +5,11 @@ struct CodessaApp: App {
     @State private var appModel = AppViewModel()
     @State private var menuController = CodexMenuController()
 
+    init() {
+        // Register the bundled brand typefaces before any view renders.
+        BrandFonts.registerAll()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

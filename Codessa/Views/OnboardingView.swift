@@ -3,15 +3,15 @@ import AppKit
 
 /// First-run onboarding overlay (shared contract). Presented from `ContentView`
 /// over a dimmed backdrop whenever `model.onboardingOpen` is true. A single
-/// centred card — not a long wizard — that gets the user from a cold install to
-/// a working setup in one view:
-///   1. Warm welcome with the Codessa identity (chevron prompt + orange
-///      block-cursor motif recreated in SwiftUI).
-///   2. Grok CLI status — a green check when detected, or an amber "Not found"
-///      row with a "Run grok login" button + install hint.
-///   3. "Add a project folder" (NSOpenPanel → `model.addProjectRoot`), showing
-///      how many roots are configured.
-///   4. A default-model picker (`CodexMenuTrigger` over `model.models`).
+/// centred glass card — not a long wizard — that gets the user from a cold
+/// install to a working, provider-agnostic setup in one view:
+///   1. Warm welcome with the Codessa identity (chevron prompt + violet
+///      block-cursor motif recreated in SwiftUI, in Fraunces).
+///   2. AI providers — a dock of every supported agent CLI (Claude Code, Codex,
+///      Cursor, Gemini, Grok, Z.AI) with per-provider detected/not-detected
+///      status rings, plus a "+ Custom" slot. No single provider is the focus.
+///   3. "Add a project folder" (NSOpenPanel → `model.addProjectRoot`).
+///   4. A default-provider + model picker (`CodexMenuTrigger` over `model.models`).
 /// A prominent "Get started" button calls `model.completeOnboarding()`.
 ///
 /// The card lives in its own overlay layer with its own `CodexMenuController`
@@ -36,16 +36,20 @@ struct OnboardingView: View {
                 .transition(.opacity)
 
             card
-                .frame(width: 520)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(CodexTheme.mainBackground)
-                        .shadow(color: CodexTheme.shadowColor, radius: 32, y: 12)
-                )
+                .frame(width: 468)
+                .background(glassBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.55), .white.opacity(0.20), .white.opacity(0.06)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.25
+                        )
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .scaleEffect(appeared ? 1 : 0.96)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 14)
@@ -57,24 +61,51 @@ struct OnboardingView: View {
         }
     }
 
+    /// Frosted glass card background: within-window vibrancy + a faint violet
+    /// tint + a diagonal specular sheen so the "glass" reads clearly regardless
+    /// of what's behind the window.
+    private var glassBackground: some View {
+        ZStack {
+            VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
+            CodexTheme.mainBackground.opacity(0.16)
+            CodexTheme.accent.opacity(0.05)
+            LinearGradient(
+                colors: [.white.opacity(0.14), .white.opacity(0.02), .white.opacity(0.05)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: CodexTheme.shadowColor, radius: 34, y: 14)
+    }
+
     // MARK: - Card
 
     private var card: some View {
         VStack(spacing: 0) {
             header
-            Divider().background(CodexTheme.divider)
-
-            VStack(alignment: .leading, spacing: 18) {
-                grokStatusStep
+            fadeRule
+            VStack(spacing: 0) {
+                providerStep
+                Divider().overlay(CodexTheme.divider.opacity(0.5))
                 projectStep
+                Divider().overlay(CodexTheme.divider.opacity(0.5))
                 modelStep
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
-
-            Divider().background(CodexTheme.divider)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 4)
+            fadeRule
             footer
         }
+    }
+
+    private var fadeRule: some View {
+        LinearGradient(
+            colors: [.clear, CodexTheme.divider, CodexTheme.divider, .clear],
+            startPoint: .leading, endPoint: .trailing
+        )
+        .frame(height: 1)
+        .padding(.horizontal, 30)
     }
 
     // MARK: - Header (identity + welcome)
@@ -83,136 +114,113 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             ChevronPromptMark()
 
-            VStack(spacing: 7) {
+            VStack(spacing: 8) {
                 Text("Welcome to Codessa")
-                    .font(.system(size: 24, weight: .semibold, design: .serif))
+                    .font(CodexTheme.serif(25, weight: .semibold))
                     .foregroundStyle(CodexTheme.textPrimary)
 
-                Text("A native macOS home for the Grok CLI — plan, build, and ship across your projects from one clean surface.")
-                    .font(.system(size: 13.5))
+                Text("One native macOS home for your AI coding agents — bring Claude Code, Codex, Cursor, Gemini, Grok, Z.AI, or any custom CLI, and ship across every project from one clean surface.")
+                    .font(CodexTheme.sans(13))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 380)
+                    .frame(maxWidth: 360)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 28)
-        .padding(.top, 30)
-        .padding(.bottom, 22)
+        .padding(.horizontal, 30)
+        .padding(.top, 32)
+        .padding(.bottom, 24)
     }
 
-    // MARK: - Step 1 · Grok CLI status
+    // MARK: - Step 1 · AI providers
 
-    @ViewBuilder
-    private var grokStatusStep: some View {
-        if model.grokAvailable {
-            OnboardingStep(number: 1, title: "Grok CLI") {
-                HStack(spacing: 9) {
-                    StatusGlyph(systemImage: "checkmark.seal.fill", tint: .green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Grok CLI detected")
-                            .font(.system(size: 13.5, weight: .medium))
-                            .foregroundStyle(CodexTheme.textPrimary)
-                        Text(model.grokBinaryPath)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(CodexTheme.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(11)
-                .background(stepCardBackground)
-            }
-        } else {
-            OnboardingStep(number: 1, title: "Grok CLI") {
-                VStack(alignment: .leading, spacing: 11) {
-                    HStack(spacing: 9) {
-                        StatusGlyph(systemImage: "exclamationmark.triangle.fill",
-                                    tint: CodexTheme.accentOrange)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Grok CLI not found")
-                                .font(.system(size: 13.5, weight: .medium))
-                                .foregroundStyle(CodexTheme.textPrimary)
-                            Text("Install it, then sign in — Codessa drives the local `grok` command.")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(CodexTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                    }
-
-                    Text(model.grokInstallCommand)
-                        .font(.system(size: 11.5, design: .monospaced))
+    private var providerStep: some View {
+        OnboardingRow {
+            HStack(spacing: 13) {
+                StatusGlyph(systemImage: "square.grid.2x2.fill",
+                            tint: model.installedProviderCount > 0 ? .green : CodexTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(providerHeadline)
+                        .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(CodexTheme.composerShellBackground)
-                        )
-
-                    HStack(spacing: 8) {
-                        Button { model.runGrokLogin() } label: {
-                            primaryPillLabel("Run grok login", systemImage: "terminal")
-                        }
-                        .buttonStyle(CodexPressableStyle())
-                        .codexHoverOverlay(cornerRadius: 8)
-
-                        Button { model.openGrokDocs() } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "book")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text("Install docs")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .foregroundStyle(CodexTheme.textPrimary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(CodexTheme.pillBackground)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(CodexPressableStyle())
-                        .codexHoverOverlay(cornerRadius: 8)
-
-                        Spacer(minLength: 0)
-                    }
+                    Text(providerSubtitle)
+                        .font(CodexTheme.sans(12))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(CodexTheme.errorBackground)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(CodexTheme.errorBorder, lineWidth: 1)
-                )
+                Spacer(minLength: 0)
             }
+            .padding(.bottom, 12)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(model.providerStatuses) { status in
+                        ProviderDockItem(
+                            status: status,
+                            isSelected: status.provider.id == model.selectedProviderId,
+                            select: { model.selectProvider(status.provider.id) },
+                            setUp: { model.setUpProvider(status.provider) }
+                        )
+                    }
+                    VStack(spacing: 6) {
+                        Button(action: { model.addCustomProvider() }) {
+                            ProviderDockGlyph(monogram: "+", installed: false, isCustom: true, isSelected: false)
+                        }
+                        .buttonStyle(CodexPressableStyle())
+                        .help("Add a custom agent CLI")
+                        Text("Custom")
+                            .font(CodexTheme.sans(9.5))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                    }
+                    .frame(width: 52)
+                }
+                .padding(.horizontal, 2)
+                .padding(.bottom, 2)
+            }
+
+            if !model.selectedProviderIsWired {
+                Text("Live runs currently route through the Grok engine — \(model.selectedProvider.shortName) is detected and selectable while its adapter lands.")
+                    .font(CodexTheme.sans(10.5))
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+            }
+        }
+    }
+
+    private var providerHeadline: String {
+        "Providers — \(model.installedProviderCount) of \(model.totalProviderCount) ready"
+    }
+
+    private var providerSubtitle: String {
+        let installed = model.installedProviderNames
+        switch installed.count {
+        case 0:
+            return "None detected on your PATH yet — sign in to any, or bring your own custom CLI."
+        case 1:
+            return "\(installed[0]) detected on your PATH — connect more, or bring your own CLI."
+        default:
+            let head = installed.prefix(2).joined(separator: " and ")
+            return "\(head) detected on your PATH — connect more, or bring your own CLI."
         }
     }
 
     // MARK: - Step 2 · Add a project folder
 
     private var projectStep: some View {
-        OnboardingStep(number: 2, title: "Your projects") {
-            HStack(spacing: 11) {
+        OnboardingRow {
+            HStack(spacing: 13) {
                 StatusGlyph(
                     systemImage: model.projectRoots.isEmpty ? "folder.badge.plus" : "folder.fill",
                     tint: model.projectRoots.isEmpty ? CodexTheme.textSecondary : .green
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(projectRootsTitle)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                     Text("Point Codessa at a folder of repos — it scans for projects automatically.")
-                        .font(.system(size: 11.5))
+                        .font(CodexTheme.sans(12))
                         .foregroundStyle(CodexTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -224,8 +232,6 @@ struct OnboardingView: View {
                 .buttonStyle(CodexPressableStyle())
                 .codexHoverOverlay(cornerRadius: 8)
             }
-            .padding(11)
-            .background(stepCardBackground)
         }
     }
 
@@ -249,32 +255,31 @@ struct OnboardingView: View {
         model.addProjectRoot(url)
     }
 
-    // MARK: - Step 3 · Default model
+    // MARK: - Step 3 · Default provider + model
 
     private var modelStep: some View {
-        OnboardingStep(number: 3, title: "Default model") {
-            HStack(spacing: 11) {
+        OnboardingRow {
+            HStack(spacing: 13) {
                 StatusGlyph(systemImage: "cpu", tint: CodexTheme.textSecondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Pick a model to start with")
-                        .font(.system(size: 13.5, weight: .medium))
+                    Text("Pick a provider and model to start with")
+                        .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
-                    Text("You can switch any time from the composer.")
-                        .font(.system(size: 11.5))
+                    Text("You can switch providers or models any time from the composer.")
+                        .font(CodexTheme.sans(12))
                         .foregroundStyle(CodexTheme.textSecondary)
                 }
                 Spacer(minLength: 8)
                 modelPicker
             }
-            .padding(11)
-            .background(stepCardBackground)
         }
     }
 
     private var modelLabel: String {
-        model.selectedModel?.menuName
-            ?? model.models.first?.menuName
-            ?? "Select a model"
+        let modelName = model.selectedModel?.displayName
+            ?? model.models.first?.displayName
+            ?? "Select"
+        return "\(model.selectedProvider.shortName) · \(modelName)"
     }
 
     private var modelPicker: some View {
@@ -284,7 +289,7 @@ struct OnboardingView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(CodexTheme.textSecondary)
                 Text(modelLabel)
-                    .font(.system(size: 13))
+                    .font(CodexTheme.sans(13))
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
@@ -299,7 +304,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(isOpen ? CodexTheme.textTertiary : CodexTheme.composerBorder, lineWidth: 1)
+                    .strokeBorder(isOpen ? CodexTheme.accent : CodexTheme.composerBorder, lineWidth: 1)
             )
         } menu: { close in
             CodexMenuContainer {
@@ -328,7 +333,7 @@ struct OnboardingView: View {
         HStack(spacing: 12) {
             Button { model.completeOnboarding() } label: {
                 Text("Skip for now")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(CodexTheme.sans(13, weight: .medium))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .contentShape(Rectangle())
             }
@@ -339,7 +344,7 @@ struct OnboardingView: View {
             Button { model.completeOnboarding() } label: {
                 HStack(spacing: 6) {
                     Text("Get started")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(CodexTheme.sans(14, weight: .semibold))
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .semibold))
                 }
@@ -347,16 +352,17 @@ struct OnboardingView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(CodexTheme.sendButtonActiveBackground)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(CodexPressableStyle())
-            .codexHoverOverlay(cornerRadius: 10)
+            .codexHoverOverlay(cornerRadius: 11)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 26)
+        .padding(.top, 16)
+        .padding(.bottom, 22)
     }
 
     // MARK: - Shared bits
@@ -366,7 +372,7 @@ struct OnboardingView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 10, weight: .semibold))
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(CodexTheme.sans(12, weight: .medium))
         }
         .foregroundStyle(CodexTheme.sendButtonActiveForeground)
         .padding(.horizontal, 11)
@@ -377,43 +383,134 @@ struct OnboardingView: View {
         )
         .contentShape(Rectangle())
     }
-
-    private var stepCardBackground: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(CodexTheme.composerBackground)
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
-            )
-    }
 }
 
-// MARK: - Numbered step wrapper
+// MARK: - Unbordered checklist row
 
-private struct OnboardingStep<Content: View>: View {
-    let number: Int
-    let title: String
+/// A single checklist item — a plain padded row (no bordered card), so the three
+/// setup tasks read as a calm list separated by hairlines rather than a stack of
+/// boxes.
+private struct OnboardingRow<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("\(number)")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(CodexTheme.textSecondary)
-                    .frame(width: 18, height: 18)
-                    .background(
-                        Circle().fill(CodexTheme.pillBackground)
-                    )
-                Text(title.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .kerning(0.5)
-                Spacer(minLength: 0)
-            }
+        VStack(alignment: .leading, spacing: 0) {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 16)
+    }
+}
+
+// MARK: - Provider dock
+
+/// One provider in the dock: a circular glyph with a status ring (violet when
+/// selected, green when installed), a check badge when detected, and a caption.
+/// Tap selects; long-press / the badge routes to setup.
+private struct ProviderDockItem: View {
+    let status: ProviderStatus
+    let isSelected: Bool
+    let select: () -> Void
+    let setUp: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button(action: select) {
+                ProviderDockGlyph(
+                    monogram: status.provider.monogram,
+                    systemImage: Self.symbol(for: status.provider.id),
+                    installed: status.installed,
+                    isCustom: status.provider.isCustom,
+                    isSelected: isSelected
+                )
+            }
+            .buttonStyle(CodexPressableStyle())
+            .help(status.installed
+                  ? "\(status.provider.name) — detected"
+                  : "\(status.provider.name) — not installed")
+
+            Text(status.provider.shortName)
+                .font(CodexTheme.sans(9.5, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? CodexTheme.textSecondary : CodexTheme.textTertiary)
+                .lineLimit(1)
+        }
+        .frame(width: 52)
+    }
+
+    /// A distinct SF-Symbol stand-in per provider (real brand marks can be
+    /// dropped into the asset catalog later without touching this view).
+    static func symbol(for id: String) -> String? {
+        switch id {
+        case "claude": return "sparkle"
+        case "cursor": return "cursorarrow.rays"
+        case "codex": return "chevron.left.forwardslash.chevron.right"
+        case "gemini": return "sparkles"
+        case "grok": return "bolt.fill"
+        case "zai": return "bolt.horizontal.fill"
+        default: return nil   // custom → monogram
+        }
+    }
+}
+
+/// The circular glyph itself, shared by provider tiles and the "+ Custom" slot.
+private struct ProviderDockGlyph: View {
+    var monogram: String
+    var systemImage: String? = nil
+    var installed: Bool
+    var isCustom: Bool
+    var isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isCustom ? Color.clear : CodexTheme.composerShellBackground)
+                .overlay(
+                    Circle().strokeBorder(
+                        isCustom
+                            ? AnyShapeStyle(CodexTheme.composerBorder)
+                            : AnyShapeStyle(ringStyle),
+                        style: StrokeStyle(lineWidth: isSelected || installed ? 2 : 1,
+                                           dash: isCustom ? [3, 3] : [])
+                    )
+                )
+                .frame(width: 42, height: 42)
+                .shadow(color: installed ? Color.green.opacity(0.35) : .clear, radius: 6)
+
+            glyph
+                .foregroundStyle(installed || isSelected ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+
+            if installed {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 15, height: 15)
+                    .overlay(
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .black))
+                            .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.06))
+                    )
+                    .overlay(Circle().strokeBorder(CodexTheme.mainBackground, lineWidth: 2))
+                    .offset(x: 15, y: 15)
+            }
+        }
+        .frame(width: 42, height: 42)
+        .opacity(installed || isSelected || isCustom ? 1 : 0.55)
+    }
+
+    private var ringStyle: Color {
+        if isSelected { return CodexTheme.accent }
+        if installed { return .green }
+        return CodexTheme.composerBorder
+    }
+
+    @ViewBuilder private var glyph: some View {
+        if let systemImage {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+        } else {
+            Text(monogram)
+                .font(CodexTheme.sans(isCustom ? 18 : 12, weight: .bold))
+        }
     }
 }
 
@@ -427,41 +524,46 @@ private struct StatusGlyph: View {
         Image(systemName: systemImage)
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(tint)
-            .frame(width: 28, height: 28)
+            .frame(width: 34, height: 34)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(tint.opacity(0.12))
             )
     }
 }
 
-// MARK: - Identity mark (chevron prompt + orange block-cursor)
+// MARK: - Identity mark (chevron prompt + violet block-cursor)
 
 /// Recreates the Codessa identity in SwiftUI: a terminal-style chevron prompt
-/// (`›`) followed by a softly blinking orange block cursor, sat inside a rounded
+/// (`›`) followed by a softly blinking violet block cursor, sat inside a rounded
 /// "tile" so it reads as a brand mark rather than a stray glyph.
 private struct ChevronPromptMark: View {
     @State private var cursorOn = true
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             Image(systemName: "chevron.right")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 21, weight: .bold))
                 .foregroundStyle(CodexTheme.textPrimary)
 
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(CodexTheme.accentOrange)
-                .frame(width: 13, height: 26)
+                .fill(CodexTheme.accent)
+                .frame(width: 11, height: 24)
                 .opacity(cursorOn ? 1 : 0.18)
-                .shadow(color: CodexTheme.accentOrange.opacity(cursorOn ? 0.5 : 0), radius: 8)
+                .shadow(color: CodexTheme.accent.opacity(cursorOn ? 0.55 : 0), radius: 10)
         }
-        .frame(width: 76, height: 64)
+        .frame(width: 68, height: 68)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(CodexTheme.composerShellBackground)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [CodexTheme.accent.opacity(0.18), CodexTheme.composerShellBackground],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
         )
         .onAppear {
