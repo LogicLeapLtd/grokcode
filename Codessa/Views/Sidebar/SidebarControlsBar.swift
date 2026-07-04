@@ -17,7 +17,7 @@ struct SidebarControlsBar: View {
             organizeMenu
             addProjectButton
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 12)
     }
 
     private var collapseButton: some View {

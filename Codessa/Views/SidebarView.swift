@@ -102,12 +102,13 @@ struct SidebarView: View {
 
             Spacer(minLength: 0)
 
+            Rectangle()
+                .fill(CodexTheme.divider)
+                .frame(height: 1)
+
             accountRow
-                .padding(.horizontal, 8)
-                .padding(.top, 8)
         }
         .padding(.top, 2)
-        .padding(.bottom, 14)
     }
 
     /// Slim top strip that just clears the macOS traffic-light controls, so the
@@ -222,7 +223,6 @@ struct SidebarView: View {
                             }
                         }
                         .padding(.top, 2)
-                        .padding(.trailing, 2)
                         .background(
                             GeometryReader { content in
                                 Color.clear
@@ -238,11 +238,6 @@ struct SidebarView: View {
                     }
                     .scrollIndicators(.hidden)
                     .background(SidebarScrollViewConfigurator())
-
-                    VisualEffectView(material: .sidebar)
-                        .overlay(CodexTheme.glassTint)
-                        .frame(width: 12)
-                        .allowsHitTesting(false)
 
                     SidebarSlimScrollbar(
                         offset: sidebarScrollOffset,
@@ -370,7 +365,7 @@ struct SidebarView: View {
                 }
                 .foregroundStyle(CodexTheme.textTertiary)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -423,7 +418,7 @@ struct SidebarView: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -437,7 +432,9 @@ struct SidebarView: View {
 
     /// Bottom-of-sidebar account row (replaces the old standalone "Settings"
     /// row): avatar + display name + plan, opening a menu with Settings and
-    /// the rest of the account-level actions.
+    /// the rest of the account-level actions. Full-bleed edge-to-edge (with a
+    /// divider above it, since it sits flush against the sidebar's bottom
+    /// edge) to match the rest of the sidebar's full-width rows.
     private var accountRow: some View {
         CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
             HStack(spacing: 10) {
@@ -454,18 +451,16 @@ struct SidebarView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isOpen ? CodexTheme.navHighlight : Color.clear)
-            )
+            .background(isOpen ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
         } menu: { close in
             accountMenuContent(close: close)
         }
         .buttonStyle(.plain)
+        .codexHover(cornerRadius: 0)
     }
 
     /// The account dropdown's contents — shared by the expanded sidebar's
@@ -1170,8 +1165,8 @@ private struct ProjectSidebarBlock: View {
                 .opacity(rowHovering ? 1 : 0)
                 .help("New chat in \(project.name)")
             }
-            .padding(.leading, 2)
-            .padding(.trailing, 6)
+            .padding(.leading, 8)
+            .padding(.trailing, 12)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onHover { rowHovering = $0 }
@@ -1324,7 +1319,7 @@ private struct ProjectSidebarBlock: View {
                             .foregroundStyle(CodexTheme.textTertiary)
                             .fixedSize()
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -1372,7 +1367,7 @@ private struct ProjectSidebarBlock: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -1392,7 +1387,7 @@ private struct ProjectSidebarBlock: View {
             .font(.system(size: 13))
             .foregroundStyle(CodexTheme.textPrimary)
             .padding(.leading, nameIndent)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1465,8 +1460,8 @@ private struct NoProjectChatsSection: View {
                         .foregroundStyle(CodexTheme.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 2)
-                .padding(.trailing, 6)
+                .padding(.leading, 8)
+                .padding(.trailing, 12)
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -1540,7 +1535,7 @@ private struct NoProjectChatsSection: View {
                             .foregroundStyle(CodexTheme.textTertiary)
                             .fixedSize()
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -1583,7 +1578,7 @@ private struct NoProjectChatsSection: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
@@ -1602,7 +1597,7 @@ private struct NoProjectChatsSection: View {
             .font(.system(size: 13))
             .foregroundStyle(CodexTheme.textPrimary)
             .padding(.leading, nameIndent)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
