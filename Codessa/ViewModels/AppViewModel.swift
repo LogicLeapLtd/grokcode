@@ -70,6 +70,14 @@ final class AppViewModel {
     /// standalone "Chats" section, below the projects list.
     var noProjectThreads: [ProjectThread] = []
     var grokAvailable = false
+    /// Detected agent-CLI providers (Claude Code, Codex, Cursor, Gemini, Grok,
+    /// Z.AI + any custom), each with install status. Populated by
+    /// `refreshProviders()` at bootstrap and after adding a custom provider.
+    var providerStatuses: [ProviderStatus] = []
+    /// The user's selected provider id (mirrors `ProviderRegistry`). Defaults to
+    /// the wired engine (Grok) so the shipping run path is unchanged until the
+    /// user picks another provider.
+    var selectedProviderId: String = AgentProvider.wiredDefault.id
     var pendingHooks: [PendingHook] = []
     var trustedHookIDs: Set<String> = []
     var showHooksReview = false
@@ -336,6 +344,9 @@ final class AppViewModel {
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
+        // Detect every installed agent-CLI provider (Claude Code, Codex, Cursor,
+        // Gemini, Grok, Z.AI + custom) and restore the selected one.
+        refreshProviders()
         // Boot the warm grok session now so MCP is ready before the first send.
         if grokAvailable, GrokCLIService.useWarmSession {
             GrokAgentSession.shared.prewarm()
@@ -344,7 +355,7 @@ final class AppViewModel {
         trustedHookIDs = hooksService.loadTrustedIDs()
         refreshHooks()
         projects = discovery.discoverProjects(in: projectRoots)
-        attachThreadsToProjects()
+        await attachThreadsToProjects()
 
         if UserDefaults.standard.bool(forKey: workWithoutProjectKey) {
             // Last session was "Don't work in a project" — restore that.
@@ -552,12 +563,15 @@ final class AppViewModel {
 
     func refreshProjects() {
         projects = discovery.discoverProjects(in: projectRoots)
-        attachThreadsToProjects()
-        if let selected = selectedProject,
-           let updated = projects.first(where: { $0.path == selected.path }) {
-            selectedProject = updated
+        Task { [weak self] in
+            await self?.attachThreadsToProjects()
+            guard let self else { return }
+            if let selected = self.selectedProject,
+               let updated = self.projects.first(where: { $0.path == selected.path }) {
+                self.selectedProject = updated
+            }
+            self.collapseNewlyDiscoveredProjects()
         }
-        collapseNewlyDiscoveredProjects()
     }
 
     /// Projects collapse by default the first time they're ever discovered — a
@@ -708,10 +722,12 @@ final class AppViewModel {
         activeSessionId = thread.id
         sessionModelId = nil   // unknown which model this thread used
         errorMessage = nil
-        // Load the past conversation so the chat opens populated, not blank.
-        // (Setting activeSessionId alone only told the *next* prompt to resume.)
-        messages = sessionIndex.loadMessages(for: thread.id) ?? []
+        // Navigate immediately and stream the past conversation in behind it —
+        // parsing a long session's updates.jsonl synchronously here used to
+        // stall the chat-open transition.
+        messages = []
         navigateTo(.chat)
+        loadMessagesAsync(for: thread.id)
     }
 
     /// Open a chat from the sidebar's standalone "Chats" section — a session
@@ -725,8 +741,22 @@ final class AppViewModel {
         activeSessionId = thread.id
         sessionModelId = nil
         errorMessage = nil
-        messages = sessionIndex.loadMessages(for: thread.id) ?? []
+        messages = []
         navigateTo(.chat)
+        loadMessagesAsync(for: thread.id)
+    }
+
+    /// Loads a session's transcript off the main actor and applies it only if
+    /// the user hasn't already navigated to a different chat in the meantime.
+    private func loadMessagesAsync(for sessionId: String) {
+        let sessionIndex = sessionIndex
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) {
+                sessionIndex.loadMessages(for: sessionId)
+            }.value
+            guard let self, self.activeSessionId == sessionId else { return }
+            self.messages = loaded ?? []
+        }
     }
 
     /// Rename a no-project thread in-memory (mirrors `renameThread`).
@@ -861,7 +891,7 @@ final class AppViewModel {
             }
 
             sessions = (try? await grok.listSessions()) ?? sessions
-            attachThreadsToProjects()
+            await attachThreadsToProjects()
         } catch {
             let message = error.localizedDescription
             let lower = message.lowercased()
@@ -1521,7 +1551,7 @@ final class AppViewModel {
     /// Current git branch for a project. Checks the folder itself, and — for
     /// projects whose repo lives in a subdirectory (e.g. GrokCodeGUI/Codessa) —
     /// the immediate subfolders too. Handles `.git` dirs and `.git` pointer files.
-    static func gitBranch(for path: URL) -> String? {
+    nonisolated static func gitBranch(for path: URL) -> String? {
         if let branch = branch(atGit: path.appendingPathComponent(".git")) { return branch }
         let fm = FileManager.default
         guard let subs = try? fm.contentsOfDirectory(
@@ -1536,7 +1566,7 @@ final class AppViewModel {
         return nil
     }
 
-    private static func branch(atGit gitPath: URL) -> String? {
+    private nonisolated static func branch(atGit gitPath: URL) -> String? {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: gitPath.path, isDirectory: &isDir) else { return nil }
@@ -1559,8 +1589,21 @@ final class AppViewModel {
         return String(line.dropFirst(prefix.count))
     }
 
-    private func attachThreadsToProjects() {
-        let indexed = sessionIndex.loadIndexedSessions()
+    /// Rescans the on-disk session index and each project's git branch, then
+    /// rebuilds the per-project thread lists. The disk walk (full recursive
+    /// enumeration of `~/.grok/sessions` plus one `.git/HEAD` read per project)
+    /// used to run synchronously on the main actor on every project switch and
+    /// after every prompt, which is the main source of visible jank when
+    /// loading chats/projects — it now runs off-main and only hops back to
+    /// apply the results.
+    private func attachThreadsToProjects() async {
+        let paths = projects.map(\.path)
+        let sessionIndex = sessionIndex
+        let (indexed, branches): ([IndexedSession], [String?]) = await Task.detached(priority: .userInitiated) {
+            let indexed = sessionIndex.loadIndexedSessions()
+            let branches = paths.map { AppViewModel.gitBranch(for: $0) }
+            return (indexed, branches)
+        }.value
 
         // Once the real session backing the in-progress chat is on disk, retire
         // the optimistic "New chat" placeholder so it doesn't double up.
@@ -1571,7 +1614,7 @@ final class AppViewModel {
 
         for index in projects.indices {
             let path = projects[index].path
-            let branch = Self.gitBranch(for: path)
+            let branch = branches[index]
             projects[index].threads = sessionIndex.threads(for: path, in: indexed, branch: branch)
             projects[index].gitBranch = branch
             projects[index].lastActiveAt = indexed
