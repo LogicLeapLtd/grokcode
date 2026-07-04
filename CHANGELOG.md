@@ -1,5 +1,7 @@
 # Changelog
 
+- Composer toolbar: pills now size to their content (no more truncated mode/permission labels or "Full access" wrapping); model pill drops the "(default)" suffix.
+
 All notable changes to Codessa are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

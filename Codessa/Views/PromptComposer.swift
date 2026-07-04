@@ -561,6 +561,7 @@ struct PromptComposer: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .composerControlCapsule(accented: model.activeAgentMode.kind == .plan)
         } menu: { close in
             CodexMenuContainer {
@@ -670,6 +671,7 @@ struct PromptComposer: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .composerControlCapsule(accented: model.permissionMode == .fullAccess)
         } menu: { close in
             CodexMenuContainer {
@@ -697,7 +699,7 @@ struct PromptComposer: View {
                     size: 16,
                     foreground: CodexTheme.textSecondary
                 )
-                Text(model.selectedModel?.providerMenuName ?? "Model")
+                Text(model.selectedModel?.displayName ?? "Model")
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
@@ -705,6 +707,7 @@ struct PromptComposer: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .composerControlCapsule()
         } menu: { close in
             // Reasoning now lives in its own dropdown, so exclude it here and
@@ -768,6 +771,7 @@ struct PromptComposer: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(CodexTheme.textTertiary)
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .composerControlCapsule()
             } menu: { close in
                 CodexMenuContainer {
