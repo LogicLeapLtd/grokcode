@@ -45,6 +45,15 @@ The ONLY exceptions: (a) you changed no code/assets at all (pure diagnosis/answe
 case state the specific blocker instead of silently skipping. Ending a code-changing response
 without a bumped version + handoff build is a hard failure.
 
+**This is enforced automatically** by a Claude Code `Stop` hook that runs
+`scripts/auto-handoff-on-change.sh` after every turn. When `HEAD` has moved and the tree is
+clean, the script bumps `CURRENT_PROJECT_VERSION` in both config blocks, commits the bump
+path-scoped, and cuts + drops a versioned build — so a new versioned build is produced on
+every change without anyone asking. It defers (does not skip) only while the tree is dirty,
+so commit your work and it fires. Do NOT rely on this as a reason to hand-wave the rule:
+if the hook isn't active (e.g. it loads next session), do the bump + `scripts/drop-local-update.sh`
+yourself this turn.
+
 ---
 
 ## Multi-agent & build discipline — READ THIS FIRST (learned the hard way)
