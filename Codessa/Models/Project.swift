@@ -422,10 +422,10 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .newChat: "plus.bubble"
-        case .search: "text.magnifyingglass"
-        case .plugins: "shippingbox"
-        case .automations: "clock.arrow.circlepath"
+        case .newChat: "square.and.pencil"
+        case .search: "magnifyingglass"
+        case .plugins: "puzzlepiece.extension.fill"
+        case .automations: "bolt.badge.clock.fill"
         }
     }
 }

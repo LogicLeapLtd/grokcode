@@ -17,8 +17,8 @@ private enum SidebarMetrics {
     static let detailFont: CGFloat = 11.5
     static let captionFont: CGFloat = 10.5
     static let iconFont: CGFloat = 13
-    static let navIconFont: CGFloat = 14.5
-    static let navIconBox: CGFloat = 19
+    static let navIconFont: CGFloat = 15.5
+    static let navIconBox: CGFloat = 22
     static let cornerRadius: CGFloat = 7
     static let nameIndent: CGFloat = 18
     static let branchHeaderIndent: CGFloat = 11
@@ -216,8 +216,8 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: SidebarMetrics.navSpacing) {
                 Image(systemName: section.symbol)
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: SidebarMetrics.navIconFont, weight: .regular))
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: SidebarMetrics.navIconFont, weight: .semibold))
                     .foregroundStyle(navIconColor(active: active, locked: locked))
                     .frame(width: SidebarMetrics.navIconBox)
                 Text(section.title)
@@ -714,8 +714,8 @@ struct SidebarView: View {
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: symbol)
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 14, weight: .regular))
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(navIconColor(active: active, locked: locked))
                     .frame(width: SidebarMetrics.railButtonWidth, height: SidebarMetrics.railButtonHeight)
 
