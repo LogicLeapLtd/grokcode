@@ -65,8 +65,10 @@ struct MainContentView: View {
                 openWindow(id: "chat-popout")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        // Sit clear of the window's rounded top-right corner (radius ~16) so the
+        // trailing icon isn't clipped by the curve.
+        .padding(.trailing, 16)
+        .padding(.top, 12)
     }
 
     private func topBarButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

@@ -179,10 +179,10 @@ struct ChatView: View {
             exportControl
         }
         .padding(.leading, 24)
-        // Reserve room on the right for the global window-popout control that
-        // floats at the top-trailing corner (see MainContentView.windowControls),
-        // so "Export" no longer sits underneath it.
-        .padding(.trailing, 52)
+        // Reserve room on the right for the two global window controls (split
+        // view + popout) that float at the top-trailing corner (see
+        // MainContentView.windowControls), so "Export" never sits under them.
+        .padding(.trailing, 78)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {

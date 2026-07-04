@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed the top-right window controls (split view + open-in-new-window) getting clipped by the window's rounded corner. They now sit clear of the curve, and the chat header reserves matching space so the "Export" button never tucks underneath them.
+
 - Grok error messages are now specific instead of the generic "hit a temporary failure" banner. The warm agent session used to discard the agent process's stderr and report a bland "the process exited" — it now keeps a rolling tail of stderr and surfaces the actual crash / auth / rate-limit reason (with the exit code) when the process dies. The one-shot streaming path also falls back to whatever Grok wrote to stdout (a plain-text or undecodable error line) when stderr is empty, so the real diagnostic is shown rather than boilerplate.
 
 - Tightened the composer toolbar so long model names (e.g. "Grok Composer 2.5 Fast") no longer overflow the row. The mode dropdown no longer echoes the selected model beside the mode name — it just shows the mode (Execute, Plan, …) — and the model pill now truncates gracefully instead of expanding to the model's full intrinsic width.
@@ -24,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+- Sidebar navigation icons now use stronger, clearer symbols with heavier rendering, so New chat, Search, Plugins, and Automations read less like placeholder outline glyphs.
 
 ## [1.8.0] - 2026-07-04
 
