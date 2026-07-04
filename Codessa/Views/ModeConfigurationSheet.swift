@@ -561,6 +561,7 @@ struct ModeConfigurationSheet: View {
             Spacer()
 
             Button("Cancel") { dismiss() }
+                .buttonStyle(CodexSecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)
 
             Button("Save") {
@@ -573,6 +574,7 @@ struct ModeConfigurationSheet: View {
                 model.selectAgentMode(selectedModeID)
                 dismiss()
             }
+            .buttonStyle(CodexProminentButtonStyle())
             .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 18)
