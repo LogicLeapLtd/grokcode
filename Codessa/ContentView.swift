@@ -102,6 +102,7 @@ struct ContentView: View {
         .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
         .animation(.easeOut(duration: 0.18), value: model.fullScreenImagePath)
         .environment(\.commandKeyPressed, commandKeyPressed)
+        .environmentObject(license)
         .codexMenuHost()
         .focusEffectDisabled()
         .background(CommandKeyObserver(isPressed: $commandKeyPressed))

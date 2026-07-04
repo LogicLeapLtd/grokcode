@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppViewModel.self) private var model
+    @EnvironmentObject private var license: LicenseManager
     var limitedMode = false
     var forceCollapsed = false
 
@@ -97,7 +98,8 @@ struct SidebarView: View {
 
             Spacer(minLength: 0)
 
-            settingsButton
+            accountRow
+                .padding(.horizontal, 8)
                 .padding(.top, 8)
         }
         .padding(.top, 2)
@@ -430,29 +432,105 @@ struct SidebarView: View {
         .id(item.id)
     }
 
-    private var settingsButton: some View {
-        Button {
-            model.navigateTo(.settings)
-        } label: {
+    /// Bottom-of-sidebar account row (replaces the old standalone "Settings"
+    /// row): avatar + display name + plan, opening a menu with Settings and
+    /// the rest of the account-level actions.
+    private var accountRow: some View {
+        CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
             HStack(spacing: 10) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                    .frame(width: 16)
-                Text("Settings")
-                    .font(.system(size: 14))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Spacer()
+                AccountAvatar(initials: accountInitials)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(accountDisplayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(accountPlanLabel)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(model.activePage == .settings ? CodexTheme.navHighlight : Color.clear)
-            .shortcutHint(["⌘", ","], alignment: .trailing, x: -8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isOpen ? CodexTheme.navHighlight : Color.clear)
+            )
             .contentShape(Rectangle())
+        } menu: { close in
+            CodexMenuContainer {
+                HStack(spacing: 8) {
+                    AccountAvatar(initials: accountInitials, diameter: 26)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(accountDisplayName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(CodexTheme.textPrimary)
+                        Text(accountPlanLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+
+                CodexMenuDivider()
+
+                CodexMenuItem(title: "Settings", systemImage: "gearshape") {
+                    model.navigateTo(.settings)
+                    close()
+                }
+                CodexMenuItem(title: "Check for updates", systemImage: "arrow.down.circle") {
+                    NSWorkspace.shared.open(Self.releasesURL)
+                    close()
+                }
+
+                if !license.activeLicenseKey.isEmpty {
+                    CodexMenuDivider()
+                    CodexMenuItem(title: "Deactivate license", systemImage: "key.slash", isDestructive: true) {
+                        Task { await license.deactivateThisDevice() }
+                        close()
+                    }
+                }
+
+                CodexMenuDivider()
+                CodexMenuItem(title: "Quit Codessa", systemImage: "power", isDestructive: true) {
+                    NSApp.terminate(nil)
+                }
+            }
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 0)
+    }
+
+    private static let releasesURL = URL(string: "https://github.com/LogicLeapLtd/grokcode/releases/latest")!
+
+    /// Two-letter initials for the avatar, from the macOS account's full name.
+    private var accountInitials: String {
+        let parts = NSFullUserName()
+            .split(separator: " ")
+            .prefix(2)
+            .compactMap { $0.first }
+        let initials = String(parts).uppercased()
+        return initials.isEmpty ? "?" : initials
+    }
+
+    private var accountDisplayName: String {
+        let name = NSFullUserName().trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "You" : name
+    }
+
+    /// "Free" whenever the build is unmonetised (the current default — see
+    /// `LicenseManager.isFree`); otherwise reflects the real license status so
+    /// this stays correct if the app is re-monetised later.
+    private var accountPlanLabel: String {
+        guard !LicenseManager.isFree else { return "Free" }
+        switch license.status {
+        case .licensed: return "Pro"
+        case .trial: return "Trial"
+        case .expired, .invalid, .checking: return "Free"
+        }
     }
 
     // MARK: - Collapsed rail (#23)
@@ -811,6 +889,25 @@ private struct Triangle: Shape {
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.closeSubpath()
         return path
+    }
+}
+
+// MARK: - Account avatar
+
+/// A small circular initials avatar for the bottom-of-sidebar account row.
+private struct AccountAvatar: View {
+    let initials: String
+    var diameter: CGFloat = 22
+
+    var body: some View {
+        Circle()
+            .fill(CodexTheme.accent)
+            .frame(width: diameter, height: diameter)
+            .overlay(
+                Text(initials)
+                    .font(.system(size: diameter * 0.42, weight: .semibold))
+                    .foregroundStyle(.white)
+            )
     }
 }
 
