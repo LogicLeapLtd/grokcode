@@ -683,7 +683,7 @@ struct PromptComposer: View {
 
     // Codex-style combined control: "<Provider · Model> <Option> ⌄".
     private var modelEffortMenu: some View {
-        CodexMenuTrigger(minWidth: 320, edge: .top, maxHeight: 430, highlightOnHover: false,
+        CodexMenuTrigger(minWidth: 320, edge: .top, maxHeight: 380, highlightOnHover: false,
                          autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "model") { _ in
             HStack(spacing: 7) {
                 ProviderLogo(
@@ -711,19 +711,27 @@ struct PromptComposer: View {
         } menu: { close in
             let optionDescriptors = model.selectedModel?.optionDescriptors ?? []
             CodexMenuContainer {
-                ForEach(model.providerStatuses.filter { !$0.models.isEmpty }) { status in
-                    CodexMenuSectionHeader(title: status.provider.shortName)
-                    ForEach(status.models) { option in
-                        ModelMenuItem(
-                            option: option,
-                            isSelected: model.selectedModel?.providerId == option.providerId && model.selectedModel?.id == option.id
-                        ) {
-                            withAnimation(CodexMotion.panelSpring) {
-                                model.selectModel(option)
+                // The provider/model list scrolls inside a capped region so the
+                // menu can't balloon to fill the whole window when it opens
+                // upward. The reasoning selector below stays pinned and visible.
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(model.providerStatuses.filter { !$0.models.isEmpty }) { status in
+                            CodexMenuSectionHeader(title: status.provider.shortName)
+                            ForEach(status.models) { option in
+                                ModelMenuItem(
+                                    option: option,
+                                    isSelected: model.selectedModel?.providerId == option.providerId && model.selectedModel?.id == option.id
+                                ) {
+                                    withAnimation(CodexMotion.panelSpring) {
+                                        model.selectModel(option)
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .frame(maxHeight: 280)
 
                 if !optionDescriptors.isEmpty {
                     providerOptionMenuSections(optionDescriptors, close: close)
@@ -733,7 +741,6 @@ struct PromptComposer: View {
                         ))
                 }
             }
-            .clipped()
             .animation(CodexMotion.panelSpring, value: optionDescriptors)
         }
     }
