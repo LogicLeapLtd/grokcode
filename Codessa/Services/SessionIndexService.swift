@@ -238,8 +238,14 @@ struct SessionIndexService {
         return nil
     }
 
-    /// Collapse whitespace and clip to a tidy single-line title.
-    private static func truncatedTitle(_ text: String, limit: Int = 60) -> String {
+    /// Collapse whitespace and clip to a tidy single-line title. The limit here
+    /// is a generous backstop against pathologically long first messages, not
+    /// the visual truncation point — the sidebar row itself truncates to fit
+    /// its actual rendered width (see `singleThreadRow`/`flatThreadRow`), which
+    /// varies with sidebar width and font. A short cap here would clip titles
+    /// well before the row runs out of room, leaving dead space before the age
+    /// label.
+    private static func truncatedTitle(_ text: String, limit: Int = 200) -> String {
         let collapsed = text
             .replacingOccurrences(of: "\n", with: " ")
             .split(separator: " ", omittingEmptySubsequences: true)
