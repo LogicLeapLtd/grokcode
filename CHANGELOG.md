@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-04
+
+### Added
+
+- **Sidebar project context menu**: right-click a project row for Pin/Unpin,
+  Reveal in Finder, Create permanent worktree, Rename project (label-only,
+  never touches the folder on disk), Archive chats, and Remove from sidebar.
+
+### Fixed
+
+- **Duplicate Grok agent spawns**: the warm `grok agent stdio` process is now
+  guarded by a start-in-progress lock, so two callers racing to start the
+  session can no longer launch two competing agent processes.
+- **Titlebar controls misaligned with the traffic lights**: tuned the custom
+  sidebar/back/forward control strip's top inset so it sits on the same
+  centerline as the native close/minimize/zoom buttons.
+- **Selected-project chip stretched into empty grey space** in the composer:
+  it's now sized to its content instead of filling the row, with long
+  project/branch names truncating instead of stretching the pill.
+- **Branch chip showed "none"** on sidebar rows with no active git branch
+  instead of just not rendering the chip.
+- Removed a stray git hook that reinstalled and relaunched `/Applications/Codessa.app`
+  after *every* commit from *any* agent working in this tree — the root cause
+  of the app appearing to randomly "flip versions" and lose work during
+  concurrent multi-agent sessions. Installs are Josh-initiated only, per the
+  documented release/handoff scripts.
+
 ## [1.6.0] - 2026-07-04
 
 ### Fixed
