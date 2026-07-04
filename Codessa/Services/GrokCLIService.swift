@@ -159,6 +159,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
     }
 
     private let grokPath: String
+    private let singletonPath: String
     private let processLock = NSLock()
     private var runningProcess: Process?
     /// Set when the user explicitly cancels, so a forced termination is
@@ -173,6 +174,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
             "/opt/homebrew/bin/grok",
         ]
         grokPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? candidates[0]
+        singletonPath = "\(home)/.local/bin/mcp-singleton"
     }
 
     var isAvailable: Bool {
@@ -265,8 +267,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: grokPath)
-            process.arguments = arguments
+            configureGrokProcess(process, arguments: arguments)
 
             var env = ProcessInfo.processInfo.environment
             env["NO_COLOR"] = "1"
@@ -315,8 +316,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: grokPath)
-            process.arguments = arguments
+            configureGrokProcess(process, arguments: arguments)
 
             var env = ProcessInfo.processInfo.environment
             env["NO_COLOR"] = "1"
@@ -408,6 +408,16 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    private func configureGrokProcess(_ process: Process, arguments: [String]) {
+        if FileManager.default.isExecutableFile(atPath: singletonPath) {
+            process.executableURL = URL(fileURLWithPath: singletonPath)
+            process.arguments = ["grok-cli", grokPath] + arguments
+        } else {
+            process.executableURL = URL(fileURLWithPath: grokPath)
+            process.arguments = arguments
         }
     }
 

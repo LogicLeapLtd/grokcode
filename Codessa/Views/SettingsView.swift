@@ -993,7 +993,8 @@ struct SettingsView: View {
                 .foregroundStyle(CodexTheme.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, 10)
-                .frame(minWidth: 230, idealWidth: 250, height: 28)
+                .frame(minWidth: 230, idealWidth: 250)
+                .frame(height: 28)
                 .background(RoundedRectangle(cornerRadius: 7).fill(CodexTheme.mainBackground.opacity(0.46)))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(CodexTheme.divider, lineWidth: 1))
             }

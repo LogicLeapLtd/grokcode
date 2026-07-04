@@ -23,7 +23,10 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     static let shared = GrokAgentSession()
 
     private let grokPath: String
+    private let singletonPath: String
     private let lock = NSLock()
+    private let startCondition = NSCondition()
+    private var startInProgress = false
 
     private var process: Process?
     private var stdin: FileHandle?
@@ -61,6 +64,7 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
             "/opt/homebrew/bin/grok",
         ]
         grokPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? candidates[0]
+        singletonPath = "\(home)/.local/bin/mcp-singleton"
     }
 
     // MARK: - Public
@@ -161,16 +165,31 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
     // MARK: - Lifecycle
 
     private func ensureStarted() throws {
+        startCondition.lock()
+        while startInProgress {
+            startCondition.wait()
+        }
         lock.lock(); let running = process != nil; lock.unlock()
-        if running { return }
+        if running {
+            startCondition.unlock()
+            return
+        }
+        startInProgress = true
+        startCondition.unlock()
 
         guard FileManager.default.isExecutableFile(atPath: grokPath) else {
+            finishStartAttempt()
             throw GrokCLIError.binaryNotFound
         }
 
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: grokPath)
-        p.arguments = ["agent", "--always-approve", "stdio"]
+        if FileManager.default.isExecutableFile(atPath: singletonPath) {
+            p.executableURL = URL(fileURLWithPath: singletonPath)
+            p.arguments = ["grok-cli", grokPath, "agent", "--always-approve", "stdio"]
+        } else {
+            p.executableURL = URL(fileURLWithPath: grokPath)
+            p.arguments = ["agent", "--always-approve", "stdio"]
+        }
         var env = ProcessInfo.processInfo.environment
         env["NO_COLOR"] = "1"
         p.environment = env
@@ -190,7 +209,12 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         errPipe.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
         p.terminationHandler = { [weak self] _ in self?.handleTermination() }
 
-        try p.run()
+        do {
+            try p.run()
+        } catch {
+            finishStartAttempt()
+            throw error
+        }
 
         lock.lock()
         process = p
@@ -200,6 +224,14 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
         currentSessionId = nil
         currentModel = nil
         lock.unlock()
+        finishStartAttempt()
+    }
+
+    private func finishStartAttempt() {
+        startCondition.lock()
+        startInProgress = false
+        startCondition.broadcast()
+        startCondition.unlock()
     }
 
     private func initializeIfNeeded() async throws {
