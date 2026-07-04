@@ -705,11 +705,12 @@ struct PromptComposer: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 150, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .composerControlCapsule()
         } menu: { close in
             // Reasoning now lives in its own dropdown, so exclude it here and

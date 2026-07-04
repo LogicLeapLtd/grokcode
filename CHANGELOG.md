@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed the model pill (e.g. "Opus 4.8") reserving a fixed 150pt of width and pushing the chevron to the far right, leaving a large empty gap — it now hugs the model name like the other composer pills.
 - Fixed the top-right window controls (split view + open-in-new-window) getting clipped by the window's rounded corner. They now sit clear of the curve, and the chat header reserves matching space so the "Export" button never tucks underneath them.
 
 - Grok error messages are now specific instead of the generic "hit a temporary failure" banner. The warm agent session used to discard the agent process's stderr and report a bland "the process exited" — it now keeps a rolling tail of stderr and surfaces the actual crash / auth / rate-limit reason (with the exit code) when the process dies. The one-shot streaming path also falls back to whatever Grok wrote to stdout (a plain-text or undecodable error line) when stderr is empty, so the real diagnostic is shown rather than boilerplate.
