@@ -45,6 +45,13 @@ final class AppViewModel {
     var isRunning = false
     var errorMessage: String?
     var activePage: MainPage = .home
+    var splitPanes: [SplitPane] = []
+    var activeSplitPaneID: UUID?
+    var isApplyingSplitPaneFocus = false
+    let maxSplitPaneCount = 8
+    private var pageBackStack: [MainPage] = []
+    private var pageForwardStack: [MainPage] = []
+    private let maxPageHistoryDepth = 50
     /// The page the user was on before opening Settings, so "Back to app" returns
     /// there instead of guessing from whether `messages` happens to be empty.
     var pageBeforeSettings: MainPage = .home
@@ -62,10 +69,10 @@ final class AppViewModel {
     var fullScreenImagePath: String?
     /// Optimistic "New chat" placeholder shown in the sidebar the instant a new
     /// conversation starts, before grok persists the session. Cleared once the
-    /// real session is indexed (see `attachThreadsToProjects`) or the run fails.
+    /// real session is indexed (see `refreshSessionSnapshot`) or the run fails.
     var pendingChat: PendingChat?
     /// Chats started with "Don't work in a project" — their session `cwd` is the
-    /// isolated no-project scratch directory, so `attachThreadsToProjects` can't
+    /// isolated no-project scratch directory, so `refreshSessionSnapshot` can't
     /// match them to any discovered project. Surfaced instead in the sidebar's
     /// standalone "Chats" section, below the projects list.
     var noProjectThreads: [ProjectThread] = []
@@ -96,11 +103,9 @@ final class AppViewModel {
     /// as collapsed by default without re-collapsing a project the user has since
     /// expanded. Persisted under `grokcode.seenProjectPaths`.
     private var seenProjectPaths: Set<String> = []
-    /// The project most recently auto-expanded by `openProjectDetail`. When you
-    /// open a *different* project's overview we collapse this one again so the
-    /// sidebar tree follows the page. Cleared the instant the user manually
-    /// toggles any project's collapse state, so manual expand/collapse is never
-    /// undone by the auto-follow behaviour.
+    /// The project most recently auto-expanded from a sidebar selection. Cleared
+    /// the instant the user manually toggles any project's collapse state, so
+    /// manual expand/collapse is never undone by auto-follow behaviour.
     private var autoExpandedProjectPath: String?
     /// Per-branch collapse state for the "By project → branch" grouping. Keys are
     /// "<project path>::<branch or ∅>". Persisted under `grokcode.collapsedBranches`.
@@ -157,11 +162,11 @@ final class AppViewModel {
         }
     }
 
-    /// Sidebar width in points. Clamped to `220...420`. Persisted under
-    /// `grokcode.sidebarWidth` (default 290).
-    var sidebarWidth: Double = 290 {
+    /// Sidebar width in points. Clamped to `240...340`. Persisted under
+    /// `grokcode.sidebarWidth` (default 280).
+    var sidebarWidth: Double = 280 {
         didSet {
-            let clamped = min(max(sidebarWidth, 220), 420)
+            let clamped = min(max(sidebarWidth, 240), 340)
             if clamped != sidebarWidth {
                 // Re-clamp without re-triggering persistence twice.
                 sidebarWidth = clamped
@@ -274,7 +279,7 @@ final class AppViewModel {
     func openProjectContext(for project: Project) {
         projectContextEditing = project
         projectContextDraft = projectContext.read(project)
-        pageBeforeProjectContext = (activePage == .projectContext) ? .projectDetail : activePage
+        pageBeforeProjectContext = (activePage == .projectContext) ? .home : activePage
         navigateTo(.projectContext)
     }
 
@@ -320,6 +325,10 @@ final class AppViewModel {
     private let automationService = AutomationService()
     private let marketplace = MarketplaceService.shared
     private let projectContext = ProjectContextService()
+    private var sessionIndexSnapshot: SessionIndexSnapshot?
+    private var sessionSnapshotRefreshTask: Task<Void, Never>?
+    private var sessionSnapshotRefreshID = 0
+    private var sessionIndexRevision = 0
     private let rootsKey = "grokcode.projectRoots"
     private let selectedProjectPathKey = "grokcode.selectedProjectPath"
     private let workWithoutProjectKey = "grokcode.workWithoutProject"
@@ -355,7 +364,7 @@ final class AppViewModel {
         trustedHookIDs = hooksService.loadTrustedIDs()
         refreshHooks()
         projects = discovery.discoverProjects(in: projectRoots)
-        await attachThreadsToProjects()
+        refreshSessionSnapshot()
 
         if UserDefaults.standard.bool(forKey: workWithoutProjectKey) {
             // Last session was "Don't work in a project" — restore that.
@@ -380,10 +389,10 @@ final class AppViewModel {
             }
             sessions = try await grok.listSessions()
             // No need to re-scan the session index / re-discover projects here:
-            // `attachThreadsToProjects()` already ran right after `projects` was
-            // populated above, and nothing on disk that it reads (local session
-            // index, project roots, git HEAD) changed in the meantime — `sessions`
-            // just fetched here comes from the CLI, not from that scan.
+            // `refreshSessionSnapshot()` already started right after `projects`
+            // was populated above, and nothing on disk that it reads (local
+            // session index, project roots, git HEAD) changed in the meantime —
+            // `sessions` just fetched here comes from the CLI, not from that scan.
         } catch {
             errorMessage = error.localizedDescription
             if models.isEmpty {
@@ -498,6 +507,14 @@ final class AppViewModel {
             onboardingOpen = true
         }
 
+        // Open the split workspace deterministically for layout QA.
+        if env["GROKCODE_SMOKE_SPLIT"] == "1" {
+            if activePage == .settings {
+                navigateTo(.home)
+            }
+            openSplitView()
+        }
+
         // Select the first project and open its Project Context editor so QA can
         // screenshot the AGENTS.md / GROK.md editing flow deterministically.
         if env["GROKCODE_SMOKE_PROJECTCONTEXT"] == "1", let first = projects.first {
@@ -563,15 +580,12 @@ final class AppViewModel {
 
     func refreshProjects() {
         projects = discovery.discoverProjects(in: projectRoots)
-        Task { [weak self] in
-            await self?.attachThreadsToProjects()
-            guard let self else { return }
-            if let selected = self.selectedProject,
-               let updated = self.projects.first(where: { $0.path == selected.path }) {
-                self.selectedProject = updated
-            }
-            self.collapseNewlyDiscoveredProjects()
+        if let selected = selectedProject,
+           let updated = projects.first(where: { $0.path == selected.path }) {
+            selectedProject = updated
         }
+        collapseNewlyDiscoveredProjects()
+        refreshSessionSnapshot()
     }
 
     /// Projects collapse by default the first time they're ever discovered — a
@@ -597,19 +611,16 @@ final class AppViewModel {
         sessionModelId = nil
         errorMessage = nil
         navigateTo(messages.isEmpty ? .home : .chat)
+        syncActiveSplitPaneFromCurrentState()
     }
 
-    /// Clicking a project in the sidebar opens its overview page (recent chats +
-    /// repo/git/deploy info) rather than dropping straight into a blank chat.
-    func openProjectDetail(_ project: Project) {
+    /// Select a project as working context and reveal its chats in the sidebar,
+    /// without routing the main pane to a per-project overview.
+    func revealProjectInSidebar(_ project: Project) {
         selectedProject = project
         workWithoutProject = false
         UserDefaults.standard.set(project.path.path, forKey: selectedProjectPathKey)
         UserDefaults.standard.set(false, forKey: workWithoutProjectKey)
-        // Keep the sidebar tree in sync with the overview: collapse the project we
-        // last auto-expanded, then expand this one. Manual expand/collapse clears
-        // `autoExpandedProjectPath` (see `toggleProjectCollapsed`), so a project the
-        // user opened by hand is never collapsed out from under them.
         let newPath = project.path.path
         if let prev = autoExpandedProjectPath, prev != newPath {
             collapsedProjectPaths.insert(prev)
@@ -617,7 +628,6 @@ final class AppViewModel {
         collapsedProjectPaths.remove(newPath)
         autoExpandedProjectPath = newPath
         saveSidebarPreferences()
-        navigateTo(.projectDetail)
     }
 
     /// The "+" affordance on a sidebar project row: select the project and start a
@@ -634,6 +644,7 @@ final class AppViewModel {
         promptText = ""
         errorMessage = nil
         navigateTo(.home)
+        syncActiveSplitPaneFromCurrentState()
     }
 
     /// Codex "Don't work in a project" — clear the project; runs use the home dir.
@@ -646,6 +657,7 @@ final class AppViewModel {
         sessionModelId = nil
         errorMessage = nil
         navigateTo(.home)
+        syncActiveSplitPaneFromCurrentState()
     }
 
     /// Projects filtered by the picker's live query.
@@ -655,13 +667,41 @@ final class AppViewModel {
         return projects.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
+    var canNavigateBack: Bool { !pageBackStack.isEmpty }
+    var canNavigateForward: Bool { !pageForwardStack.isEmpty }
+
+    func navigateBack() {
+        guard let previous = pageBackStack.popLast() else { return }
+        pageForwardStack.append(activePage)
+        applyNavigation(to: previous, recordHistory: false)
+    }
+
+    func navigateForward() {
+        guard let next = pageForwardStack.popLast() else { return }
+        pageBackStack.append(activePage)
+        applyNavigation(to: next, recordHistory: false)
+    }
+
     func navigateTo(_ page: MainPage) {
-        if page == .settings, activePage != .settings {
-            pageBeforeSettings = activePage
+        applyNavigation(to: page, recordHistory: true)
+    }
+
+    private func applyNavigation(to page: MainPage, recordHistory: Bool) {
+        guard page != activePage else { return }
+        let previousPage = activePage
+        if recordHistory {
+            pageBackStack.append(previousPage)
+            if pageBackStack.count > maxPageHistoryDepth {
+                pageBackStack.removeFirst(pageBackStack.count - maxPageHistoryDepth)
+            }
+            pageForwardStack.removeAll()
+        }
+        if page == .settings, previousPage != .settings {
+            pageBeforeSettings = previousPage
         }
         activePage = page
         switch page {
-        case .home, .chat, .settings, .projectDetail, .projectContext:
+        case .home, .chat, .settings, .projectContext:
             activeSidebarSection = nil
         case .search:
             activeSidebarSection = .search
@@ -671,6 +711,9 @@ final class AppViewModel {
             activeSidebarSection = .automations
         }
         persistActivePage(page)
+        if !isApplyingSplitPaneFocus {
+            syncActiveSplitPaneFromCurrentState()
+        }
     }
 
     /// Persist the last *stable* landing page (#39). `.chat` is excluded — it
@@ -679,7 +722,7 @@ final class AppViewModel {
     private func persistActivePage(_ page: MainPage) {
         // Pages that depend on live in-memory/selection state shouldn't be
         // restored on a cold launch — fall back to Home.
-        let transient: Set<MainPage> = [.chat, .projectDetail, .projectContext]
+        let transient: Set<MainPage> = [.chat, .projectContext]
         let stored: MainPage = transient.contains(page) ? .home : page
         UserDefaults.standard.set(stored.rawValue, forKey: Self.activePageKey)
     }
@@ -689,7 +732,7 @@ final class AppViewModel {
         guard let raw = UserDefaults.standard.string(forKey: Self.activePageKey),
               let page = MainPage(rawValue: raw),
               page != .chat else { return }
-        navigateTo(page)
+        applyNavigation(to: page, recordHistory: false)
     }
 
     func openSettings() {
@@ -727,6 +770,7 @@ final class AppViewModel {
         // stall the chat-open transition.
         messages = []
         navigateTo(.chat)
+        syncActiveSplitPaneFromCurrentState()
         loadMessagesAsync(for: thread.id)
     }
 
@@ -743,19 +787,40 @@ final class AppViewModel {
         errorMessage = nil
         messages = []
         navigateTo(.chat)
+        syncActiveSplitPaneFromCurrentState()
         loadMessagesAsync(for: thread.id)
     }
 
     /// Loads a session's transcript off the main actor and applies it only if
     /// the user hasn't already navigated to a different chat in the meantime.
-    private func loadMessagesAsync(for sessionId: String) {
+    func loadMessagesAsync(for sessionId: String) {
         let sessionIndex = sessionIndex
+        let directoryHint = sessionIndexSnapshot?.sessionDirectoryById[sessionId]
         Task { [weak self] in
             let loaded = await Task.detached(priority: .userInitiated) {
-                sessionIndex.loadMessages(for: sessionId)
+                sessionIndex.loadMessages(for: sessionId, directoryHint: directoryHint)
             }.value
             guard let self, self.activeSessionId == sessionId else { return }
             self.messages = loaded ?? []
+            self.syncActiveSplitPaneFromCurrentState()
+        }
+    }
+
+    func loadMessagesAsync(for sessionId: String, intoSplitPane paneID: UUID) {
+        let sessionIndex = sessionIndex
+        let directoryHint = sessionIndexSnapshot?.sessionDirectoryById[sessionId]
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) {
+                sessionIndex.loadMessages(for: sessionId, directoryHint: directoryHint)
+            }.value
+            guard let self,
+                  let index = self.splitPanes.firstIndex(where: { $0.id == paneID })
+            else { return }
+            self.splitPanes[index].messages = loaded ?? []
+            self.splitPanes[index].isLoading = false
+            if self.activeSplitPaneID == paneID, self.activeSessionId == sessionId {
+                self.messages = loaded ?? []
+            }
         }
     }
 
@@ -765,12 +830,14 @@ final class AppViewModel {
         guard !trimmed.isEmpty,
               let index = noProjectThreads.firstIndex(where: { $0.id == thread.id }) else { return }
         noProjectThreads[index].title = trimmed
+        invalidateSidebarCaches()
     }
 
     /// Remove a no-project thread from the sidebar (in-memory, mirrors `deleteThread`).
     func deleteNoProjectThread(_ thread: ProjectThread) {
         noProjectThreads.removeAll { $0.id == thread.id }
         if activeSessionId == thread.id { startNewChat() }
+        invalidateSidebarCaches()
     }
 
     func startNewChat() {
@@ -782,6 +849,7 @@ final class AppViewModel {
         composerAttachmentPaths = []
         errorMessage = nil
         navigateTo(.home)
+        syncActiveSplitPaneFromCurrentState()
     }
 
     /// Number of follow-ups the user has queued mid-run.
@@ -806,6 +874,7 @@ final class AppViewModel {
         if isRunning {
             messages.append(ChatMessage(role: .user, text: trimmed, isQueued: true, attachments: attachments))
             if activePage != .chat { navigateTo(.chat) }
+            syncActiveSplitPaneFromCurrentState()
         } else {
             // Brand-new conversation → optimistically surface a "New chat" row in
             // the sidebar right away (it pulses until grok persists the session),
@@ -814,6 +883,7 @@ final class AppViewModel {
                 pendingChat = PendingChat(projectPath: selectedProject?.path)
             }
             messages.append(ChatMessage(role: .user, text: trimmed, attachments: attachments))
+            syncActiveSplitPaneFromCurrentState()
             Task { await runPrompt(userText: sent) }
         }
     }
@@ -860,6 +930,7 @@ final class AppViewModel {
         if activePage != .chat {
             navigateTo(.chat)
         }
+        syncActiveSplitPaneFromCurrentState()
 
         do {
             let sessionId = try await grok.streamPrompt(
@@ -891,7 +962,8 @@ final class AppViewModel {
             }
 
             sessions = (try? await grok.listSessions()) ?? sessions
-            await attachThreadsToProjects()
+            refreshSessionSnapshot()
+            syncActiveSplitPaneFromCurrentState()
         } catch {
             let message = error.localizedDescription
             let lower = message.lowercased()
@@ -940,7 +1012,7 @@ final class AppViewModel {
         isRunning = false
         // If the run ended without ever creating a session, drop the optimistic
         // "New chat" placeholder so it doesn't pulse forever. (On success it's
-        // already been retired by `attachThreadsToProjects`.)
+        // already been retired by `refreshSessionSnapshot`.)
         if pendingChat != nil, activeSessionId == nil {
             pendingChat = nil
         }
@@ -949,6 +1021,7 @@ final class AppViewModel {
         } else {
             dequeueNext()
         }
+        syncActiveSplitPaneFromCurrentState()
     }
 
     /// Pull the oldest queued follow-up (if any) and send it.
@@ -1185,16 +1258,27 @@ final class AppViewModel {
         saveSidebarPreferences()
     }
 
-    /// Cache for `sidebarProjectGroups`, keyed by a hash of everything the
-    /// computation reads. The sidebar re-reads this on every render of the
-    /// containing view (e.g. simply switching `activePage` to navigate
-    /// elsewhere), but the underlying sort/filter/group pipeline is only worth
-    /// re-running when one of those inputs actually changed.
+    /// Caches for sidebar-derived lists. Keys use cheap metadata + the session
+    /// snapshot revision instead of hashing every nested chat row on render.
     private var _sidebarProjectGroupsCache: (key: Int, value: [SidebarProjectGroup])?
+    private var _sidebarFlatThreadsCache: (key: Int, value: [SidebarFlatThread])?
+
+    func invalidateSidebarCaches() {
+        _sidebarProjectGroupsCache = nil
+        _sidebarFlatThreadsCache = nil
+    }
 
     var sidebarProjectGroups: [SidebarProjectGroup] {
         var hasher = Hasher()
-        hasher.combine(projects)
+        hasher.combine(sessionIndexRevision)
+        hasher.combine(projects.count)
+        for project in projects {
+            hasher.combine(project.id)
+            hasher.combine(project.name)
+            hasher.combine(project.path.path)
+            hasher.combine(project.gitBranch)
+            hasher.combine(project.lastActiveAt)
+        }
         hasher.combine(sidebarGroupBy)
         hasher.combine(sidebarStatusFilter)
         hasher.combine(sidebarSort)
@@ -1249,8 +1333,27 @@ final class AppViewModel {
 
     var sidebarFlatThreads: [SidebarFlatThread] {
         guard sidebarGroupBy == .flatList else { return [] }
+        var hasher = Hasher()
+        hasher.combine(sessionIndexRevision)
+        hasher.combine(projects.count)
+        for project in projects {
+            hasher.combine(project.id)
+            hasher.combine(project.name)
+            hasher.combine(project.path.path)
+            hasher.combine(project.gitBranch)
+        }
+        hasher.combine(sidebarStatusFilter)
+        hasher.combine(sidebarProjectSearch)
+        hasher.combine(archivedProjectPaths)
+        hasher.combine(pinnedProjectPaths)
+        hasher.combine(pendingChat)
+        let key = hasher.finalize()
 
-        let indexed = sessionIndex.loadIndexedSessions()
+        if let cached = _sidebarFlatThreadsCache, cached.key == key {
+            return cached.value
+        }
+
+        let indexed = sessionIndexSnapshot?.indexedSessions ?? []
         let projectByPath = Dictionary(uniqueKeysWithValues: projects.map { ($0.path.standardizedFileURL.path, $0) })
         let query = sidebarProjectSearch.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1331,9 +1434,12 @@ final class AppViewModel {
                 project: project,
                 isPending: true
             )
-            return [placeholder] + rows
+            let value = [placeholder] + rows
+            _sidebarFlatThreadsCache = (key, value)
+            return value
         }
 
+        _sidebarFlatThreadsCache = (key, rows)
         return rows
     }
 
@@ -1548,22 +1654,21 @@ final class AppViewModel {
         return dir
     }
 
-    /// Current git branch for a project. Checks the folder itself, and — for
-    /// projects whose repo lives in a subdirectory (e.g. GrokCodeGUI/Codessa) —
-    /// the immediate subfolders too. Handles `.git` dirs and `.git` pointer files.
+    /// Current active git branch for the provided project folder. This mirrors
+    /// `git -C <folder>` by walking up to a containing repo, but never scans
+    /// child folders, so container directories don't borrow a child repo branch.
     nonisolated static func gitBranch(for path: URL) -> String? {
-        if let branch = branch(atGit: path.appendingPathComponent(".git")) { return branch }
         let fm = FileManager.default
-        guard let subs = try? fm.contentsOfDirectory(
-            at: path, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-        ) else { return nil }
-        for sub in subs.prefix(24) {
-            if (try? sub.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
-               let branch = branch(atGit: sub.appendingPathComponent(".git")) {
-                return branch
-            }
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: path.path, isDirectory: &isDir) else { return nil }
+
+        var current = (isDir.boolValue ? path : path.deletingLastPathComponent()).standardizedFileURL
+        while true {
+            if let branch = branch(atGit: current.appendingPathComponent(".git")) { return branch }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { return nil }
+            current = parent
         }
-        return nil
     }
 
     private nonisolated static func branch(atGit gitPath: URL) -> String? {
@@ -1589,42 +1694,59 @@ final class AppViewModel {
         return String(line.dropFirst(prefix.count))
     }
 
-    /// Rescans the on-disk session index and each project's git branch, then
-    /// rebuilds the per-project thread lists. The disk walk (full recursive
-    /// enumeration of `~/.grok/sessions` plus one `.git/HEAD` read per project)
-    /// used to run synchronously on the main actor on every project switch and
-    /// after every prompt, which is the main source of visible jank when
-    /// loading chats/projects — it now runs off-main and only hops back to
-    /// apply the results.
-    private func attachThreadsToProjects() async {
+    /// Rescans the on-disk session index and each project's git branch in a
+    /// latest-wins background task. Navigation never awaits this path: views
+    /// render from the last completed snapshot, then settle when this applies.
+    private func refreshSessionSnapshot() {
         let paths = projects.map(\.path)
         let sessionIndex = sessionIndex
-        let (indexed, branches): ([IndexedSession], [String?]) = await Task.detached(priority: .userInitiated) {
-            let indexed = sessionIndex.loadIndexedSessions()
-            let branches = paths.map { AppViewModel.gitBranch(for: $0) }
-            return (indexed, branches)
-        }.value
+        let noProjectPath = Self.noProjectScratchDirectory()
+        sessionSnapshotRefreshID &+= 1
+        let refreshID = sessionSnapshotRefreshID
 
+        sessionSnapshotRefreshTask?.cancel()
+        sessionSnapshotRefreshTask = Task { [weak self] in
+            let (snapshot, branches): (SessionIndexSnapshot, [String?]) = await Task.detached(priority: .userInitiated) {
+                let branches = paths.map { AppViewModel.gitBranch(for: $0) }
+                let snapshot = sessionIndex.loadSnapshot(
+                    projectPaths: paths,
+                    projectBranches: branches,
+                    noProjectPath: noProjectPath
+                )
+                return (snapshot, branches)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, refreshID == self.sessionSnapshotRefreshID else { return }
+                self.applySessionSnapshot(snapshot, projectPaths: paths, branches: branches)
+            }
+        }
+    }
+
+    private func applySessionSnapshot(
+        _ snapshot: SessionIndexSnapshot,
+        projectPaths: [URL],
+        branches: [String?]
+    ) {
+        sessionIndexSnapshot = snapshot
         // Once the real session backing the in-progress chat is on disk, retire
         // the optimistic "New chat" placeholder so it doesn't double up.
         if pendingChat != nil, let active = activeSessionId,
-           indexed.contains(where: { $0.id == active }) {
+           snapshot.indexedSessions.contains(where: { $0.id == active }) {
             pendingChat = nil
         }
 
+        let branchByProjectPath = Dictionary(
+            uniqueKeysWithValues: zip(projectPaths.map { $0.standardizedFileURL.path }, branches)
+        )
         for index in projects.indices {
             let path = projects[index].path
-            let branch = branches[index]
-            projects[index].threads = sessionIndex.threads(for: path, in: indexed, branch: branch)
+            let normalizedPath = path.standardizedFileURL.path
+            let branch = branchByProjectPath[normalizedPath] ?? nil
+            projects[index].threads = snapshot.threadsByProjectPath[normalizedPath] ?? []
             projects[index].gitBranch = branch
-            projects[index].lastActiveAt = indexed
-                .filter {
-                    let projectPath = path.standardizedFileURL.path
-                    let sessionPath = $0.cwd.standardizedFileURL.path
-                    return sessionPath == projectPath || sessionPath.hasPrefix(projectPath + "/")
-                }
-                .map(\.lastActive)
-                .max()
+            projects[index].lastActiveAt = snapshot.lastActiveByProjectPath[normalizedPath]
 
             if projects[index].createdAt == nil {
                 projects[index].createdAt = (try? path.resourceValues(forKeys: [.creationDateKey]).creationDate)
@@ -1636,7 +1758,10 @@ final class AppViewModel {
             selectedProject = projects[idx]
         }
 
-        noProjectThreads = sessionIndex.threads(for: Self.noProjectScratchDirectory(), in: indexed, limit: 200)
+        noProjectThreads = snapshot.noProjectThreads
+        sessionIndexRevision &+= 1
+        _sidebarProjectGroupsCache = nil
+        _sidebarFlatThreadsCache = nil
     }
 
     private func sortedSidebarProjects(includeArchived: Bool) -> [Project] {
@@ -1663,7 +1788,17 @@ final class AppViewModel {
 
         switch sidebarStatusFilter {
         case .all: break
-        case .withChats: result = result.filter { !$0.threads.isEmpty }
+        case .withChats:
+            // Only surface projects the user has actually chatted in. There is
+            // deliberately NO "show every discovered folder when none have chats"
+            // fallback — that dumped the whole ~/Development tree into the sidebar
+            // (the "loads of empty, chat-less projects" complaint). An empty
+            // active list is correct on first run; the empty state + New chat /
+            // Add-project affordances cover it. The archive group still lists
+            // everything the user explicitly archived, chats or not.
+            if !includeArchived {
+                result = result.filter { !$0.threads.isEmpty }
+            }
         case .noChats: result = result.filter { $0.threads.isEmpty }
         case .pinnedOnly: result = result.filter { pinnedProjectPaths.contains($0.path.path) }
         }
@@ -1788,7 +1923,7 @@ final class AppViewModel {
     }
 
     /// Restore appearance / layout preferences from UserDefaults. Reads each key
-    /// only if present so the inline defaults (system / 290 / collapsed=false /
+    /// only if present so the inline defaults (system / 280 / collapsed=false /
     /// sendOnReturn=true / warm=true) stand in for a fresh install. Runs early
     /// (from `init`) so there's no light→dark flash on launch.
     private func loadAppearancePreferences() {
@@ -1798,7 +1933,9 @@ final class AppViewModel {
             appearance = value
         }
         if d.object(forKey: Self.sidebarWidthKey) != nil {
-            sidebarWidth = min(max(d.double(forKey: Self.sidebarWidthKey), 220), 420)
+            let storedWidth = d.double(forKey: Self.sidebarWidthKey)
+            let migratedWidth = (storedWidth == 290 || storedWidth <= 220) ? 280 : storedWidth
+            sidebarWidth = min(max(migratedWidth, 240), 340)
         }
         if d.object(forKey: Self.sidebarCollapsedKey) != nil {
             sidebarCollapsed = d.bool(forKey: Self.sidebarCollapsedKey)

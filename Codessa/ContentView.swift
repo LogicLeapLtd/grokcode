@@ -11,6 +11,8 @@ struct ContentView: View {
     /// "Check for updates" dialog and the sidebar's update badge.
     @StateObject private var update = UpdateService()
 
+    @State private var showLaunchMascot = true
+
     var body: some View {
         ZStack {
             windowBackdrop
@@ -26,31 +28,28 @@ struct ContentView: View {
                         : model.sidebarWidth
 
                     ZStack(alignment: .topLeading) {
-                        sidebarTitlebarBackdrop(width: sidebarWidth)
+                        if model.activePage == .settings {
+                            // Settings owns its own navigation column, so replace
+                            // the app sidebar instead of mounting two sidebars.
+                            mainContentColumn
+                        } else {
+                            sidebarTitlebarBackdrop(width: sidebarWidth)
 
-                        HStack(spacing: 0) {
-                            SidebarView(
-                                limitedMode: license.isInLimitedMode,
-                                forceCollapsed: compactSidebar
-                            )
-                            .layoutPriority(2)
-                            .zIndex(1)
+                            HStack(spacing: 0) {
+                                SidebarView(
+                                    limitedMode: license.isInLimitedMode,
+                                    forceCollapsed: compactSidebar
+                                )
+                                .layoutPriority(2)
+                                .zIndex(1)
 
-                            Rectangle()
-                                .fill(CodexTheme.divider)
-                                .frame(width: 1)
-                                .zIndex(2)
+                                Rectangle()
+                                    .fill(CodexTheme.divider)
+                                    .frame(width: 1)
+                                    .zIndex(2)
 
-                            // Page column runs the full height of the window.
-                            VStack(spacing: 0) {
-                                MainContentView()
+                                mainContentColumn
                             }
-                            .layoutPriority(1)
-                            // Pull the column up into the transparent title-bar strip so the
-                            // page content sits flush at the very top instead of leaving a
-                            // dead ~28pt gap beneath the title bar. Traffic-light buttons
-                            // live over the sidebar, so the page column's top edge is free.
-                            .ignoresSafeArea(.container, edges: .top)
                         }
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
@@ -71,6 +70,11 @@ struct ContentView: View {
                     model.navigateTo(.home)
                 }
             }
+
+            windowTitlebarControls
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .ignoresSafeArea(.container, edges: .top)
+                .zIndex(20)
 
             AnimatedModal(isPresented: model.showHooksReview, onDismiss: { model.closeHooksReview() }) {
                 HooksReviewView()
@@ -111,9 +115,19 @@ struct ContentView: View {
                     .zIndex(300)
             }
         }
+        .overlay {
+            if showLaunchMascot {
+                LaunchMascotOverlay {
+                    showLaunchMascot = false
+                }
+                .transition(.opacity)
+                .zIndex(400)
+            }
+        }
         .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
         .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
         .animation(.easeOut(duration: 0.18), value: model.fullScreenImagePath)
+        .animation(.easeOut(duration: 0.22), value: showLaunchMascot)
         .animation(CodexMotion.modalSpring, value: update.isDialogPresented)
         .environmentObject(license)
         .environmentObject(update)
@@ -146,6 +160,65 @@ struct ContentView: View {
             .ignoresSafeArea()
     }
 
+    private var mainContentColumn: some View {
+        // Page column runs the full height of the window.
+        VStack(spacing: 0) {
+            MainContentView()
+        }
+        .layoutPriority(1)
+        // Pull the column up into the transparent title-bar strip so the page
+        // content sits flush at the very top instead of leaving a dead ~28pt gap
+        // beneath the title bar. Traffic-light buttons live over the sidebar, so
+        // the page column's top edge is free.
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    private var windowTitlebarControls: some View {
+        // A compact trio (collapse · back · forward) that sits immediately to the
+        // right of the macOS traffic-light buttons, top-left over the sidebar
+        // glass, vertically aligned with the native stoplights. `spacing: 2`
+        // matches the app's other icon clusters (MainContentView window controls,
+        // the Projects header bar); `leading: 74` clears the green stoplight
+        // (~x20–68) with a hair of breathing room.
+        HStack(spacing: 2) {
+            titlebarButton(
+                "sidebar.left",
+                help: model.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            ) {
+                model.toggleSidebarCollapsed()
+            }
+
+            titlebarButton("arrow.left", help: "Back", isEnabled: model.canNavigateBack) {
+                model.navigateBack()
+            }
+
+            titlebarButton("arrow.right", help: "Forward", isEnabled: model.canNavigateForward) {
+                model.navigateForward()
+            }
+        }
+        .background(NonDraggableRegion())
+        .padding(.leading, 74)
+        .padding(.top, 0)
+    }
+
+    private func titlebarButton(_ symbol: String,
+                                help: String,
+                                isEnabled: Bool = true,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(CodexTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .codexHover(cornerRadius: 7)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
+        .help(help)
+    }
+
     private func sidebarTitlebarBackdrop(width: Double) -> some View {
         VisualEffectView(material: .sidebar)
             .overlay(CodexTheme.glassTint)
@@ -158,11 +231,11 @@ struct ContentView: View {
     private func shouldForceCompactSidebar(windowWidth: CGFloat) -> Bool {
         switch model.activePage {
         case .settings:
-            windowWidth < 1_260
-        case .plugins, .automations, .projectDetail, .projectContext:
-            windowWidth < 1_080
+            windowWidth < 1_200
+        case .plugins, .automations, .projectContext:
+            windowWidth < 1_030
         case .home, .chat, .search:
-            windowWidth < 920
+            windowWidth < 880
         }
     }
 }

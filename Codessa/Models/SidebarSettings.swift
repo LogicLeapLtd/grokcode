@@ -16,6 +16,29 @@ enum SidebarStatusFilter: String, CaseIterable, Identifiable, Codable {
         case .pinnedOnly: "Pinned only"
         }
     }
+
+    /// Label used in the sidebar's "Show" menu — clearer than the bare `label`
+    /// about what each option surfaces.
+    var menuLabel: String {
+        switch self {
+        case .all: "All folders"
+        case .withChats: "With chats"
+        case .noChats: "No chats"
+        case .pinnedOnly: "Pinned only"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: "square.grid.2x2"
+        case .withChats: "bubble.left.and.bubble.right"
+        case .noChats: "tray"
+        case .pinnedOnly: "pin"
+        }
+    }
+
+    /// The options surfaced in the sidebar "Show" menu, in order.
+    static var menuCases: [SidebarStatusFilter] { [.withChats, .pinnedOnly, .all] }
 }
 
 enum SidebarGroupBy: String, CaseIterable, Identifiable, Codable {

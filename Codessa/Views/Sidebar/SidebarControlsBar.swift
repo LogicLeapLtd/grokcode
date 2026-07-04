@@ -8,7 +8,7 @@ struct SidebarControlsBar: View {
             // #21 — larger, heavier "Projects" header so the chat column reads
             // as a titled section rather than a faint caption.
             Text("Projects")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 12.5, weight: .bold))
                 .foregroundStyle(CodexTheme.textSecondary)
 
             Spacer(minLength: 0)
@@ -17,7 +17,7 @@ struct SidebarControlsBar: View {
             organizeMenu
             addProjectButton
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
     }
 
     private var collapseButton: some View {
@@ -66,6 +66,23 @@ struct SidebarControlsBar: View {
                         }
                     }
                 }
+                // #4 — surface the previously-unreachable status filter so the
+                // sidebar can be curated: default "With chats" hides bare folders,
+                // "Pinned only" narrows to favourites, "All folders" browses every
+                // discovered project.
+                CodexFlyoutItem(title: "Show", systemImage: "line.3.horizontal.decrease.circle") {
+                    ForEach(SidebarStatusFilter.menuCases) { filter in
+                        CodexMenuItem(
+                            title: filter.menuLabel,
+                            systemImage: filter.symbol,
+                            isSelected: model.sidebarStatusFilter == filter
+                        ) {
+                            model.sidebarStatusFilter = filter
+                            model.persistSidebarPreferences()
+                            close()
+                        }
+                    }
+                }
             }
         }
         .help("Sidebar options")
@@ -81,9 +98,9 @@ struct SidebarControlsBar: View {
 
     private func controlIcon(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 12.5, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(CodexTheme.textSecondary)
-            .frame(width: 26, height: 24)
+            .frame(width: 24, height: 22)
             .codexHover(cornerRadius: 6)
             .contentShape(Rectangle())
     }

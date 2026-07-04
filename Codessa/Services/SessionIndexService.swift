@@ -24,7 +24,15 @@ struct IndexedSession: Hashable {
     var parentSessionId: String?
 }
 
-struct SessionIndexService {
+struct SessionIndexSnapshot {
+    let indexedSessions: [IndexedSession]
+    let sessionDirectoryById: [String: URL]
+    let threadsByProjectPath: [String: [ProjectThread]]
+    let lastActiveByProjectPath: [String: Date]
+    let noProjectThreads: [ProjectThread]
+}
+
+nonisolated struct SessionIndexService {
     private let fileManager = FileManager.default
     private let sessionsRoot: URL
 
@@ -34,6 +42,66 @@ struct SessionIndexService {
     }
 
     func loadIndexedSessions() -> [IndexedSession] {
+        loadIndexedSessionEntries().map(\.session)
+    }
+
+    func loadSnapshot(
+        projectPaths: [URL],
+        projectBranches: [String?],
+        noProjectPath: URL,
+        threadLimit: Int = 12,
+        noProjectLimit: Int = 200
+    ) -> SessionIndexSnapshot {
+        let entries = loadIndexedSessionEntries()
+        let indexed = entries.map(\.session)
+        let directoryById = Dictionary(
+            entries.map { ($0.session.id, $0.dir) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var threadsByProjectPath: [String: [ProjectThread]] = [:]
+        var lastActiveByProjectPath: [String: Date] = [:]
+
+        for (offset, projectPath) in projectPaths.enumerated() {
+            let normalizedProject = projectPath.standardizedFileURL.path
+            let branch = projectBranches.indices.contains(offset) ? projectBranches[offset] : nil
+
+            threadsByProjectPath[normalizedProject] = threads(
+                for: projectPath,
+                in: indexed,
+                branch: branch,
+                limit: threadLimit,
+                resolveBranchIfMissing: false
+            )
+
+            let prefix = normalizedProject + "/"
+            let lastActive = indexed.lazy
+                .filter {
+                    let sessionPath = $0.cwd.standardizedFileURL.path
+                    return sessionPath == normalizedProject || sessionPath.hasPrefix(prefix)
+                }
+                .map(\.lastActive)
+                .max()
+            if let lastActive {
+                lastActiveByProjectPath[normalizedProject] = lastActive
+            }
+        }
+
+        return SessionIndexSnapshot(
+            indexedSessions: indexed,
+            sessionDirectoryById: directoryById,
+            threadsByProjectPath: threadsByProjectPath,
+            lastActiveByProjectPath: lastActiveByProjectPath,
+            noProjectThreads: threads(
+                for: noProjectPath,
+                in: indexed,
+                limit: noProjectLimit,
+                resolveBranchIfMissing: false
+            )
+        )
+    }
+
+    private func loadIndexedSessionEntries() -> [(session: IndexedSession, dir: URL)] {
         guard let enumerator = fileManager.enumerator(
             at: sessionsRoot,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -58,7 +126,12 @@ struct SessionIndexService {
             sessions[index].parentSessionId = parentBySubagent[sessions[index].id]
         }
 
-        return sessions.sorted { $0.lastActive > $1.lastActive }
+        let sessionById = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return entries.compactMap { entry in
+            guard let session = sessionById[entry.session.id] else { return nil }
+            return (session, entry.dir)
+        }
+        .sorted { $0.session.lastActive > $1.session.lastActive }
     }
 
     /// Build a `[subagentId: parentSessionId]` map by scanning the `updates.jsonl`
@@ -86,13 +159,10 @@ struct SessionIndexService {
 
         var map: [String: String] = [:]
         for entry in entries where entry.session.kind != .subagent {
+            guard map.count < subagentIds.count else { break }
             guard cwdDirsWithSubagents.contains(entry.dir.deletingLastPathComponent().path) else { continue }
-            let updatesURL = entry.dir.appendingPathComponent("updates.jsonl")
-            guard let raw = try? String(contentsOf: updatesURL, encoding: .utf8),
-                  raw.contains("subagent_spawned") else { continue }
-
             let parentId = sessionIdByDir[entry.dir.path] ?? entry.session.id
-            for line in raw.split(whereSeparator: \.isNewline) {
+            scanJSONLines(at: entry.dir.appendingPathComponent("updates.jsonl")) { line in
                 guard line.contains("child_session_id"),
                       let data = line.data(using: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -100,15 +170,20 @@ struct SessionIndexService {
                       let update = params["update"] as? [String: Any],
                       (update["sessionUpdate"] as? String) == "subagent_spawned",
                       let childId = update["child_session_id"] as? String,
-                      subagentIds.contains(childId) else { continue }
+                      subagentIds.contains(childId) else { return true }
                 map[childId] = parentId
+                return map.count < subagentIds.count
             }
         }
         return map
     }
 
     func threads(
-        for projectPath: URL, in sessions: [IndexedSession], branch: String? = nil, limit: Int = 12
+        for projectPath: URL,
+        in sessions: [IndexedSession],
+        branch: String? = nil,
+        limit: Int = 12,
+        resolveBranchIfMissing: Bool = true
     ) -> [ProjectThread] {
         let normalizedProject = projectPath.standardizedFileURL.path
 
@@ -117,7 +192,7 @@ struct SessionIndexService {
         // branch tracking. Callers that already resolved it (AppViewModel keeps
         // it on the project) pass it in so we don't re-read `.git/HEAD` from
         // disk a second time; otherwise resolve it here.
-        let projectBranch = branch ?? AppViewModel.gitBranch(for: projectPath)
+        let projectBranch = branch ?? (resolveBranchIfMissing ? AppViewModel.gitBranch(for: projectPath) : nil)
 
         let projectSessions = sessions.filter { session in
             let sessionPath = session.cwd.standardizedFileURL.path
@@ -215,27 +290,67 @@ struct SessionIndexService {
     /// length. Returns nil if the file is absent or has no user text yet (#26).
     private func firstUserMessageTitle(besideSummaryAt summaryURL: URL) -> String? {
         let updatesURL = summaryURL.deletingLastPathComponent().appendingPathComponent("updates.jsonl")
-        guard let raw = try? String(contentsOf: updatesURL, encoding: .utf8) else { return nil }
 
-        for line in raw.split(whereSeparator: \.isNewline) {
+        var title: String?
+        scanJSONLines(at: updatesURL, maxBytes: 512 * 1024) { line in
             guard let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let params = obj["params"] as? [String: Any],
                   let update = params["update"] as? [String: Any],
-                  (update["sessionUpdate"] as? String) == "user_message_chunk" else { continue }
+                  (update["sessionUpdate"] as? String) == "user_message_chunk" else { return true }
 
             // `content` is a single text object on this grok build, but tolerate
             // an array of content parts as well.
             if let content = update["content"] as? [String: Any],
                let text = content["text"] as? String {
-                return Self.truncatedTitle(text)
+                title = Self.truncatedTitle(text)
+                return false
             }
             if let parts = update["content"] as? [[String: Any]] {
                 let joined = parts.compactMap { $0["text"] as? String }.joined(separator: " ")
-                if !joined.isEmpty { return Self.truncatedTitle(joined) }
+                if !joined.isEmpty {
+                    title = Self.truncatedTitle(joined)
+                    return false
+                }
+            }
+            return true
+        }
+        return title
+    }
+
+    private func scanJSONLines(at url: URL, maxBytes: Int? = nil, _ visit: (String) -> Bool) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+
+        var pending = Data()
+        var readBytes = 0
+        let newline = Data([0x0A])
+
+        while true {
+            let chunkSize: Int
+            if let maxBytes {
+                let remaining = maxBytes - readBytes
+                guard remaining > 0 else { break }
+                chunkSize = min(64 * 1024, remaining)
+            } else {
+                chunkSize = 64 * 1024
+            }
+
+            guard let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty else { break }
+            readBytes += chunk.count
+            pending.append(chunk)
+
+            while let range = pending.range(of: newline) {
+                let lineData = pending[..<range.lowerBound]
+                pending.removeSubrange(...range.lowerBound)
+                guard let line = String(data: lineData, encoding: .utf8) else { continue }
+                if !visit(line) { return }
             }
         }
-        return nil
+
+        if !pending.isEmpty, let line = String(data: pending, encoding: .utf8) {
+            _ = visit(line)
+        }
     }
 
     /// Collapse whitespace and clip to a tidy single-line title. The limit here
@@ -301,10 +416,10 @@ struct SessionIndexService {
     /// chat opens populated. Walks the streamed events (user/agent message &
     /// thought chunks, tool calls) and rebuilds the `[ChatMessage]` the chat view
     /// renders. Returns nil if the session folder / file can't be found.
-    func loadMessages(for sessionId: String) -> [ChatMessage]? {
-        guard let dir = sessionDirectory(for: sessionId) else { return nil }
+    func loadMessages(for sessionId: String, directoryHint: URL? = nil) -> [ChatMessage]? {
+        guard let dir = directoryHint ?? sessionDirectory(for: sessionId) else { return nil }
         let updatesURL = dir.appendingPathComponent("updates.jsonl")
-        guard let raw = try? String(contentsOf: updatesURL, encoding: .utf8) else { return nil }
+        guard fileManager.fileExists(atPath: updatesURL.path) else { return nil }
 
         var messages: [ChatMessage] = []
         var assistant: ChatMessage?
@@ -315,12 +430,17 @@ struct SessionIndexService {
             assistant = nil
         }
 
-        for line in raw.split(whereSeparator: \.isNewline) {
+        // Stream the transcript line-by-line through the chunked FileHandle reader
+        // instead of `String(contentsOf:)` + `split`, which loaded the entire file
+        // into memory (and then a second copy as substrings). A long session with
+        // big tool outputs / pasted files could be hundreds of MB — slurping it
+        // wholesale on open spiked memory hard. This keeps memory flat.
+        scanJSONLines(at: updatesURL) { line in
             guard let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let params = obj["params"] as? [String: Any],
                   let update = params["update"] as? [String: Any],
-                  let kind = update["sessionUpdate"] as? String else { continue }
+                  let kind = update["sessionUpdate"] as? String else { return true }
 
             switch kind {
             case "user_message_chunk":
@@ -353,8 +473,9 @@ struct SessionIndexService {
                     assistant = a
                 }
             default:
-                continue
+                return true
             }
+            return true
         }
         flushAssistant()
 

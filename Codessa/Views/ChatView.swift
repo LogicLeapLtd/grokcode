@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppViewModel.self) private var model
+    var showHeader = true
+    var showsComposer = true
+    var horizontalPadding: CGFloat = 48
+    var verticalPadding: CGFloat = 28
+    var transcriptMaxWidth: CGFloat = 760
 
     private var chatTitle: String {
         if let firstUser = model.messages.first(where: { $0.role == .user })?.text,
@@ -48,7 +53,9 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if showHeader {
+                header
+            }
 
             GeometryReader { viewport in
                 ScrollViewReader { proxy in
@@ -66,9 +73,9 @@ struct ChatView: View {
                             }
                             Color.clear.frame(height: 1).id("bottom-anchor")
                         }
-                        .padding(.horizontal, 48)
-                        .padding(.vertical, 28)
-                        .frame(maxWidth: 760)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.vertical, verticalPadding)
+                        .frame(maxWidth: transcriptMaxWidth)
                         .frame(maxWidth: .infinity)
                         // Report content bottom (maxY) in the scroll space; the
                         // viewport height comes from the outer GeometryReader.
@@ -129,11 +136,13 @@ struct ChatView: View {
                 }
             }
 
-            PromptComposer()
-                .padding(.horizontal, 48)
-                .padding(.vertical, 20)
-                .frame(maxWidth: CodexTheme.composerMaxWidth + 96)
-                .frame(maxWidth: .infinity)
+            if showsComposer {
+                PromptComposer()
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: CodexTheme.composerMaxWidth + horizontalPadding * 2)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 
@@ -234,15 +243,64 @@ struct ChatView: View {
     }
 }
 
+struct ChatTranscriptSnapshotView: View {
+    let messages: [ChatMessage]
+    var isLoading = false
+    var emptyTitle = "Drop a chat here"
+    var horizontalPadding: CGFloat = 24
+    var verticalPadding: CGFloat = 20
+    var transcriptMaxWidth: CGFloat = 680
+
+    var body: some View {
+        ScrollView {
+            if isLoading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading chat")
+                        .font(CodexTheme.captionFont)
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
+                .padding(.top, 44)
+            } else if messages.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                    Text(emptyTitle)
+                        .font(CodexTheme.bodyFont)
+                        .foregroundStyle(CodexTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
+                .padding(.top, 44)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    ForEach(messages) { message in
+                        MessageBlock(message: message, allowsEditing: false)
+                    }
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
+                .frame(maxWidth: transcriptMaxWidth)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .scrollIndicators(.hidden)
+        .background(ChatScrollViewConfigurator())
+    }
+}
+
 private struct MessageBlock: View {
     let message: ChatMessage
+    var allowsEditing = true
     var onRetry: () -> Void = {}
     var onResend: (String) -> Void = { _ in }
 
     var body: some View {
         switch message.role {
         case .user:
-            UserMessageBlock(message: message, onResend: onResend)
+            UserMessageBlock(message: message, allowsEditing: allowsEditing, onResend: onResend)
         default:
             AssistantMessageBlock(message: message, onRetry: onRetry)
         }
@@ -253,6 +311,7 @@ private struct MessageBlock: View {
 
 private struct UserMessageBlock: View {
     let message: ChatMessage
+    var allowsEditing = true
     var onResend: (String) -> Void = { _ in }
 
     @Environment(AppViewModel.self) private var model
@@ -264,7 +323,7 @@ private struct UserMessageBlock: View {
     /// Editing is only offered on settled, non-queued user turns while idle —
     /// resending rewrites history, which a live run can't absorb.
     private var canEdit: Bool {
-        !message.isQueued && !model.isRunning
+        allowsEditing && !message.isQueued && !model.isRunning
     }
 
     var body: some View {
@@ -451,7 +510,7 @@ private struct AssistantMessageBlock: View {
             }
 
             if !message.text.isEmpty {
-                MarkdownText(text: message.text)
+                MarkdownText(text: message.text, isStreaming: message.isStreaming)
                     .textSelection(.enabled)
             }
 
@@ -548,7 +607,7 @@ private struct ReasoningBlock: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                MarkdownText(text: reasoning, font: .system(size: 13.5), color: CodexTheme.textSecondary)
+                MarkdownText(text: reasoning, font: .system(size: 13.5), color: CodexTheme.textSecondary, isStreaming: isStreaming)
                     .textSelection(.enabled)
                     .padding(.leading, 10)
                     .overlay(alignment: .leading) {

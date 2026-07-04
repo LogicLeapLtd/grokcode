@@ -10,14 +10,30 @@ struct MarkdownText: View {
     let text: String
     var font: Font = CodexTheme.bodyFont
     var color: Color = CodexTheme.textPrimary
+    /// True while tokens are still streaming in. In that state we skip block
+    /// parsing entirely and render the raw text as cheap plain `Text`.
+    var isStreaming: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ForEach(Array(MarkdownParser.blocks(from: text).enumerated()), id: \.offset) { _, block in
-                view(for: block)
+        if isStreaming {
+            // Re-running the block parser + `AttributedString(markdown:)` over the
+            // whole growing message on every streamed chunk is O(n²) and was a
+            // primary CPU driver during long replies. While the turn is live we
+            // render plain text; the full markdown formatting resolves the instant
+            // streaming settles (this branch flips to the parsed path below).
+            Text(text)
+                .font(font)
+                .foregroundStyle(color)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(Array(MarkdownParser.blocks(from: text).enumerated()), id: \.offset) { _, block in
+                    view(for: block)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -156,7 +172,38 @@ enum MarkdownBlock {
 }
 
 enum MarkdownParser {
+    // A small LRU-ish cache so a settled message isn't re-parsed from scratch
+    // every time SwiftUI re-evaluates its body (hover, scroll, the ambient
+    // backdrop's animation, a sibling message updating, …). Keyed on the exact
+    // text; guarded by a lock since views can render off the main actor.
+    private static let cacheLock = NSLock()
+    private static var cache: [String: [MarkdownBlock]] = [:]
+    private static var cacheOrder: [String] = []
+    private static let cacheLimit = 64
+
     static func blocks(from text: String) -> [MarkdownBlock] {
+        cacheLock.lock()
+        if let hit = cache[text] {
+            cacheLock.unlock()
+            return hit
+        }
+        cacheLock.unlock()
+
+        let parsed = parse(text)
+
+        cacheLock.lock()
+        if cache[text] == nil {
+            cache[text] = parsed
+            cacheOrder.append(text)
+            if cacheOrder.count > cacheLimit {
+                cache.removeValue(forKey: cacheOrder.removeFirst())
+            }
+        }
+        cacheLock.unlock()
+        return parsed
+    }
+
+    private static func parse(_ text: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
         let lines = text.components(separatedBy: "\n")
         var i = 0
