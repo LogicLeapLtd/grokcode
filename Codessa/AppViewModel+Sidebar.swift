@@ -26,9 +26,13 @@ extension AppViewModel {
 
     // MARK: - Collapse (#23)
 
-    /// Width of the collapsed icon rail. Keep this close to the icon column's
-    /// natural width so the collapsed sidebar reads as a rail, not a skinny pane.
-    var collapsedSidebarWidth: Double { 56 }
+    /// Width of the collapsed icon rail. Sized so the macOS traffic-light trio
+    /// (close · minimise · zoom) sits fully *within* the rail rather than the
+    /// green zoom button poking past its right edge — the collapsed rail then
+    /// reads as wrapping around the window buttons, with the titlebar's
+    /// sidebar-toggle beginning right at the divider instead of floating over
+    /// the content. Still narrow enough to read as a rail, not a skinny pane.
+    var collapsedSidebarWidth: Double { 72 }
 
     /// Effective sidebar width accounting for the collapsed rail (#22/#23).
     var effectiveSidebarWidth: Double {
