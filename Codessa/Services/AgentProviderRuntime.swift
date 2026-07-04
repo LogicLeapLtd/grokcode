@@ -30,7 +30,7 @@ nonisolated enum AgentProviderModelCatalog {
         switch provider.id {
         case AgentProvider.claude.id:
             return [
-                model("claude-fable-5", "Claude Fable 5", provider, isDefault: true, options: [claudeReasoning(defaultValue: "high")]),
+                model("claude-fable-5", "Fable 5", provider, isDefault: true, options: [claudeReasoning(defaultValue: "high")]),
                 model("claude-opus-4-8", "Claude Opus 4.8", provider, options: [claudeReasoning(defaultValue: "high")]),
                 model("claude-sonnet-5", "Claude Sonnet 5", provider, options: [claudeReasoning(defaultValue: "high")]),
             ]
