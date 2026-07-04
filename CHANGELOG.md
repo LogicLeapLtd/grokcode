@@ -1,5 +1,7 @@
 # Changelog
 
+- Tightened the composer toolbar so long model names (e.g. "Grok Composer 2.5 Fast") no longer overflow the row. The mode dropdown no longer echoes the selected model beside the mode name — it just shows the mode (Execute, Plan, …) — and the model pill now truncates gracefully instead of expanding to the model's full intrinsic width.
+
 - Starting a chat no longer empties the sidebar. Previously the "With chats" filter would collapse the whole project list down to just the active project the instant a chat began (the optimistic "New chat" placeholder made it the only project "with chats"). Pending placeholders are now ignored when deciding which projects to show, so every project stays visible and the sort simply floats the active one to the top. The owning project also auto-expands when a chat starts, so the new chat is immediately visible instead of hidden under a collapsed project row.
 
 - Cleaned up the composer's mode/model labels. Agent modes no longer leak raw model IDs (e.g. `claude-fable-5`) or a redundant "Provider ·" prefix — they now show the friendly product name (Fable 5, Opus 4.8, GPT-5.5, …), consistently with the model picker. The duplicate "Plan mode" permission pill is hidden while Plan mode is active, since the mode already locks permissions to read-only.

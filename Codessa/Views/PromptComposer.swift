@@ -557,10 +557,6 @@ struct PromptComposer: View {
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
-                Text(model.activeModeRouteLabel)
-                    .font(CodexTheme.composerMetaFont)
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
@@ -707,11 +703,13 @@ struct PromptComposer: View {
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
-            .fixedSize(horizontal: true, vertical: false)
             .composerControlCapsule()
         } menu: { close in
             // Reasoning now lives in its own dropdown, so exclude it here and
