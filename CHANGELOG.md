@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reasoning level is now its own composer dropdown**, split out of the combined
   model picker so the model menu no longer carries the reasoning pills inline.
 
+### Fixed
+
+- **Dropdown menu cards no longer show sharp corners.** The menu card (and flyout
+  submenu) content is now clipped to the same rounded rectangle as its background,
+  so the square inner content no longer pokes past the rounded frame at the corners.
+
 ## [1.7.0] - 2026-07-04
 
 ### Added
