@@ -539,10 +539,13 @@ final class AppViewModel {
         // Detect every installed agent-CLI provider (Claude Code, Codex, Cursor,
         // Gemini, Grok, Z.AI + custom) and restore the selected one.
         refreshProviders()
-        // Boot the warm grok session now so MCP is ready before the first send.
-        if grokAvailable, GrokCLIService.useWarmSession {
-            GrokAgentSession.shared.prewarm()
-        }
+        // NOTE: we deliberately do NOT prewarm the `grok agent stdio` session on
+        // launch. Prewarming boots the entire MCP server fleet (dozens of
+        // subprocesses) the moment the app opens — while the user is still on the
+        // home screen and may never send anything — pinning a large amount of
+        // idle memory. The warm session is started lazily on the first real send
+        // (`GrokCLIService.streamPrompt` → `GrokAgentSession.ensureStarted`), so
+        // MCP boots on demand instead of on every launch.
         restoreDefaults()
         await refreshProviderSnapshots()
         trustedHookIDs = hooksService.loadTrustedIDs()

@@ -1,5 +1,7 @@
 # Changelog
 
+- Stopped prewarming the warm `grok agent stdio` session on launch. Previously the app booted the entire MCP server fleet (dozens of subprocesses) the moment Codessa opened — even while the user was still on the home screen and might never send anything — pinning a large amount of idle memory and spawning a storm of processes on startup. The warm session now boots lazily on the first real send, so MCP starts on demand instead of on every launch.
+
 - Fixed the model pill (e.g. "Opus 4.8") reserving a fixed 150pt of width and pushing the chevron to the far right, leaving a large empty gap — it now hugs the model name like the other composer pills.
 - Fixed the top-right window controls (split view + open-in-new-window) getting clipped by the window's rounded corner. They now sit clear of the curve, and the chat header reserves matching space so the "Export" button never tucks underneath them.
 
