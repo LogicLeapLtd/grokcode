@@ -697,7 +697,7 @@ struct PromptComposer: View {
                     tint: isActive ? CodexTheme.sendButtonActiveBackground : nil,
                     fallback: isActive ? CodexTheme.sendButtonActiveBackground : CodexTheme.sendButtonBackground
                 )
-                .codexHoverOverlay(Circle())
+                .codexHoverOverlay(Circle(), enabled: isActive)
         }
         .buttonStyle(CodexPressableStyle(scale: 0.92))
         .disabled(!model.isRunning && !model.canSend)

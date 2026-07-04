@@ -532,14 +532,19 @@ extension View {
     /// Hover darkening drawn ON TOP (clipped to the shape) — for buttons that
     /// already have an opaque fill, where a behind-background wouldn't show.
     /// Apply to the Button itself (after .buttonStyle) so onHover fires reliably.
-    func codexHoverOverlay(cornerRadius: CGFloat = 8) -> some View {
-        modifier(CodexHoverOverlay(cornerRadius: cornerRadius))
+    func codexHoverOverlay(cornerRadius: CGFloat = 8, enabled: Bool = true) -> some View {
+        modifier(CodexHoverOverlay(cornerRadius: cornerRadius, enabled: enabled))
     }
 }
 
 struct CodexHoverOverlay: ViewModifier {
     var cornerRadius: CGFloat = 8
+    /// When false (a disabled control), hover is suppressed entirely — a
+    /// button that lights up but can't be clicked reads as broken, not lame.
+    var enabled: Bool = true
     @State private var hovering = false
+
+    private var active: Bool { enabled && hovering }
 
     func body(content: Content) -> some View {
         content
@@ -547,11 +552,17 @@ struct CodexHoverOverlay: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     // Adaptive tint (darkens in light mode, lightens in dark) so
                     // hover feedback is visible on dark secondary pills too.
-                    .fill(hovering ? CodexTheme.hoverBackground : Color.clear)
+                    .fill(active ? CodexTheme.controlHoverBackground : Color.clear)
                     .allowsHitTesting(false)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(active ? CodexTheme.controlHoverBorder : Color.clear, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
+            .scaleEffect(active ? 1.035 : 1.0)
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(CodexMotion.quickSpring, value: active)
     }
 }
 
@@ -559,19 +570,30 @@ struct CodexHoverOverlay: ViewModifier {
 /// rounded rectangle (capsule pills, circular buttons). The Liquid Glass
 /// fallback fill (pre-macOS 26) is a static color with no built-in hover
 /// feedback, so controls using it need this applied explicitly.
-struct CodexHoverOverlayShape<S: Shape>: ViewModifier {
+struct CodexHoverOverlayShape<S: InsettableShape>: ViewModifier {
     var shape: S
+    /// When false (a disabled control), hover is suppressed entirely — a
+    /// button that lights up but can't be clicked reads as broken, not lame.
+    var enabled: Bool = true
     @State private var hovering = false
+
+    private var active: Bool { enabled && hovering }
 
     func body(content: Content) -> some View {
         content
             .overlay(
                 shape
-                    .fill(hovering ? CodexTheme.hoverBackground : Color.clear)
+                    .fill(active ? CodexTheme.controlHoverBackground : Color.clear)
                     .allowsHitTesting(false)
             )
+            .overlay(
+                shape
+                    .strokeBorder(active ? CodexTheme.controlHoverBorder : Color.clear, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
+            .scaleEffect(active ? 1.035 : 1.0)
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(CodexMotion.quickSpring, value: active)
     }
 }
 
@@ -579,7 +601,7 @@ extension View {
     /// Hover darkening clipped to an arbitrary `Shape` (e.g. `Capsule()`,
     /// `Circle()`) — for controls whose own background is already opaque and
     /// isn't a rounded rectangle.
-    func codexHoverOverlay<S: Shape>(_ shape: S) -> some View {
-        modifier(CodexHoverOverlayShape(shape: shape))
+    func codexHoverOverlay<S: InsettableShape>(_ shape: S, enabled: Bool = true) -> some View {
+        modifier(CodexHoverOverlayShape(shape: shape, enabled: enabled))
     }
 }

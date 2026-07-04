@@ -127,9 +127,19 @@ enum CodexTheme {
         light: rgb(0.75, 0.75, 0.75),
         dark:  rgb(0.0, 0.0, 0.0, 0.55)
     )
-    static let accentOrange = dynamic(                    // Full access
-        light: rgb(0.92, 0.45, 0.18),
-        dark:  rgb(0.98, 0.55, 0.28)
+    /// Brand accent. Historically an orange ("Full access") — now a midnight
+    /// violet so the whole app reads cool/purple. The token name is kept for
+    /// source compatibility with its ~30 call sites; prefer `accent` in new code.
+    static let accentOrange = dynamic(
+        light: rgb(0.42, 0.33, 0.86),                     // #6B54DB — deeper for white bg
+        dark:  rgb(0.61, 0.51, 0.95)                      // #9B83F2 — the artifact violet
+    )
+    /// Preferred alias for the brand accent (points at the same dynamic colour).
+    static var accent: Color { accentOrange }
+    /// A softer, deeper companion violet for gradients / ambient glows.
+    static let accentDeep = dynamic(
+        light: rgb(0.30, 0.20, 0.66),
+        dark:  rgb(0.36, 0.26, 0.72)                      // #5C42B8-ish
     )
     static let focusAccent = dynamic(
         light: rgb(0.22, 0.47, 0.70),
@@ -158,9 +168,24 @@ enum CodexTheme {
     // MARK: - Hover / menus
 
     /// Hover overlay drawn over arbitrary backgrounds. Light darkens, dark lightens.
+    /// Used for full-width menu/list rows, which sit on a solid card surface
+    /// where even a subtle tint reads clearly.
     static let hoverBackground = dynamic(
-        light: rgb(0.0, 0.0, 0.0, 0.055),
-        dark:  rgb(1.0, 1.0, 1.0, 0.075)
+        light: rgb(0.0, 0.0, 0.0, 0.07),
+        dark:  rgb(1.0, 1.0, 1.0, 0.10)
+    )
+    /// Stronger hover tint for standalone chrome controls (pills, capsules,
+    /// icon buttons, circular buttons) whose own fill is already tinted or
+    /// opaque — `hoverBackground` alone barely reads on top of those.
+    static let controlHoverBackground = dynamic(
+        light: rgb(0.0, 0.0, 0.0, 0.12),
+        dark:  rgb(1.0, 1.0, 1.0, 0.18)
+    )
+    /// Border color standalone chrome controls brighten to on hover, paired
+    /// with `controlHoverBackground` for a clearer "lit up" state.
+    static let controlHoverBorder = dynamic(
+        light: rgb(0.0, 0.0, 0.0, 0.30),
+        dark:  rgb(1.0, 1.0, 1.0, 0.40)
     )
     static let menuBackground = dynamic(
         light: rgb(0.99, 0.99, 0.99),
@@ -250,15 +275,55 @@ enum CodexTheme {
     static let composerRadius: CGFloat = 24
     static let composerInnerRadius: CGFloat = 12
 
-    // Typography direction: rounded SF for the app shell, with monospaced type
-    // reserved for genuinely technical values. This keeps the UI warm without
-    // making every label feel like a terminal readout.
-    static let headlineFont = Font.system(size: 28, weight: .semibold, design: .rounded)
-    static let bodyFont = Font.system(size: 16, weight: .regular, design: .default)
-    static let composerInputFont = Font.system(size: 18, weight: .regular, design: .rounded)
-    static let composerLabelFont = Font.system(size: 13, weight: .semibold, design: .rounded)
-    static let composerMetaFont = Font.system(size: 12, weight: .medium, design: .rounded)
+    // MARK: - Brand typeface pairing
+    //
+    // Fraunces (a warm high-contrast serif) carries display / headline moments;
+    // Manrope (a geometric-humanist sans, distinct from the ubiquitous SF/Inter
+    // defaults) carries body & UI text. Both are bundled and registered at launch
+    // (see `BrandFonts`). `Font.custom` falls back to the system face if a family
+    // failed to register, so the app never renders blank text.
+
+    /// PostScript family names of the registered brand faces.
+    static let serifFamily = "Fraunces"
+    static let sansFamily = "Manrope"
+
+    /// Display serif (Fraunces). Maps the requested weight onto the true cut we
+    /// bundle (Regular / SemiBold) by PostScript name, rather than synthetic
+    /// bolding. Falls back to the system serif if registration failed.
+    static func serif(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        let name: String
+        switch weight {
+        case .semibold, .bold, .heavy, .black:
+            name = "Fraunces-SemiBold"
+        default:
+            name = "Fraunces-Regular"
+        }
+        return Font.custom(name, size: size)
+    }
+
+    /// UI/body sans (Manrope). Maps onto the bundled Regular / Medium / Bold cuts
+    /// by PostScript name. Falls back to the system sans if registration failed.
+    static func sans(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let name: String
+        switch weight {
+        case .bold, .heavy, .black:
+            name = "Manrope-Bold"
+        case .semibold, .medium:
+            name = "Manrope-Medium"
+        default:
+            name = "Manrope-Regular"
+        }
+        return Font.custom(name, size: size)
+    }
+
+    // Typography direction: Fraunces for headlines, Manrope for the shell, with
+    // monospaced type reserved for genuinely technical values.
+    static let headlineFont = serif(28, weight: .semibold)
+    static let bodyFont = sans(16)
+    static let composerInputFont = sans(18)
+    static let composerLabelFont = sans(13, weight: .semibold)
+    static let composerMetaFont = sans(12, weight: .medium)
     static let technicalLabelFont = Font.system(size: 12, weight: .medium, design: .monospaced)
-    static let captionFont = Font.system(size: 12, weight: .regular)
-    static let smallFont = Font.system(size: 11, weight: .regular)
+    static let captionFont = sans(12)
+    static let smallFont = sans(11)
 }
