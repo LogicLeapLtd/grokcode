@@ -18,6 +18,35 @@ Native macOS SwiftUI app — a front-end for the Grok CLI.
 
 ---
 
+## ⛔️ NON-NEGOTIABLE #0 — EVERY code change ALWAYS cuts a new versioned build
+
+**This overrides everything else. Josh should never have to ask for a build.**
+
+If your session changed ANY code, config, asset, or project file, you MUST — before
+you end the response — do BOTH of these, every single time:
+
+1. **Bump the version.** In `Codessa.xcodeproj/project.pbxproj`, bump
+   `CURRENT_PROJECT_VERSION` (build number) in **both** the Debug and Release config
+   blocks. Bump `MARKETING_VERSION` too for anything user-visible; a bare build-number
+   bump is the minimum for internal/cosmetic changes. Add a one-line `CHANGELOG.md` entry.
+2. **Cut the build the running app can pick up.** Run
+   `scripts/finalize-codex-session.sh --handoff` (or `scripts/drop-local-update.sh`),
+   which builds and drops `Codessa.app` into the PendingUpdate folder so the running
+   Dock app shows **"New build ready → Update & Relaunch"**.
+
+**This is required whether or not the change was QA'd, whether or not it "looks trivial",
+whether or not you think it's done, and whether or not Josh asked for a build.** "It's only
+a one-line/cosmetic change", "I didn't get to test it", "I'll build next turn", and
+"waiting for confirmation" are all NOT acceptable reasons to skip the versioned build.
+QA status is reported separately in the status table — it is NEVER a gate on cutting the build.
+
+The ONLY exceptions: (a) you changed no code/assets at all (pure diagnosis/answer), or
+(b) a hard tool failure (build refuses, hook blocks) that needs Josh to unblock — in which
+case state the specific blocker instead of silently skipping. Ending a code-changing response
+without a bumped version + handoff build is a hard failure.
+
+---
+
 ## Multi-agent & build discipline — READ THIS FIRST (learned the hard way)
 
 **This working tree is edited by more than one agent at the same time** (Claude Code *and*
@@ -59,9 +88,12 @@ build, so the running Codessa keeps flipping versions and work *appears* to vani
    release checks show a bottom-right "Update available" prompt that opens the updater dialog;
    local handoffs show "New build ready" directly. Nothing silently replaces the app.
    Publish real releases only via the runbook below, and only when Josh asks.
-9. **Mandatory session closure gate.** Any Codex/Claude session that changes code must end by
+9. **Mandatory session closure gate — ALWAYS cut a versioned build (see NON-NEGOTIABLE #0).**
+   Any Codex/Claude session that changes code must bump the version (per #0) and end by
    running `scripts/finalize-codex-session.sh --handoff` or, when Josh explicitly approved a
-   production publish, `scripts/finalize-codex-session.sh --publish`. This gate refuses dirty
+   production publish, `scripts/finalize-codex-session.sh --publish`. Do this on EVERY
+   code-changing session regardless of QA status — never leave finished edits without a
+   handoff build for the running app. This gate refuses dirty
    trees, validates a private build, and either drops a local update for the running app or creates
    the GitHub release the updater can see. Publish mode must also verify the DMG's embedded
    version/build, the remote `release/v<version>` branch, the moving `production` branch, the
