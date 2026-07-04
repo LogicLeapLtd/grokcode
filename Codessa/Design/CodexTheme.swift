@@ -259,6 +259,40 @@ enum CodexTheme {
         dark:  rgb(0.96, 0.52, 0.48)
     )
 
+    // MARK: - Inline code (`code` spans in prose)
+
+    /// Inline `code` spans: a restrained lavender ink on a soft, brand-tinted
+    /// fill — replaces the flat medium-grey highlighter block that made
+    /// code-dense paragraphs read like a ransom note. Kept low-contrast so a
+    /// paragraph peppered with spans stays calm.
+    static let inlineCodeText = dynamic(
+        light: rgb(0.35, 0.31, 0.49),
+        dark:  rgb(0.83, 0.81, 0.94)
+    )
+    static let inlineCodeBackground = dynamic(
+        light: rgb(0.45, 0.42, 0.62, 0.10),
+        dark:  rgb(0.70, 0.68, 0.86, 0.13)
+    )
+
+    // MARK: - Tool activity (live read / edit / run rows)
+
+    /// Faint panel behind a turn's grouped tool-call rows, so the "work" reads
+    /// as one calm block distinct from the prose rather than 20 loose items.
+    static let toolPanelBackground = dynamic(
+        light: rgb(0.48, 0.50, 0.60, 0.05),
+        dark:  rgb(0.62, 0.66, 0.78, 0.05)
+    )
+    static let toolPanelBorder = dynamic(
+        light: rgb(0.80, 0.83, 0.88, 0.70),
+        dark:  rgb(0.52, 0.58, 0.66, 0.20)
+    )
+    /// Quiet success tint for a completed row's check — a soft green, no loud
+    /// filled circle, so a long run of finished rows doesn't shout.
+    static let toolDoneCheck = dynamic(
+        light: rgb(0.30, 0.62, 0.40),
+        dark:  rgb(0.50, 0.80, 0.58)
+    )
+
     // MARK: - Glass tint (sidebar vibrancy overlay)
 
     /// A faint tint laid over the behind-window vibrancy so the sidebar reads as

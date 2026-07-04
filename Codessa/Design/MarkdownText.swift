@@ -25,6 +25,7 @@ struct MarkdownText: View {
         switch block {
         case .paragraph(let s):
             inline(s)
+                .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .heading(let level, let s):
             inline(s, weight: .semibold,
@@ -32,21 +33,21 @@ struct MarkdownText: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 2)
         case .bullets(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("•").foregroundStyle(CodexTheme.textSecondary)
-                        inline(item)
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text("•").foregroundStyle(CodexTheme.textTertiary)
+                        inline(item).lineSpacing(3)
                     }
                 }
             }
         case .numbered(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { idx, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(idx + 1).").foregroundStyle(CodexTheme.textSecondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text("\(idx + 1).").foregroundStyle(CodexTheme.textTertiary)
                             .font(font.monospacedDigit())
-                        inline(item)
+                        inline(item).lineSpacing(3)
                     }
                 }
             }
@@ -70,9 +71,15 @@ struct MarkdownText: View {
             markdown: string,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(string)
+        // Inline `code` spans: slightly smaller monospaced, tinted ink on a soft
+        // brand-tinted fill. Per-run foreground survives the trailing
+        // `.foregroundColor` default below (that only colours runs without their
+        // own colour), so code stays distinct from body text.
+        let codeSize = (size ?? 14) * 0.92
         for run in attr.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attr[run.range].font = .system(size: size ?? 14, design: .monospaced)
-            attr[run.range].backgroundColor = CodexTheme.pillBackground
+            attr[run.range].font = .system(size: codeSize, weight: .medium, design: .monospaced)
+            attr[run.range].foregroundColor = CodexTheme.inlineCodeText
+            attr[run.range].backgroundColor = CodexTheme.inlineCodeBackground
         }
         var text = Text(attr).font(weight.map { base.weight($0) } ?? base)
         text = text.foregroundColor(overrideColor ?? color)

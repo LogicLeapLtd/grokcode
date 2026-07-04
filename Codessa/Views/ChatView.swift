@@ -594,46 +594,115 @@ private struct ToolKindStyle {
     }
 }
 
-/// Vertical stack of the assistant turn's tool-call rows, in arrival order.
-/// Rendered above the answer text so the reader sees grok working
-/// (reading/editing files, running commands) Codex-style. A faint rail threads
-/// the icon badges so the calls read as one continuous sequence of steps.
+/// The assistant turn's tool-call rows, grouped into one calm panel so a long
+/// run of reads/edits reads as a single block of "work" — distinct from the
+/// prose — rather than 20 loose, loud items. Rendered above the answer text so
+/// the reader sees grok working (reading/editing files, running commands).
 private struct ToolCallList: View {
     let toolCalls: [ToolCallEntry]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(toolCalls.enumerated()), id: \.element.id) { index, call in
-                ToolCallRow(
-                    call: call,
-                    isFirst: index == 0,
-                    isLast: index == toolCalls.count - 1
-                )
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(toolCalls) { call in
+                ToolCallRow(call: call)
             }
         }
-        .padding(.vertical, 4)
+        .padding(5)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(CodexTheme.toolPanelBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(CodexTheme.toolPanelBorder, lineWidth: 1)
+        )
     }
 }
 
-/// One compact, expandable tool-call row: a tinted kind badge threaded onto a
-/// connecting rail, the title, and a soft running/done status. Tapping reveals
-/// the detail (diff / command + output) in a monospaced card beneath.
+/// Parsed pieces of an ACP tool-call title. The agent hands us titles like
+/// ``Read `/Users/me/proj/app/admin/page.tsx` `` — literal backticks, a leading
+/// verb, and a long absolute path shown middle-truncated. We split that into a
+/// clean verb, a prominent target (filename / query / command), and a dimmed,
+/// head-truncated parent path so the row scans at a glance.
+private struct ParsedToolTitle {
+    var verb: String?
+    var primary: String
+    var secondary: String?
+}
+
+private func parseToolTitle(_ rawTitle: String, kind: String) -> ParsedToolTitle {
+    var s = rawTitle
+        .replacingOccurrences(of: "`", with: "")
+        .replacingOccurrences(of: "\n", with: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Peel a leading action word ("Read", "Edited", "Ran"…) so it can be styled
+    // apart from its target and read alongside the kind glyph.
+    let knownVerbs: Set<String> = [
+        "read", "edit", "edited", "editing", "write", "wrote", "writing",
+        "create", "created", "creating", "run", "ran", "running", "execute",
+        "executed", "search", "searched", "searching", "grep", "find", "finding",
+        "list", "listed", "listing", "delete", "deleted", "move", "moved",
+        "fetch", "fetched", "update", "updated", "view", "viewed", "open", "opened"
+    ]
+    var verb: String?
+    if let spaceIdx = s.firstIndex(of: " ") {
+        let firstWord = String(s[s.startIndex..<spaceIdx])
+        if knownVerbs.contains(firstWord.lowercased()) {
+            verb = firstWord
+            s = String(s[s.index(after: spaceIdx)...]).trimmingCharacters(in: .whitespaces)
+        }
+    }
+    if verb == nil {
+        let kindVerb = ToolKindStyle.forKind(kind).verb
+        if !kindVerb.isEmpty { verb = kindVerb }
+    }
+
+    // Drop a shell prompt marker if the command led with one.
+    if s.hasPrefix("$ ") { s = String(s.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+
+    // Collapse the home directory to "~" so paths aren't a screen wide.
+    let home = NSHomeDirectory()
+    if s == home {
+        s = "~"
+    } else if s.hasPrefix(home + "/") {
+        s = "~" + s.dropFirst(home.count)
+    }
+
+    // A path-like target splits into a prominent filename + a dimmed parent.
+    if s.contains("/") {
+        let comps = s.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        if let fileIdx = comps.lastIndex(where: { !$0.isEmpty }) {
+            let file = comps[fileIdx]
+            let parent = comps[..<fileIdx].joined(separator: "/")
+            return ParsedToolTitle(
+                verb: verb,
+                primary: file,
+                secondary: parent.isEmpty ? nil : parent
+            )
+        }
+    }
+    return ParsedToolTitle(verb: verb, primary: s, secondary: nil)
+}
+
+/// One compact, expandable tool-call row: a small kind glyph, a styled
+/// verb + target with a dimmed path, and a quiet running/done status. Tapping
+/// reveals the detail (diff / command + output) in a monospaced card beneath.
 private struct ToolCallRow: View {
     let call: ToolCallEntry
-    var isFirst: Bool = false
-    var isLast: Bool = false
 
     @State private var expanded = false
     @State private var hovering = false
 
     private var style: ToolKindStyle { ToolKindStyle.forKind(call.kind) }
+    private var parsed: ParsedToolTitle { parseToolTitle(call.title, kind: call.kind) }
 
     private var hasDetail: Bool {
         !call.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             header
             if expanded, hasDetail {
                 detailCard
@@ -642,21 +711,41 @@ private struct ToolCallRow: View {
         }
     }
 
-    // MARK: Header row (rail · badge · title · status · chevron)
+    // MARK: Header row (glyph · verb · target · path · status · chevron)
 
     private var header: some View {
         Button {
             guard hasDetail else { return }
             withAnimation(CodexMotion.expandSpring) { expanded.toggle() }
         } label: {
-            HStack(spacing: 10) {
-                badge
+            HStack(spacing: 9) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(style.tint)
+                    .frame(width: 16)
 
-                Text(call.title.isEmpty ? "Working…" : call.title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(hovering ? CodexTheme.textPrimary : CodexTheme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    if let verb = parsed.verb {
+                        Text(verb)
+                            .font(CodexTheme.sans(12, weight: .semibold))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .fixedSize()
+                    }
+                    Text(parsed.primary.isEmpty ? "Working…" : parsed.primary)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(hovering ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
+                    if let secondary = parsed.secondary {
+                        Text(secondary)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .layoutPriority(0)
+                    }
+                }
 
                 Spacer(minLength: 8)
 
@@ -672,74 +761,32 @@ private struct ToolCallRow: View {
                         .opacity(hovering || expanded ? 1 : 0)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(hovering || expanded ? CodexTheme.pillBackground.opacity(0.6) : .clear)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovering || expanded ? CodexTheme.hoverBackground : .clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!hasDetail)
         .onHover { hovering = $0 }
     }
 
-    /// Tinted rounded badge threaded onto a hairline rail that connects the row
-    /// above and below, so a sequence of calls reads as a single timeline.
-    private var badge: some View {
-        ZStack {
-            // Connecting rail behind the badge.
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(CodexTheme.divider)
-                    .frame(width: 1.5)
-                    .opacity(isFirst ? 0 : 1)
-                Rectangle()
-                    .fill(CodexTheme.divider)
-                    .frame(width: 1.5)
-                    .opacity(isLast ? 0 : 1)
-            }
-
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(style.tint.opacity(0.16))
-                .frame(width: 24, height: 24)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(style.tint.opacity(0.30), lineWidth: 1)
-                )
-                .overlay(
-                    Image(systemName: style.icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(style.tint)
-                )
-        }
-        .frame(width: 24)
-    }
-
+    /// Resting/done state is deliberately quiet — a soft check, no loud filled
+    /// circle — so a long run of finished rows never shouts. Colour is reserved
+    /// for the live (running) row.
     @ViewBuilder
     private var statusIndicator: some View {
         switch call.status {
         case .running:
-            HStack(spacing: 6) {
-                ThinkingDots(color: style.tint, size: 4)
-                Text("Running")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(CodexTheme.textTertiary)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(
-                Capsule().fill(style.tint.opacity(0.12))
-            )
+            ThinkingDots(color: style.tint, size: 4)
+                .padding(.trailing, 2)
         case .done:
             Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Color(red: 0.40, green: 0.78, blue: 0.52))
-                .frame(width: 18, height: 18)
-                .background(
-                    Circle().fill(Color(red: 0.40, green: 0.78, blue: 0.52).opacity(0.14))
-                )
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CodexTheme.toolDoneCheck)
         }
     }
 
@@ -756,15 +803,17 @@ private struct ToolCallRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(CodexTheme.composerBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.leading, 34)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .padding(.leading, 25)
+        .padding(.trailing, 2)
+        .padding(.bottom, 3)
     }
 }
 
