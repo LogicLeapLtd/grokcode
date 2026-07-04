@@ -1,5 +1,7 @@
 # Changelog
 
+- Cleaned up the composer's mode/model labels. Agent modes no longer leak raw model IDs (e.g. `claude-fable-5`) or a redundant "Provider ·" prefix — they now show the friendly product name (Fable 5, Opus 4.8, GPT-5.5, …), consistently with the model picker. The duplicate "Plan mode" permission pill is hidden while Plan mode is active, since the mode already locks permissions to read-only.
+
 - Transient Grok failures (rate limiting or a brief network/backend hiccup — the "Grok hit a temporary failure" case) now retry automatically with backoff before any error is shown, so a momentary blip self-heals instead of interrupting you. If it still fails, the home-screen error banner now offers a one-click **Retry**, and the banner reflows cleanly on every window size (baseline-aligned icon, text that always wraps instead of clipping, and actions that wrap to a new line on narrow viewports).
 
 - Fixed rapid flickering/jitter when dragging to resize the sidebar. The resize handle now measures the drag against a stable window-anchored coordinate space instead of its own (moving) one, so the edge tracks the cursor 1:1 without the feedback loop.
