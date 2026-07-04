@@ -21,6 +21,8 @@ struct PromptComposer: View {
     @State private var showingInlineModelPicker = false
     @State private var isProjectRowHovered = false
     @State private var showingModeConfiguration = false
+    private let projectPickerControlMaxWidth: CGFloat = 320
+    private let projectPickerMenuWidth: CGFloat = 280
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -314,7 +316,7 @@ struct PromptComposer: View {
             CompletionRow(
                 title: option.displayName,
                 subtitle: option.providerName,
-                systemImage: option.isReasoningModel ? "brain" : "bolt",
+                providerLogoId: option.providerId,
                 isHighlighted: idx == clampedSelection(model.models.count),
                 isSelected: model.selectedModel == option
             ) {
@@ -683,9 +685,11 @@ struct PromptComposer: View {
         CodexMenuTrigger(minWidth: 320, edge: .top, maxHeight: 430, highlightOnHover: false,
                          autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "model") { _ in
             HStack(spacing: 7) {
-                Image(systemName: model.selectedModel?.isReasoningModel == true ? "brain.head.profile" : "sparkles")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textSecondary)
+                ProviderLogo(
+                    providerId: model.selectedModel?.providerId ?? AgentProvider.codex.id,
+                    size: 16,
+                    foreground: CodexTheme.textSecondary
+                )
                 Text(model.selectedModel?.providerMenuName ?? "Model")
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
@@ -709,7 +713,7 @@ struct PromptComposer: View {
                 ForEach(model.providerStatuses.filter { !$0.models.isEmpty }) { status in
                     CodexMenuSectionHeader(title: status.provider.shortName)
                     ForEach(status.models) { option in
-                        ModelPickerRow(
+                        ModelMenuItem(
                             option: option,
                             isSelected: model.selectedModel?.providerId == option.providerId && model.selectedModel?.id == option.id
                         ) {
@@ -816,7 +820,7 @@ struct PromptComposer: View {
 
     private var projectRow: some View {
         ZStack(alignment: .trailing) {
-            CodexMenuTrigger(minWidth: 280, edge: .top, highlightOnHover: false,
+            CodexMenuTrigger(minWidth: projectPickerMenuWidth, maxWidth: projectPickerMenuWidth, edge: .top, highlightOnHover: false,
                              autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "project") { _ in
                 HStack(spacing: 8) {
                     Image(systemName: model.workWithoutProject ? "folder.badge.minus" : "folder")
@@ -928,7 +932,7 @@ struct PromptComposer: View {
                 .zIndex(1)
             }
         }
-        .frame(minWidth: 220, maxWidth: 520, alignment: .leading)
+        .frame(minWidth: 220, maxWidth: projectPickerControlMaxWidth, alignment: .leading)
         .onHover { hovering in
             withAnimation(CodexMotion.quickSpring) {
                 isProjectRowHovered = hovering
@@ -1026,6 +1030,7 @@ private struct CompletionRow: View {
     let title: String
     var subtitle: String? = nil
     var systemImage: String? = nil
+    var providerLogoId: String? = nil
     var isHighlighted: Bool = false
     var isSelected: Bool = false
     let action: () -> Void
@@ -1033,7 +1038,10 @@ private struct CompletionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let systemImage {
+                if let providerLogoId {
+                    ProviderLogo(providerId: providerLogoId, size: 16, foreground: CodexTheme.textSecondary)
+                        .frame(width: 16, height: 16)
+                } else if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(CodexTheme.textSecondary)
@@ -1069,68 +1077,6 @@ private struct CompletionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct ModelPickerRow: View {
-    let option: GrokModelOption
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    private var rowFill: Color {
-        if isSelected { return CodexTheme.accent.opacity(0.12) }
-        if hovering { return CodexTheme.hoverBackground }
-        return .clear
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: option.isReasoningModel ? "brain.head.profile" : "bolt.fill")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(isSelected ? CodexTheme.accent : CodexTheme.textTertiary)
-                    .frame(width: 15)
-
-                Text(option.displayName)
-                    .font(CodexTheme.sans(12.5, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? CodexTheme.accent : CodexTheme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if option.isDefault {
-                    Text("Default")
-                        .font(CodexTheme.sans(9.5, weight: .semibold))
-                        .foregroundStyle(CodexTheme.textTertiary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(CodexTheme.pillBackground.opacity(0.72))
-                        )
-                }
-
-                Spacer(minLength: 12)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(CodexTheme.accent)
-                }
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(rowFill)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

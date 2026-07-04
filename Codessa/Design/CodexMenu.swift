@@ -14,6 +14,7 @@ final class CodexMenuController {
         var anchor: CGRect            // trigger frame in global coordinates
         var content: () -> AnyView    // rebuilt every host render so it stays live
         var minWidth: CGFloat
+        var maxWidth: CGFloat?
         var edge: VerticalEdge        // .bottom = open downward, .top = upward
         var maxHeight: CGFloat?
     }
@@ -38,14 +39,14 @@ final class CodexMenuController {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: handler)
     }
 
-    func toggle<V: View>(id: UUID, anchor: CGRect, minWidth: CGFloat, edge: VerticalEdge,
+    func toggle<V: View>(id: UUID, anchor: CGRect, minWidth: CGFloat, maxWidth: CGFloat? = nil, edge: VerticalEdge,
                          maxHeight: CGFloat? = nil,
                          @ViewBuilder content: @escaping () -> V) {
         if active?.id == id {
             active = nil
         } else {
             active = Active(id: id, anchor: anchor, content: { AnyView(content()) },
-                            minWidth: minWidth, edge: edge, maxHeight: maxHeight)
+                            minWidth: minWidth, maxWidth: maxWidth, edge: edge, maxHeight: maxHeight)
         }
     }
 
@@ -92,8 +93,9 @@ private struct CodexMenuHost: ViewModifier {
                 GeometryReader { geo in
                     let host = geo.frame(in: .global)
                     let gap: CGFloat = 6
+                    let cardWidth = max(active.minWidth, active.maxWidth ?? Self.maxCardWidth)
                     let estimatedWidth = min(
-                        max(active.minWidth, Self.maxCardWidth),
+                        cardWidth,
                         max(0, geo.size.width - 16)
                     )
                     // Clamp left edge so the card stays on-screen (estimate width via minWidth).
@@ -167,8 +169,9 @@ private struct CodexMenuHost: ViewModifier {
     }
 
     private func card(_ active: CodexMenuController.Active) -> some View {
-        active.content()
-            .frame(minWidth: active.minWidth, maxWidth: max(active.minWidth, Self.maxCardWidth), alignment: .leading)
+        let cardWidth = max(active.minWidth, active.maxWidth ?? Self.maxCardWidth)
+        return active.content()
+            .frame(minWidth: active.minWidth, maxWidth: cardWidth, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .liquidGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous),
                          fallback: CodexTheme.menuBackground)
@@ -199,6 +202,7 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
     @State private var hovering = false
 
     var minWidth: CGFloat = 220
+    var maxWidth: CGFloat? = nil
     var edge: VerticalEdge = .bottom
     var maxHeight: CGFloat? = nil
     var highlightOnHover: Bool = true
@@ -220,7 +224,7 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
     }
 
     private func open() {
-        controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge, maxHeight: maxHeight) {
+        controller.toggle(id: id, anchor: frame, minWidth: minWidth, maxWidth: maxWidth, edge: edge, maxHeight: maxHeight) {
             menu({ controller.close() })
         }
     }

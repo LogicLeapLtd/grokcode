@@ -36,17 +36,17 @@ nonisolated enum AgentProviderModelCatalog {
             ]
         case AgentProvider.codex.id:
             return [
-                model("gpt-5.5", "gpt-5.5", provider, isDefault: true, options: [codexReasoning(defaultValue: "high")]),
-                model("gpt-5.4", "gpt-5.4", provider, options: [codexReasoning(defaultValue: "high")]),
-                model("gpt-5.4-mini", "gpt-5.4-mini", provider, options: [codexReasoning(defaultValue: "medium")]),
-                model("gpt-5.3-codex-spark", "gpt-5.3-codex-spark", provider, options: [codexReasoning(defaultValue: "medium")]),
+                model("gpt-5.5", "GPT 5.5", provider, isDefault: true, options: [codexReasoning(defaultValue: "high")]),
+                model("gpt-5.4", "GPT 5.4", provider, options: [codexReasoning(defaultValue: "high")]),
+                model("gpt-5.4-mini", "GPT 5.4 Mini", provider, options: [codexReasoning(defaultValue: "medium")]),
+                model("gpt-5.3-codex-spark", "GPT 5.3 Codex Spark", provider, options: [codexReasoning(defaultValue: "medium")]),
             ]
         case AgentProvider.cursor.id:
             return [
                 model("auto", "Auto", provider, isDefault: true),
                 model("composer-2.5", "Composer 2.5", provider),
                 model("opus-4.8", "Opus 4.8", provider),
-                model("gpt-5.5-high-fast", "GPT-5.5 High Fast", provider),
+                model("gpt-5.5-high-fast", "GPT 5.5 High Fast", provider),
                 model("gemini-3.1-pro", "Gemini 3.1 Pro", provider),
                 model("grok-4.3", "Grok 4.3", provider),
             ]

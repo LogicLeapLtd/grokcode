@@ -617,15 +617,14 @@ private struct AutomationEditorSheet: View {
                         }
 
                         field("Model") {
-                            menuPicker(label: modelLabel, systemImage: "cpu") { close in
+                            menuPicker(label: modelLabel, systemImage: "cpu", providerLogoId: providerId) { close in
                                 CodexMenuContainer {
                                     ForEach(providerStatuses) { status in
                                         CodexMenuSectionHeader(title: status.provider.shortName)
                                         ForEach(status.models) { option in
-                                            CodexMenuItem(
-                                                title: option.menuName,
+                                            ModelMenuItem(
+                                                option: option,
                                                 subtitle: option.isReasoningModel ? "Reasoning" : status.runtimeState.label,
-                                                systemImage: option.isReasoningModel ? "brain" : "cpu",
                                                 isSelected: option.providerId == providerId && option.id == modelId
                                             ) {
                                                 providerId = option.providerId
@@ -818,15 +817,20 @@ private struct AutomationEditorSheet: View {
     private func menuPicker<Menu: View>(
         label: String,
         systemImage: String,
+        providerLogoId: String? = nil,
         minWidth: CGFloat = 220,
         autoOpen: Bool = false,
         @ViewBuilder menu: @escaping (_ close: @escaping () -> Void) -> Menu
     ) -> some View {
         CodexMenuTrigger(minWidth: minWidth, highlightOnHover: false, autoOpen: autoOpen) { isOpen in
             HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(CodexTheme.textSecondary)
+                if let providerLogoId {
+                    ProviderLogo(providerId: providerLogoId, size: 16, foreground: CodexTheme.textSecondary)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                }
                 Text(label)
                     .font(.system(size: 13))
                     .foregroundStyle(CodexTheme.textPrimary)

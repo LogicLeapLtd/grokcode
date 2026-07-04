@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Home alternative design artifacts** under `docs/design/home-alternatives/`,
   preserving the loose parent-workspace HTML/CSS/screenshots inside the pushed
   source tree.
+- **Provider logo marks** for model and provider menus, replacing generic CPU
+  and brain icons with recognizable provider-specific glyphs.
 
 ### Changed
 - **Finalization gate is stricter.** Publishing now verifies the DMG's embedded
@@ -23,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `production` branch, confirms remote branch/tag SHAs, checks the uploaded asset
   digest against the local DMG, and reports whether the installed app is behind
   the newly published version.
+- Model names now render as human-readable labels such as `GPT 5.5` and
+  `GPT 5.4 Mini`, and the project picker menu is width-clamped so it does not
+  stretch the composer.
 
 ## [1.2.0] - 2026-07-04
 

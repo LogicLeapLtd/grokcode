@@ -216,9 +216,22 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
             let cleaned = id
                 .replacingOccurrences(of: "grok-", with: "")
                 .split(separator: "-")
-                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .map(Self.displayToken)
                 .joined(separator: " ")
             return cleaned.isEmpty ? id : cleaned
+        }
+    }
+
+    private static func displayToken(_ token: Substring) -> String {
+        let raw = String(token)
+        switch raw.lowercased() {
+        case "ai": return "AI"
+        case "api": return "API"
+        case "cli": return "CLI"
+        case "glm": return "GLM"
+        case "gpt": return "GPT"
+        default:
+            return raw.prefix(1).uppercased() + raw.dropFirst()
         }
     }
 

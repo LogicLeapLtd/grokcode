@@ -308,9 +308,11 @@ struct OnboardingView: View {
     private var modelPicker: some View {
         CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
             HStack(spacing: 8) {
-                Image(systemName: (model.selectedModel?.isReasoningModel ?? false) ? "brain" : "cpu")
-                    .font(.system(size: 12))
-                    .foregroundStyle(CodexTheme.textSecondary)
+                ProviderLogo(
+                    providerId: model.selectedModel?.providerId ?? AgentProvider.codex.id,
+                    size: 16,
+                    foreground: CodexTheme.textSecondary
+                )
                 Text(modelLabel)
                     .font(CodexTheme.sans(13))
                     .foregroundStyle(CodexTheme.textPrimary)
@@ -337,10 +339,9 @@ struct OnboardingView: View {
                     ForEach(model.providerStatuses) { status in
                         CodexMenuSectionHeader(title: status.provider.shortName)
                         ForEach(status.models) { option in
-                            CodexMenuItem(
-                                title: option.menuName,
+                            ModelMenuItem(
+                                option: option,
                                 subtitle: option.isReasoningModel ? "Reasoning" : status.runtimeState.label,
-                                systemImage: option.isReasoningModel ? "brain" : "cpu",
                                 isSelected: option.providerId == model.selectedModel?.providerId && option.id == model.selectedModel?.id
                             ) {
                                 model.selectModel(option)
@@ -435,7 +436,7 @@ private struct ProviderDockItem: View {
             Button(action: select) {
                 ProviderDockGlyph(
                     monogram: status.provider.monogram,
-                    systemImage: Self.symbol(for: status.provider.id),
+                    providerId: status.provider.id,
                     installed: status.installed,
                     isCustom: status.provider.isCustom,
                     isSelected: isSelected
@@ -454,25 +455,12 @@ private struct ProviderDockItem: View {
         .frame(width: 58)
     }
 
-    /// A distinct SF-Symbol stand-in per provider (real brand marks can be
-    /// dropped into the asset catalog later without touching this view).
-    static func symbol(for id: String) -> String? {
-        switch id {
-        case "claude": return "sparkle"
-        case "cursor": return "cursorarrow.rays"
-        case "codex": return "chevron.left.forwardslash.chevron.right"
-        case "gemini": return "sparkles"
-        case "grok": return "bolt.fill"
-        case "zai": return "bolt.horizontal.fill"
-        default: return nil   // custom → monogram
-        }
-    }
 }
 
 /// The circular glyph itself, shared by provider tiles and the "+ Custom" slot.
 private struct ProviderDockGlyph: View {
     var monogram: String
-    var systemImage: String? = nil
+    var providerId: String? = nil
     var installed: Bool
     var isCustom: Bool
     var isSelected: Bool
@@ -520,9 +508,8 @@ private struct ProviderDockGlyph: View {
     }
 
     @ViewBuilder private var glyph: some View {
-        if let systemImage {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
+        if let providerId {
+            ProviderLogo(providerId: providerId, size: 20, foreground: installed || isSelected ? CodexTheme.textPrimary : CodexTheme.textSecondary)
         } else {
             Text(monogram)
                 .font(CodexTheme.sans(isCustom ? 18 : 12, weight: .bold))
