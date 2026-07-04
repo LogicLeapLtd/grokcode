@@ -210,6 +210,14 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         case "grok-build": return "Build"
         case "grok-4": return "Grok 4"
         case "grok-4-fast": return "Grok 4 Fast"
+        // Frontier models routed by agent modes. The provider is already conveyed
+        // by the logo/section header, so these are the bare product names.
+        case "claude-fable-5": return "Fable 5"
+        case "claude-opus-4-8": return "Opus 4.8"
+        case "claude-sonnet-5": return "Sonnet 5"
+        case "claude-haiku-4-5", "claude-haiku-4-5-20251001": return "Haiku 4.5"
+        case "gpt-5.5": return "GPT-5.5"
+        case "gpt-5", "gpt-5-codex": return "GPT-5"
         default:
             // Fall back to a title-cased version of the raw id, with common
             // suffixes normalised (e.g. "2.5" stays intact, "fast" → "Fast").

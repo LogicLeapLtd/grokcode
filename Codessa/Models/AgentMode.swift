@@ -110,7 +110,10 @@ nonisolated struct AgentModeProfile: Identifiable, Hashable, Codable {
         if route.usesParentModel {
             return "Inherits chat model"
         }
-        return "\(route.providerID) · \(route.modelID)"
+        let provider = AgentProvider.known.first { $0.id == route.providerID }?.shortName
+            ?? route.providerID.capitalized
+        let model = GrokModelOption(id: route.modelID, isDefault: false, providerId: route.providerID).displayName
+        return "\(provider) · \(model)"
     }
 
     static let defaults: [AgentModeProfile] = [

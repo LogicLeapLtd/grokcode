@@ -497,7 +497,11 @@ struct PromptComposer: View {
                 HStack(spacing: 7) {
                     addMenu
                     modeMenu
-                    permissionMenu
+                    // Plan agent-mode already locks permissions to read-only, so
+                    // showing a second "Plan mode" permission pill is redundant.
+                    if model.activeAgentMode.kind != .plan {
+                        permissionMenu
+                    }
                     Spacer(minLength: 10)
                     modelEffortMenu
                     if model.selectedModel?.reasoningDescriptor != nil {

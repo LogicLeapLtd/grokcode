@@ -277,8 +277,22 @@ final class AppViewModel {
         guard !route.usesParentModel else {
             return selectedModel?.displayName ?? "Chat model"
         }
-        let provider = providerLabel(for: route.providerID)
-        return "\(provider) · \(route.modelID)"
+        return modelDisplayName(providerID: route.providerID, modelID: route.modelID)
+    }
+
+    /// Friendly, human-readable name for a `providerID`/`modelID` pair. Prefers a
+    /// live catalog entry, then falls back to `GrokModelOption`'s formatter so raw
+    /// ids like `claude-fable-5` never surface in the UI. The provider is conveyed
+    /// separately (logo/section header), so this never prefixes "Provider ·".
+    func modelDisplayName(providerID: String, modelID: String) -> String {
+        if let option = providerStatuses
+            .first(where: { $0.provider.id == providerID })?
+            .models.first(where: { $0.id == modelID }) {
+            return option.displayName
+        }
+        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Model" }
+        return GrokModelOption(id: trimmed, isDefault: false, providerId: providerID).displayName
     }
 
     var activeModeRuntimeNote: String? {
@@ -1152,6 +1166,14 @@ final class AppViewModel {
             // rather than waiting for the first reply to make the chat appear.
             if activeSessionId == nil, pendingChat == nil {
                 pendingChat = PendingChat(projectPath: selectedProject?.path)
+                // Expand the owning project (newly discovered projects start
+                // collapsed) so the freshly started chat is actually visible in
+                // the sidebar instead of hidden under a collapsed project row.
+                if let project = selectedProject {
+                    collapsedProjectPaths.remove(project.path.path)
+                    autoExpandedProjectPath = project.path.path
+                    saveSidebarPreferences()
+                }
             }
             messages.append(ChatMessage(role: .user, text: trimmed, attachments: attachments))
             syncActiveSplitPaneFromCurrentState()
@@ -2254,7 +2276,14 @@ final class AppViewModel {
             // Prefer chatted projects when they exist, but do not dead-end the
             // sidebar on a first run where every discovered folder is chat-less.
             if !includeArchived {
-                let projectsWithChats = result.filter { !$0.threads.isEmpty }
+                // Qualify on *real* chats only — a just-started chat injects a
+                // pending placeholder, and counting it here would collapse the
+                // whole sidebar down to only the active project the instant a
+                // chat starts. Ignoring pending threads keeps every project
+                // visible; the sort simply floats the active one to the top.
+                let projectsWithChats = result.filter { project in
+                    project.threads.contains { !$0.isPending }
+                }
                 if !projectsWithChats.isEmpty {
                     result = projectsWithChats
                 }
