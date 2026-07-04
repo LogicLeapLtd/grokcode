@@ -21,8 +21,9 @@ struct PromptComposer: View {
     @State private var showingInlineModelPicker = false
     @State private var isProjectRowHovered = false
     @State private var showingModeConfiguration = false
-    private let projectPickerControlMaxWidth: CGFloat = 320
-    private let projectPickerMenuWidth: CGFloat = 280
+    private let projectPickerControlMaxWidth: CGFloat = 188
+    private let projectPickerMenuWidth: CGFloat = 240
+    private let projectPickerNameMaxWidth: CGFloat = 92
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -836,7 +837,7 @@ struct PromptComposer: View {
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: projectPickerNameMaxWidth, alignment: .leading)
                     if !model.workWithoutProject, let branch = model.selectedProject?.gitBranch {
                         branchChip(branch)
                     }
@@ -849,7 +850,6 @@ struct PromptComposer: View {
                 .padding(.leading, 6)
                 .padding(.trailing, 8)
                 .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     Capsule(style: .continuous)
                         .fill(CodexTheme.composerBackground.opacity(0.58))
@@ -932,7 +932,8 @@ struct PromptComposer: View {
                 .zIndex(1)
             }
         }
-        .frame(minWidth: 220, maxWidth: projectPickerControlMaxWidth, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: projectPickerControlMaxWidth, alignment: .leading)
         .onHover { hovering in
             withAnimation(CodexMotion.quickSpring) {
                 isProjectRowHovered = hovering
