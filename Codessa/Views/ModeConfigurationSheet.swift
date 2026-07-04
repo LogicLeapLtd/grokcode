@@ -9,6 +9,10 @@ struct ModeConfigurationSheet: View {
     @State private var draftModes: [AgentModeProfile] = []
     @State private var selectedModeID = AgentModeProfile.planID
 
+    /// The sheet is its own window, so it needs its own menu host — otherwise
+    /// the custom dropdowns render on the main window's host, behind the sheet.
+    @State private var menuController = CodexMenuController(installsKeyboardMonitor: false)
+
     private var selectedIndex: Int? {
         draftModes.firstIndex { $0.id == selectedModeID }
     }
@@ -35,6 +39,8 @@ struct ModeConfigurationSheet: View {
         }
         .frame(width: 760, height: 560)
         .background(CodexTheme.mainBackground)
+        .codexMenuHost()
+        .environment(menuController)
         .onAppear {
             draftModes = model.agentModes
             selectedModeID = model.activeAgentModeID
@@ -212,22 +218,45 @@ struct ModeConfigurationSheet: View {
                         if mode.wrappedValue.isBuiltIn {
                             readOnlyChip(mode.wrappedValue.kind.label, icon: "lock.fill")
                         } else {
-                            Picker("Type", selection: mode.kind) {
-                                ForEach(AgentModeKind.allCases) { kind in
-                                    Text(kind.label).tag(kind)
+                            menuPicker(
+                                label: mode.wrappedValue.kind.label,
+                                systemImage: mode.wrappedValue.kind.symbol,
+                                width: 150
+                            ) { close in
+                                CodexMenuContainer {
+                                    ForEach(AgentModeKind.allCases) { kind in
+                                        CodexMenuItem(
+                                            title: kind.label,
+                                            systemImage: kind.symbol,
+                                            isSelected: kind == mode.wrappedValue.kind
+                                        ) {
+                                            mode.wrappedValue.kind = kind
+                                            close()
+                                        }
+                                    }
                                 }
                             }
-                            .labelsHidden()
-                            .frame(width: 150)
                         }
 
-                        Picker("Permission", selection: mode.permissionMode) {
-                            ForEach(PermissionMode.allCases) { permission in
-                                Text(permission.label).tag(permission)
+                        menuPicker(
+                            label: mode.wrappedValue.permissionMode.label,
+                            systemImage: mode.wrappedValue.permissionMode.symbol,
+                            width: 190
+                        ) { close in
+                            CodexMenuContainer {
+                                ForEach(PermissionMode.allCases) { permission in
+                                    CodexMenuItem(
+                                        title: permission.label,
+                                        subtitle: permission.detail,
+                                        systemImage: permission.symbol,
+                                        isSelected: permission == mode.wrappedValue.permissionMode
+                                    ) {
+                                        mode.wrappedValue.permissionMode = permission
+                                        close()
+                                    }
+                                }
                             }
                         }
-                        .labelsHidden()
-                        .frame(width: 180)
                     }
                 }
 
@@ -289,22 +318,29 @@ struct ModeConfigurationSheet: View {
 
             if route.wrappedValue.selection == .explicit {
                 HStack(spacing: 10) {
-                    Picker("Provider", selection: Binding<String>(
-                        get: { route.wrappedValue.providerID },
-                        set: { providerID in
-                            route.wrappedValue.providerID = providerID
-                            if let first = model.modelOptions(for: providerID).first {
-                                route.wrappedValue.modelID = first.id
-                            } else {
-                                route.wrappedValue.modelID = ""
+                    let currentProvider = providerOptions.first { $0.id == route.wrappedValue.providerID }
+                    menuPicker(
+                        label: currentProvider?.shortName ?? route.wrappedValue.providerID,
+                        systemImage: "server.rack",
+                        width: 170
+                    ) { close in
+                        CodexMenuContainer {
+                            ForEach(providerOptions) { provider in
+                                CodexMenuItem(
+                                    title: provider.shortName,
+                                    isSelected: provider.id == route.wrappedValue.providerID
+                                ) {
+                                    route.wrappedValue.providerID = provider.id
+                                    if let first = model.modelOptions(for: provider.id).first {
+                                        route.wrappedValue.modelID = first.id
+                                    } else {
+                                        route.wrappedValue.modelID = ""
+                                    }
+                                    close()
+                                }
                             }
                         }
-                    )) {
-                        ForEach(providerOptions) { provider in
-                            Text(provider.shortName).tag(provider.id)
-                        }
                     }
-                    .frame(width: 170)
 
                     modelPicker(route)
                 }
@@ -320,24 +356,34 @@ struct ModeConfigurationSheet: View {
         let knownIDs = Set(options.map(\.id))
         let isCustom = selectedModelID.isEmpty || !knownIDs.contains(selectedModelID)
 
+        let selectedOption = options.first { $0.id == selectedModelID }
         HStack(spacing: 10) {
-            Picker("Model", selection: Binding(
-                get: { isCustom ? Self.customModelSentinel : selectedModelID },
-                set: { value in
-                    if value == Self.customModelSentinel {
+            menuPicker(
+                label: isCustom ? "Custom…" : (selectedOption?.displayName ?? selectedModelID),
+                systemImage: "cpu",
+                width: isCustom ? 170 : 260
+            ) { close in
+                CodexMenuContainer {
+                    ForEach(options) { option in
+                        CodexMenuItem(
+                            title: option.displayName,
+                            isSelected: !isCustom && option.id == selectedModelID
+                        ) {
+                            route.wrappedValue.modelID = option.id
+                            close()
+                        }
+                    }
+                    CodexMenuDivider()
+                    CodexMenuItem(
+                        title: "Custom…",
+                        systemImage: "pencil",
+                        isSelected: isCustom
+                    ) {
                         route.wrappedValue.modelID = ""
-                    } else {
-                        route.wrappedValue.modelID = value
+                        close()
                     }
                 }
-            )) {
-                ForEach(options) { option in
-                    Text(option.displayName).tag(option.id)
-                }
-                Divider()
-                Text("Custom…").tag(Self.customModelSentinel)
             }
-            .frame(width: isCustom ? 170 : 260)
 
             if isCustom {
                 TextField("Custom model id", text: route.modelID)
@@ -447,6 +493,44 @@ struct ModeConfigurationSheet: View {
             }
         }
         .modeCard()
+    }
+
+    /// House-style dropdown trigger (replaces native `Picker`) — mirrors the
+    /// composer/automations pattern so every menu uses the Codex overlay chrome.
+    private func menuPicker<Menu: View>(
+        label: String,
+        systemImage: String,
+        width: CGFloat,
+        @ViewBuilder menu: @escaping (_ close: @escaping () -> Void) -> Menu
+    ) -> some View {
+        CodexMenuTrigger(minWidth: max(width, 190), highlightOnHover: false) { isOpen in
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .frame(width: width, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(CodexTheme.composerBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(isOpen ? CodexTheme.textTertiary : CodexTheme.composerBorder, lineWidth: 1)
+            )
+        } menu: { close in
+            menu(close)
+        }
     }
 
     private func readOnlyChip(_ title: String, icon: String) -> some View {
