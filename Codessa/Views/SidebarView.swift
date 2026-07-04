@@ -27,6 +27,13 @@ private enum SidebarMetrics {
     static let accountMenuWidth: CGFloat = 260
 }
 
+/// Named coordinate space (anchored to a non-resizing ancestor in
+/// `ContentView`) that the sidebar resize-handle drag measures against, so the
+/// translation stays stable even as the sidebar frame grows/shrinks under the
+/// cursor. Measuring in the handle's own (moving) space fed the width change
+/// back into the gesture and caused rapid resize flicker.
+let sidebarResizeCoordinateSpace = "sidebarResizeSpace"
+
 private struct CollapsedRailTooltipAnchorKey: PreferenceKey {
     static var defaultValue: [String: Anchor<CGRect>] = [:]
 
@@ -786,7 +793,7 @@ struct SidebarView: View {
             .frame(width: 8)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .named(sidebarResizeCoordinateSpace))
                     .onChanged { value in
                         if dragStartWidth == nil {
                             dragStartWidth = model.sidebarWidth

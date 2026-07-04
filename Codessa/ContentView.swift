@@ -56,6 +56,12 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                    // Stable, non-resizing anchor for the sidebar resize-handle
+                    // drag. The handle lives on the sidebar's trailing edge, so
+                    // measuring the drag in its own space fed the width change
+                    // back into the translation and caused resize flicker;
+                    // measuring against this fixed container keeps it 1:1.
+                    .coordinateSpace(name: sidebarResizeCoordinateSpace)
                 }
             }
             .task {

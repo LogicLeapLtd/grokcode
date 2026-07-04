@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed rapid flickering/jitter when dragging to resize the sidebar. The resize handle now measures the drag against a stable window-anchored coordinate space instead of its own (moving) one, so the edge tracks the cursor 1:1 without the feedback loop.
+
 - Errors are now human and actionable instead of cryptic exit codes. "Grok exited with code 75" (a transient rate-limit/network failure) now reads "Grok hit a temporary failure — usually rate limiting or a brief network/backend hiccup. Wait a few seconds and try again."; auth, rate-limit, timeout and other common failures get tailored guidance.
 - Errors on the home screen are now shown in the same styled card (icon, container, dismiss/retry) as in-chat errors, instead of as bare red text.
 - Composer "+" (add attachment) button is now circular instead of a rounded square.
