@@ -1,5 +1,7 @@
 # Changelog
 
+- Stopped loading the grok CLI session list on launch. The app used to shell out to `grok sessions list` during startup to "restore previous sessions", but that list only feeds the Search page (the sidebar renders from the on-disk session index). It's now loaded lazily the first time you open Search — opening the app no longer spawns a grok process to pull old sessions.
+
 - Stopped prewarming the warm `grok agent stdio` session on launch. Previously the app booted the entire MCP server fleet (dozens of subprocesses) the moment Codessa opened — even while the user was still on the home screen and might never send anything — pinning a large amount of idle memory and spawning a storm of processes on startup. The warm session now boots lazily on the first real send, so MCP starts on demand instead of on every launch.
 
 - Fixed the model pill (e.g. "Opus 4.8") reserving a fixed 150pt of width and pushing the chevron to the far right, leaving a large empty gap — it now hugs the model name like the other composer pills.

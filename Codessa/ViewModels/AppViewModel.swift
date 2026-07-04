@@ -35,6 +35,10 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 final class AppViewModel {
     var projects: [Project] = []
     var sessions: [GrokSession] = []
+    /// Whether the grok CLI session list has been loaded this launch. The list
+    /// is loaded lazily on first Search-page open rather than eagerly at
+    /// startup, so opening the app never shells out to `grok sessions list`.
+    private var didLoadCLISessions = false
     var models: [GrokModelOption] = []
     var selectedProject: Project?
     var selectedModel: GrokModelOption?
@@ -564,20 +568,13 @@ final class AppViewModel {
             selectedProject = selectedProject ?? projects.first
         }
 
-        do {
-            syncModelsForSelectedProvider()
-            sessions = try await grok.listSessions()
-            // No need to re-scan the session index / re-discover projects here:
-            // `refreshSessionSnapshot()` already started right after `projects`
-            // was populated above, and nothing on disk that it reads (local
-            // session index, project roots, git HEAD) changed in the meantime —
-            // `sessions` just fetched here comes from the CLI, not from that scan.
-        } catch {
-            errorMessage = error.localizedDescription
-            if models.isEmpty {
-                syncModelsForSelectedProvider()
-            }
-        }
+        syncModelsForSelectedProvider()
+        // NOTE: we no longer shell out to `grok sessions list` on launch. That
+        // CLI session list only feeds the Search page (the sidebar renders from
+        // the on-disk index via `refreshSessionSnapshot()`), so spawning a grok
+        // process at startup to "restore previous sessions" is wasted work the
+        // user never asked for. It's now loaded lazily the first time the Search
+        // page is opened — see `loadCLISessionsIfNeeded()`.
 
         // Plugins/automations aren't needed for first paint (home/sidebar) — load
         // them concurrently instead of blocking bootstrap (and so the window)
@@ -2046,6 +2043,15 @@ final class AppViewModel {
             $0.name.localizedCaseInsensitiveContains(searchQuery)
             || $0.path.path.localizedCaseInsensitiveContains(searchQuery)
         }
+    }
+
+    /// Load the grok CLI session list on demand (first Search-page open). No-op
+    /// after the first successful call this launch, and a no-op when grok isn't
+    /// installed. Deliberately not called at startup — see `bootstrap()`.
+    func loadCLISessionsIfNeeded() async {
+        guard !didLoadCLISessions, grokAvailable else { return }
+        didLoadCLISessions = true
+        sessions = (try? await grok.listSessions()) ?? sessions
     }
 
     var filteredSessions: [GrokSession] {

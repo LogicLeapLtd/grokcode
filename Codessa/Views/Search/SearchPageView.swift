@@ -130,6 +130,9 @@ struct SearchPageView: View {
             }
         }
         .onAppear { isFocused = true }
+        // Load the grok CLI session list on demand — it's no longer fetched at
+        // launch, so the first Search-page open is what populates it.
+        .task { await model.loadCLISessionsIfNeeded() }
         .onChange(of: model.searchQuery) { _, _ in
             // Reset the highlight to the first result whenever the query changes,
             // so Return after typing opens the top hit. Also drop any stale hover
