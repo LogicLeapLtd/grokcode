@@ -485,6 +485,9 @@ struct PromptComposer: View {
                         permissionMenu
                         Spacer(minLength: 10)
                         modelEffortMenu
+                        if model.selectedModel?.reasoningDescriptor != nil {
+                            reasoningMenu
+                        }
                         sendButton
                     }
                 }
@@ -497,6 +500,9 @@ struct PromptComposer: View {
                     permissionMenu
                     Spacer(minLength: 10)
                     modelEffortMenu
+                    if model.selectedModel?.reasoningDescriptor != nil {
+                        reasoningMenu
+                    }
                     sendButton
                 }
             )
@@ -695,21 +701,17 @@ struct PromptComposer: View {
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
-                if let descriptor = model.selectedModel?.reasoningDescriptor,
-                   let value = model.selectedOptionValue(for: descriptor),
-                   let choice = descriptor.choices.first(where: { $0.id == value }) {
-                    Text(choice.title)
-                        .font(CodexTheme.composerMetaFont)
-                        .foregroundStyle(CodexTheme.textTertiary)
-                        .lineLimit(1)
-                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
             .composerControlCapsule()
         } menu: { close in
-            let optionDescriptors = model.selectedModel?.optionDescriptors ?? []
+            // Reasoning now lives in its own dropdown, so exclude it here and
+            // keep this menu to the model list plus any other provider options.
+            let reasoningDescriptorID = model.selectedModel?.reasoningDescriptor?.id
+            let optionDescriptors = (model.selectedModel?.optionDescriptors ?? [])
+                .filter { $0.id != reasoningDescriptorID }
             CodexMenuContainer {
                 // The provider/model list scrolls inside a capped region so the
                 // menu can't balloon to fill the whole window when it opens
@@ -742,6 +744,45 @@ struct PromptComposer: View {
                 }
             }
             .animation(CodexMotion.panelSpring, value: optionDescriptors)
+        }
+    }
+
+    // Standalone reasoning-effort control, separate from the model picker.
+    @ViewBuilder
+    private var reasoningMenu: some View {
+        if let descriptor = model.selectedModel?.reasoningDescriptor {
+            let selectedValue = model.selectedOptionValue(for: descriptor)
+            let selectedTitle = descriptor.choices
+                .first(where: { $0.id == selectedValue })?.title ?? descriptor.title
+            CodexMenuTrigger(minWidth: 220, edge: .top, highlightOnHover: false,
+                             autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "reasoning") { _ in
+                HStack(spacing: 7) {
+                    Image(systemName: "brain")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                    Text(selectedTitle)
+                        .font(CodexTheme.composerLabelFont)
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+                .composerControlCapsule()
+            } menu: { close in
+                CodexMenuContainer {
+                    CodexMenuSectionHeader(title: descriptor.title)
+                    ForEach(descriptor.choices) { choice in
+                        CodexMenuItem(
+                            title: choice.title,
+                            isSelected: selectedValue == choice.id
+                        ) {
+                            model.setSelectedOptionValue(choice.id, for: descriptor)
+                            close()
+                        }
+                    }
+                }
+            }
         }
     }
 
