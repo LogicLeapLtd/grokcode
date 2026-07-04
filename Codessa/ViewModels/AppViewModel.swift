@@ -1161,6 +1161,12 @@ final class AppViewModel {
 
     /// Re-send the most recent user message — backs the error "Retry" button and
     /// the answer "Regenerate" action. Drops a trailing assistant bubble first.
+    /// True when there's a prior user turn we can re-send (drives the home
+    /// banner's Retry button).
+    var canRetryLast: Bool {
+        !isRunning && messages.contains { $0.role == .user && !($0.text.isEmpty && $0.attachments.isEmpty) }
+    }
+
     func retryLast() {
         guard !isRunning else { return }
         if messages.last?.role == .assistant {
@@ -1172,7 +1178,25 @@ final class AppViewModel {
         Task { await runPrompt(userText: sent) }
     }
 
-    private func runPrompt(userText: String, retriedNewSession: Bool = false) async {
+    /// Transient failures (rate limiting, a brief network/backend hiccup — the
+    /// `EX_TEMPFAIL` family surfaced by `CLIProcessMessage`) are worth retrying
+    /// automatically before we ever bother the user with a banner. Detected from
+    /// the human-readable message so it works across providers.
+    private static func isTransientFailure(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("temporary failure")
+            || lower.contains("rate limit")
+            || lower.contains("network/backend")
+            || lower.contains("unavailable right now")
+            || lower.contains("try again in a moment")
+    }
+
+    /// How many times we silently retry a transient failure, and the backoff
+    /// before each retry.
+    private static let maxTransientRetries = 2
+    private static func transientBackoff(attempt: Int) -> Duration { .seconds(1.5 * Double(attempt + 1)) }
+
+    private func runPrompt(userText: String, retriedNewSession: Bool = false, transientAttempt: Int = 0) async {
         let routeOverride = approvedPlanExecutionRoute
         approvedPlanExecutionRoute = nil
         guard let runModel = resolvedRunModel(routeOverride: routeOverride),
@@ -1281,6 +1305,22 @@ final class AppViewModel {
                 sessionModelId = nil
                 isRunning = false
                 await runPrompt(userText: userText, retriedNewSession: true)
+                return
+            }
+
+            // Transient hiccup (rate limit / brief network-backend blip): retry a
+            // couple of times with backoff so a momentary failure self-heals
+            // instead of dumping the "Grok hit a temporary failure" banner on the
+            // user. Keep the same session so context is preserved.
+            if !didUserCancel && transientAttempt < Self.maxTransientRetries
+                && Self.isTransientFailure(message) {
+                messages.removeAll { $0.id == assistantId }
+                isRunning = false
+                try? await Task.sleep(for: Self.transientBackoff(attempt: transientAttempt))
+                if didUserCancel { didUserCancel = false; return }
+                await runPrompt(userText: userText,
+                                retriedNewSession: retriedNewSession,
+                                transientAttempt: transientAttempt + 1)
                 return
             }
 

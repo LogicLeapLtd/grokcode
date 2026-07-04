@@ -1,5 +1,7 @@
 # Changelog
 
+- Transient Grok failures (rate limiting or a brief network/backend hiccup — the "Grok hit a temporary failure" case) now retry automatically with backoff before any error is shown, so a momentary blip self-heals instead of interrupting you. If it still fails, the home-screen error banner now offers a one-click **Retry**, and the banner reflows cleanly on every window size (baseline-aligned icon, text that always wraps instead of clipping, and actions that wrap to a new line on narrow viewports).
+
 - Fixed rapid flickering/jitter when dragging to resize the sidebar. The resize handle now measures the drag against a stable window-anchored coordinate space instead of its own (moving) one, so the edge tracks the cursor 1:1 without the feedback loop.
 
 - Errors are now human and actionable instead of cryptic exit codes. "Grok exited with code 75" (a transient rate-limit/network failure) now reads "Grok hit a temporary failure — usually rate limiting or a brief network/backend hiccup. Wait a few seconds and try again."; auth, rate-limit, timeout and other common failures get tailored guidance.
