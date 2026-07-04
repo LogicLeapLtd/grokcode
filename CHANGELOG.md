@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-04
+
+### Added
+- **In-app software updates** — "Check for updates" now checks the GitHub
+  releases feed, compares versions, and (when newer) downloads, installs, and
+  relaunches the app in place instead of just opening a browser.
+- **Stable install location** — updates always land at
+  `/Applications/Codessa.app` and relaunch from there, so a pinned Dock
+  shortcut never breaks across updates.
+- **Development-build promotion** — when Codessa is run from Xcode's
+  DerivedData (or anywhere outside `/Applications`), the update dialog offers
+  "Install this build to /Applications & Relaunch", ending the manual
+  quit-and-re-pin dance during development.
+- **Automatic background update checks** on launch (toggleable in Settings ›
+  About), surfacing an "Update available" badge in the account menu.
+
 ## [1.0.0] - 2026-06-14
 
 First public release of Codessa — a native SwiftUI macOS client for the
