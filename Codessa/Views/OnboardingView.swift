@@ -36,17 +36,17 @@ struct OnboardingView: View {
                 .transition(.opacity)
 
             card
-                .frame(width: 468)
+                .frame(width: 560)
                 .background(glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
-                                colors: [.white.opacity(0.55), .white.opacity(0.20), .white.opacity(0.06)],
+                                colors: [.white.opacity(0.30), .white.opacity(0.13), .white.opacity(0.05)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 1.25
+                            lineWidth: 1
                         )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -67,10 +67,11 @@ struct OnboardingView: View {
     private var glassBackground: some View {
         ZStack {
             VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
-            CodexTheme.mainBackground.opacity(0.16)
-            CodexTheme.accent.opacity(0.05)
+            Color.black.opacity(0.22)
+            CodexTheme.mainBackground.opacity(0.28)
+            CodexTheme.accent.opacity(0.045)
             LinearGradient(
-                colors: [.white.opacity(0.14), .white.opacity(0.02), .white.opacity(0.05)],
+                colors: [.white.opacity(0.075), .clear, .white.opacity(0.025)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -86,14 +87,16 @@ struct OnboardingView: View {
             header
             fadeRule
             VStack(spacing: 0) {
-                providerStep
+                providerStatusStep
+                Divider().overlay(CodexTheme.divider.opacity(0.5))
+                providerChoiceStep
                 Divider().overlay(CodexTheme.divider.opacity(0.5))
                 projectStep
                 Divider().overlay(CodexTheme.divider.opacity(0.5))
                 modelStep
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 30)
+            .padding(.vertical, 6)
             fadeRule
             footer
         }
@@ -116,26 +119,27 @@ struct OnboardingView: View {
 
             VStack(spacing: 8) {
                 Text("Welcome to Codessa")
-                    .font(CodexTheme.serif(25, weight: .semibold))
+                    .font(CodexTheme.serif(28, weight: .semibold))
                     .foregroundStyle(CodexTheme.textPrimary)
 
                 Text("One native macOS home for your AI coding agents — bring Claude Code, Codex, Cursor, Gemini, Grok, Z.AI, or any custom CLI, and ship across every project from one clean surface.")
-                    .font(CodexTheme.sans(13))
+                    .font(CodexTheme.sans(14))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 360)
+                    .lineSpacing(2)
+                    .frame(maxWidth: 420)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 30)
-        .padding(.top, 32)
-        .padding(.bottom, 24)
+        .padding(.horizontal, 42)
+        .padding(.top, 36)
+        .padding(.bottom, 28)
     }
 
     // MARK: - Step 1 · AI providers
 
-    private var providerStep: some View {
+    private var providerStatusStep: some View {
         OnboardingRow {
             HStack(spacing: 13) {
                 StatusGlyph(systemImage: "square.grid.2x2.fill",
@@ -145,46 +149,65 @@ struct OnboardingView: View {
                         .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                     Text(providerSubtitle)
-                        .font(CodexTheme.sans(12))
+                        .font(CodexTheme.sans(12.5))
                         .foregroundStyle(CodexTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.bottom, 12)
+        }
+    }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(model.providerStatuses) { status in
-                        ProviderDockItem(
-                            status: status,
-                            isSelected: status.provider.id == model.selectedProviderId,
-                            select: { model.selectProvider(status.provider.id) },
-                            setUp: { model.setUpProvider(status.provider) }
-                        )
+    private var providerChoiceStep: some View {
+        OnboardingRow {
+            HStack(alignment: .top, spacing: 16) {
+                StatusGlyph(systemImage: "bolt.horizontal.circle.fill",
+                            tint: model.selectedProviderIsWired ? CodexTheme.accent : CodexTheme.textSecondary)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Choose your starting agent")
+                            .font(CodexTheme.sans(13.5, weight: .semibold))
+                            .foregroundStyle(CodexTheme.textPrimary)
+                        Text("Pick any detected provider now. You can still switch per chat later.")
+                            .font(CodexTheme.sans(12.5))
+                            .foregroundStyle(CodexTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    VStack(spacing: 6) {
-                        Button(action: { model.addCustomProvider() }) {
-                            ProviderDockGlyph(monogram: "+", installed: false, isCustom: true, isSelected: false)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(model.providerStatuses) { status in
+                                ProviderDockItem(
+                                    status: status,
+                                    isSelected: status.provider.id == model.selectedProviderId,
+                                    select: { model.selectProvider(status.provider.id) },
+                                    setUp: { model.setUpProvider(status.provider) }
+                                )
+                            }
+                            VStack(spacing: 7) {
+                                Button(action: { model.addCustomProvider() }) {
+                                    ProviderDockGlyph(monogram: "+", installed: false, isCustom: true, isSelected: false)
+                                }
+                                .buttonStyle(CodexPressableStyle())
+                                .help("Add a custom agent CLI")
+                                Text("Custom")
+                                    .font(CodexTheme.sans(10))
+                                    .foregroundStyle(CodexTheme.textTertiary)
+                            }
+                            .frame(width: 58)
                         }
-                        .buttonStyle(CodexPressableStyle())
-                        .help("Add a custom agent CLI")
-                        Text("Custom")
-                            .font(CodexTheme.sans(9.5))
-                            .foregroundStyle(CodexTheme.textTertiary)
+                        .padding(.horizontal, 2)
+                        .padding(.bottom, 2)
                     }
-                    .frame(width: 52)
-                }
-                .padding(.horizontal, 2)
-                .padding(.bottom, 2)
-            }
 
-            if !model.selectedProviderIsWired {
-                Text("Live runs currently route through the Grok engine — \(model.selectedProvider.shortName) is detected and selectable while its adapter lands.")
-                    .font(CodexTheme.sans(10.5))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
+                    if !model.selectedProviderIsWired {
+                        Text("Live runs currently route through the Grok engine — \(model.selectedProvider.shortName) is detected and selectable while its adapter lands.")
+                            .font(CodexTheme.sans(11))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
     }
@@ -220,7 +243,7 @@ struct OnboardingView: View {
                         .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                     Text("Point Codessa at a folder of repos — it scans for projects automatically.")
-                        .font(CodexTheme.sans(12))
+                        .font(CodexTheme.sans(12.5))
                         .foregroundStyle(CodexTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -266,7 +289,7 @@ struct OnboardingView: View {
                         .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                     Text("You can switch providers or models any time from the composer.")
-                        .font(CodexTheme.sans(12))
+                        .font(CodexTheme.sans(12.5))
                         .foregroundStyle(CodexTheme.textSecondary)
                 }
                 Spacer(minLength: 8)
@@ -350,9 +373,9 @@ struct OnboardingView: View {
             }
             .buttonStyle(CodexProminentButtonStyle(cornerRadius: 11))
         }
-        .padding(.horizontal, 26)
-        .padding(.top, 16)
-        .padding(.bottom, 22)
+        .padding(.horizontal, 34)
+        .padding(.top, 18)
+        .padding(.bottom, 26)
     }
 
     // MARK: - Shared bits
@@ -388,8 +411,8 @@ private struct OnboardingRow<Content: View>: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 15)
     }
 }
 
@@ -425,7 +448,7 @@ private struct ProviderDockItem: View {
                 .foregroundStyle(isSelected ? CodexTheme.textSecondary : CodexTheme.textTertiary)
                 .lineLimit(1)
         }
-        .frame(width: 52)
+        .frame(width: 58)
     }
 
     /// A distinct SF-Symbol stand-in per provider (real brand marks can be
