@@ -41,8 +41,12 @@ struct SidebarView: View {
                 // the outer `.clipped()` simply reveals/hides it, which keeps the
                 // crossfade smooth instead of churning the layout every frame.
                 collapsedRail
-                    .frame(width: currentSidebarWidth, alignment: .leading)
-                    .transition(.opacity)
+                    // `.center`, not `.leading` — the rail's icon column is
+                    // narrower than the rail itself, so `.leading` here would
+                    // shove it flush to the left edge with a dead gap on the
+                    // right instead of centering it in the available width.
+                    .frame(width: currentSidebarWidth, alignment: .center)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else {
                 expandedBody
                     .frame(width: currentSidebarWidth, alignment: .leading)
@@ -175,11 +179,14 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(active ? CodexTheme.navHighlight : Color.clear)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(active ? CodexTheme.navHighlight : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 0)
+        .codexHover(cornerRadius: 8)
         .opacity(locked ? 0.5 : 1)
         .help(locked ? "\(section.title) requires the full app" : section.title)
         .animation(CodexMotion.quickSpring, value: active)
@@ -456,48 +463,56 @@ struct SidebarView: View {
             )
             .contentShape(Rectangle())
         } menu: { close in
-            CodexMenuContainer {
-                HStack(spacing: 8) {
-                    AccountAvatar(initials: accountInitials, diameter: 26)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(accountDisplayName)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(CodexTheme.textPrimary)
-                        Text(accountPlanLabel)
-                            .font(.system(size: 11))
-                            .foregroundStyle(CodexTheme.textTertiary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-
-                CodexMenuDivider()
-
-                CodexMenuItem(title: "Settings", systemImage: "gearshape") {
-                    model.navigateTo(.settings)
-                    close()
-                }
-                CodexMenuItem(title: "Check for updates", systemImage: "arrow.down.circle") {
-                    NSWorkspace.shared.open(Self.releasesURL)
-                    close()
-                }
-
-                if !license.activeLicenseKey.isEmpty {
-                    CodexMenuDivider()
-                    CodexMenuItem(title: "Deactivate license", systemImage: "key.slash", isDestructive: true) {
-                        Task { await license.deactivateThisDevice() }
-                        close()
-                    }
-                }
-
-                CodexMenuDivider()
-                CodexMenuItem(title: "Quit Codessa", systemImage: "power", isDestructive: true) {
-                    NSApp.terminate(nil)
-                }
-            }
+            accountMenuContent(close: close)
         }
         .buttonStyle(.plain)
+    }
+
+    /// The account dropdown's contents — shared by the expanded sidebar's
+    /// `accountRow` and the collapsed rail's icon-only equivalent, so both
+    /// layouts offer the same actions instead of drifting out of sync.
+    @ViewBuilder
+    private func accountMenuContent(close: @escaping () -> Void) -> some View {
+        CodexMenuContainer {
+            HStack(spacing: 8) {
+                AccountAvatar(initials: accountInitials, diameter: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(accountDisplayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                    Text(accountPlanLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
+            CodexMenuDivider()
+
+            CodexMenuItem(title: "Settings", systemImage: "gearshape") {
+                model.navigateTo(.settings)
+                close()
+            }
+            CodexMenuItem(title: "Check for updates", systemImage: "arrow.down.circle") {
+                NSWorkspace.shared.open(Self.releasesURL)
+                close()
+            }
+
+            if !license.activeLicenseKey.isEmpty {
+                CodexMenuDivider()
+                CodexMenuItem(title: "Deactivate license", systemImage: "key.slash", isDestructive: true) {
+                    Task { await license.deactivateThisDevice() }
+                    close()
+                }
+            }
+
+            CodexMenuDivider()
+            CodexMenuItem(title: "Quit Codessa", systemImage: "power", isDestructive: true) {
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     private static let releasesURL = URL(string: "https://github.com/LogicLeapLtd/grokcode/releases/latest")!
@@ -531,7 +546,9 @@ struct SidebarView: View {
 
     // MARK: - Collapsed rail (#23)
 
-    /// A slim icon-only rail. The toggle expands it; nav + settings stay reachable.
+    /// A slim icon-only rail. The toggle expands it; nav + the account menu
+    /// stay reachable (the latter mirrors `accountRow` so collapsing the
+    /// sidebar never hides an action that's only reachable when expanded).
     private var collapsedRail: some View {
         VStack(spacing: 4) {
             railButton(symbol: "sidebar.left", help: "Expand sidebar") {
@@ -550,10 +567,7 @@ struct SidebarView: View {
 
             Spacer(minLength: 0)
 
-            railButton(symbol: "gearshape", help: "Settings",
-                       active: model.activePage == .settings) {
-                model.navigateTo(.settings)
-            }
+            collapsedAccountButton
         }
         .padding(.horizontal, 8)
         .padding(.top, 18)
@@ -613,6 +627,46 @@ struct SidebarView: View {
         }
         .animation(CodexMotion.quickSpring, value: hoveredRailItem)
         .animation(CodexMotion.quickSpring, value: locked)
+    }
+
+    /// The collapsed rail's account entry point — same sizing/hover treatment
+    /// as `railButton`, but an avatar opening the shared account menu instead
+    /// of navigating straight to Settings.
+    private var collapsedAccountButton: some View {
+        CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
+            AccountAvatar(initials: accountInitials, diameter: 22)
+                .frame(width: 40, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isOpen ? CodexTheme.navHighlight : Color.clear)
+                )
+                .codexHover(cornerRadius: 8)
+                .contentShape(Rectangle())
+        } menu: { close in
+            accountMenuContent(close: close)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                hoveredRailItem = "Account"
+            } else if hoveredRailItem == "Account" {
+                hoveredRailItem = nil
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if hoveredRailItem == "Account" {
+                RailTooltip(text: "Account")
+                    .alignmentGuide(.trailing) { $0[.leading] }
+                    .offset(x: 12)
+                    .allowsHitTesting(false)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(x: -6)),
+                        removal: .opacity
+                    ))
+                    .zIndex(1)
+            }
+        }
+        .animation(CodexMotion.quickSpring, value: hoveredRailItem)
     }
 
     // MARK: - Resize handle (#22)
@@ -1413,9 +1467,12 @@ private struct NoProjectChatsSection: View {
                 }
                 .padding(.leading, 2)
                 .padding(.trailing, 6)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .codexHover(cornerRadius: 0)
             .help(collapsed ? "Expand chats" : "Collapse chats")
 
             if !collapsed {
