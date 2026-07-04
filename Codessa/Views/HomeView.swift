@@ -15,6 +15,9 @@ struct HomeView: View {
                             .font(CodexTheme.headlineFont)
                             .foregroundStyle(CodexTheme.textPrimary)
                             .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.9)
+                            .frame(maxWidth: CodexTheme.composerMaxWidth)
                             .id(headline)
                             .transition(CodexMotion.dropTransition)
                             .codexStaggeredAppear(index: 0)
@@ -55,6 +58,8 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scrollIndicators(.hidden)
+            .background(HomeScrollViewConfigurator())
             // Base provided by MainContentView's translucent dark layer (so glass refracts).
             .animation(CodexMotion.panelSpring, value: model.errorMessage)
             .animation(CodexMotion.panelSpring, value: model.grokAvailable)
@@ -96,7 +101,7 @@ struct HomeView: View {
         if !recents.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Recent chats")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(CodexTheme.sectionLabelFont)
                     .foregroundStyle(CodexTheme.textTertiary)
                     .textCase(.uppercase)
                     .kerning(0.4)
@@ -110,6 +115,18 @@ struct HomeView: View {
                 }
             }
         }
+    }
+}
+
+private struct HomeScrollViewConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { ScrollChrome.hideNativeScrollers(from: view) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { ScrollChrome.hideNativeScrollers(from: nsView) }
     }
 }
 
@@ -137,7 +154,7 @@ private struct QuickActionCard: View {
                     )
 
                 Text(action.title)
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .font(CodexTheme.controlTitleFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -189,7 +206,7 @@ private struct RecentChatRow: View {
                     .frame(width: 18)
 
                 Text(chat.title)
-                    .font(.system(size: 14.5))
+                    .font(CodexTheme.listTitleFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -203,7 +220,7 @@ private struct RecentChatRow: View {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9.5, weight: .medium))
                         Text(branch)
-                            .font(.system(size: 12))
+                            .font(CodexTheme.listMetaFont)
                             .lineLimit(1)
                     }
                     .foregroundStyle(CodexTheme.textTertiary)
@@ -211,7 +228,7 @@ private struct RecentChatRow: View {
 
                 if !chat.ageLabel.isEmpty {
                     Text(chat.ageLabel)
-                        .font(.system(size: 12.5))
+                        .font(CodexTheme.listMetaFont)
                         .foregroundStyle(CodexTheme.textTertiary)
                         .frame(minWidth: 60, alignment: .trailing)
                 }

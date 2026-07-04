@@ -5,15 +5,14 @@ import Foundation
 /// editing the same file.
 ///
 /// `runAutomationNow` is the UI-driven sibling of the contract's fire-and-forget
-/// `runAutomation`: it `await`s the headless grok run, records the outcome
+/// `runAutomation`: it `await`s the headless provider run, records the outcome
 /// (success *or* failure) into the automation's `runHistory` + `lastRun`, and
 /// returns whether it succeeded so the card can flip its inline status from a
 /// spinner to ✓ / ✗.
 extension AppViewModel {
     /// Run one automation now, headless, and report success.
     ///
-    /// Mirrors `AutomationService.runNow`'s invocation (`.auto` permissions,
-    /// `.medium` effort, no `check`, stream events discarded) but is awaitable and
+    /// Uses `.auto` permissions, no `check`, stream events discarded, but is awaitable and
     /// records failures too. Persistence goes through the same UserDefaults-backed
     /// store, then `loadAutomations()` refreshes the in-memory list and the
     /// scheduler snapshot — so the card, the schedule, and the next auto-run all
@@ -25,16 +24,8 @@ extension AppViewModel {
     func runAutomationNow(_ automation: Automation) async -> Bool {
         let ok: Bool
         do {
-            _ = try await GrokCLIService.shared.streamPrompt(
-                automation.prompt,
-                cwd: automation.workingDirectory,
-                model: automation.modelId,
-                permissionMode: .auto,
-                effort: .medium,
-                check: false,
-                sessionId: nil,
-                onEvent: { _ in }
-            )
+            let request = try providerRunRequest(for: automation)
+            _ = try await AgentProviderRuntime.shared.streamPrompt(request: request, onEvent: { _ in })
             ok = true
         } catch {
             errorMessage = error.localizedDescription
@@ -52,5 +43,35 @@ extension AppViewModel {
 
         loadAutomations()
         return ok
+    }
+
+    private func providerRunRequest(for automation: Automation) throws -> ProviderRunRequest {
+        let providerID = automation.providerId.isEmpty ? AgentProvider.grok.id : automation.providerId
+        let status = providerStatuses.first { $0.provider.id == providerID }
+            ?? ProviderRegistry.shared.detectAll().first { $0.provider.id == providerID }
+        guard let status, let binaryPath = status.binaryPath else {
+            throw AgentProviderRuntimeError.providerUnavailable("\(providerLabel(for: providerID)) is not installed.")
+        }
+        let model = modelOption(providerId: providerID, modelId: automation.modelId)
+            ?? GrokModelOption(
+                id: automation.modelId,
+                isDefault: false,
+                providerId: providerID,
+                providerName: providerLabel(for: providerID),
+                title: automation.modelId,
+                isCustom: true
+            )
+        let options = automation.optionSelections.isEmpty ? runOptions(for: model) : automation.optionSelections
+        return ProviderRunRequest(
+            provider: status.provider,
+            binaryPath: binaryPath,
+            prompt: automation.prompt,
+            cwd: automation.workingDirectory,
+            model: model,
+            permissionMode: .auto,
+            options: options,
+            check: false,
+            sessionId: nil
+        )
     }
 }

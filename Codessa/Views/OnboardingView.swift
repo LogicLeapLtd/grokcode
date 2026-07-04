@@ -202,7 +202,7 @@ struct OnboardingView: View {
                     }
 
                     if !model.selectedProviderIsWired {
-                        Text("Live runs currently route through the Grok engine — \(model.selectedProvider.shortName) is detected and selectable while its adapter lands.")
+                        Text("\(model.selectedProvider.shortName) is selectable. Codessa will use its generic command runner until a first-class adapter is available.")
                             .font(CodexTheme.sans(11))
                             .foregroundStyle(CodexTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -299,10 +299,10 @@ struct OnboardingView: View {
     }
 
     private var modelLabel: String {
-        let modelName = model.selectedModel?.displayName
-            ?? model.models.first?.displayName
+        let modelName = model.selectedModel?.providerMenuName
+            ?? model.models.first?.providerMenuName
             ?? "Select"
-        return "\(model.selectedProvider.shortName) · \(modelName)"
+        return modelName
     }
 
     private var modelPicker: some View {
@@ -334,15 +334,18 @@ struct OnboardingView: View {
                 if model.models.isEmpty {
                     CodexMenuItem(title: "No models available", action: {})
                 } else {
-                    ForEach(model.models) { option in
-                        CodexMenuItem(
-                            title: option.menuName,
-                            subtitle: option.isReasoningModel ? "Reasoning" : nil,
-                            systemImage: option.isReasoningModel ? "brain" : "cpu",
-                            isSelected: option.id == model.selectedModel?.id
-                        ) {
-                            model.selectedModel = option
-                            close()
+                    ForEach(model.providerStatuses) { status in
+                        CodexMenuSectionHeader(title: status.provider.shortName)
+                        ForEach(status.models) { option in
+                            CodexMenuItem(
+                                title: option.menuName,
+                                subtitle: option.isReasoningModel ? "Reasoning" : status.runtimeState.label,
+                                systemImage: option.isReasoningModel ? "brain" : "cpu",
+                                isSelected: option.providerId == model.selectedModel?.providerId && option.id == model.selectedModel?.id
+                            ) {
+                                model.selectModel(option)
+                                close()
+                            }
                         }
                     }
                 }

@@ -487,7 +487,16 @@ private struct UserMessageBlock: View {
 private struct AssistantMessageBlock: View {
     let message: ChatMessage
     var onRetry: () -> Void = {}
+    @Environment(AppViewModel.self) private var model
     @State private var hovering = false
+
+    private var presentedPlan: PresentedPlan? {
+        message.isStreaming ? nil : PresentedPlan.extract(from: message.text)
+    }
+
+    private var visibleText: String {
+        presentedPlan?.bodyText ?? message.text
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -509,9 +518,15 @@ private struct AssistantMessageBlock: View {
                 ThinkingIndicator()
             }
 
-            if !message.text.isEmpty {
-                MarkdownText(text: message.text, isStreaming: message.isStreaming)
+            if !visibleText.isEmpty {
+                MarkdownText(text: visibleText, isStreaming: message.isStreaming)
                     .textSelection(.enabled)
+            }
+
+            if let presentedPlan {
+                PresentedPlanCard(plan: presentedPlan) {
+                    model.approvePresentedPlan(presentedPlan)
+                }
             }
 
             if let errorText = message.errorText {
@@ -527,6 +542,83 @@ private struct AssistantMessageBlock: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onHover { hovering = $0 }
+    }
+}
+
+private struct PresentedPlanCard: View {
+    let plan: PresentedPlan
+    var onApprove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "list.bullet.clipboard")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                Text(plan.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Spacer(minLength: 0)
+                Text("Plan")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+
+            if !plan.summary.isEmpty {
+                Text(plan.summary)
+                    .font(CodexTheme.bodyFont)
+                    .foregroundStyle(CodexTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !plan.steps.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(Array(plan.steps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("\(index + 1)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(CodexTheme.textSecondary)
+                                .frame(width: 18, height: 18)
+                                .background(Circle().fill(CodexTheme.pillBackground))
+                            Text(step)
+                                .font(CodexTheme.bodyFont)
+                                .foregroundStyle(CodexTheme.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(action: onApprove) {
+                    Label("Approve & execute", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(CodexTheme.sendButtonActiveBackground)
+                        )
+                }
+                .buttonStyle(CodexPressableStyle(scale: 0.96))
+
+                Text("Uses this mode's after-approval route for the next turn.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            .padding(.top, 2)
+        }
+        .padding(13)
+        .frame(maxWidth: 620, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(CodexTheme.pillBackground.opacity(0.34))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(CodexTheme.divider, lineWidth: 1)
+        )
     }
 }
 

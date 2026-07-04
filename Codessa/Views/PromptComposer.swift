@@ -19,6 +19,8 @@ struct PromptComposer: View {
     /// When `/model` is chosen, the menu expands into an inline model picker
     /// instead of navigating away (kept in-lane — no AppViewModel state needed).
     @State private var showingInlineModelPicker = false
+    @State private var isProjectRowHovered = false
+    @State private var showingModeConfiguration = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -60,7 +62,7 @@ struct PromptComposer: View {
 
             contextStrip
                 .overlay(alignment: .top) {
-                    Rectangle().fill(CodexTheme.divider.opacity(0.42)).frame(height: 1)
+                    contextDividerLine
                 }
         }
         // Liquid Glass composer shell (macOS 26+); solid fallback otherwise.
@@ -106,11 +108,21 @@ struct PromptComposer: View {
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             model.handleComposerDrop(providers)
         }
+        .sheet(isPresented: $showingModeConfiguration) {
+            ModeConfigurationSheet()
+                .environment(model)
+        }
         .animation(CodexMotion.panelSpring, value: model.pendingHooks.count)
         .animation(CodexMotion.panelSpring, value: model.grokAvailable)
         .animation(CodexMotion.quickSpring, value: model.composerAttachments)
         .animation(CodexMotion.quickSpring, value: isDropTargeted)
         .onAppear { isFocused = true }
+    }
+
+    private var contextDividerLine: some View {
+        Rectangle()
+            .fill(CodexTheme.divider.opacity(0.42))
+            .frame(height: 1)
     }
 
     // MARK: - Inline completion model
@@ -301,12 +313,12 @@ struct PromptComposer: View {
         ForEach(Array(model.models.enumerated()), id: \.element.id) { idx, option in
             CompletionRow(
                 title: option.displayName,
-                subtitle: option.isReasoningModel ? "Reasoning" : "Fast",
+                subtitle: option.providerName,
                 systemImage: option.isReasoningModel ? "brain" : "bolt",
                 isHighlighted: idx == clampedSelection(model.models.count),
                 isSelected: model.selectedModel == option
             ) {
-                model.selectedModel = option
+                model.selectModel(option)
                 showingInlineModelPicker = false
                 clearSlashText()
             }
@@ -363,7 +375,7 @@ struct PromptComposer: View {
                 let options = model.models
                 guard options.indices.contains(idx) else { return .handled }
                 let option = options[idx]
-                model.selectedModel = option
+                model.selectModel(option)
                 showingInlineModelPicker = false
                 clearSlashText()
             } else {
@@ -466,6 +478,7 @@ struct PromptComposer: View {
                 GlassEffectContainer(spacing: 7) {
                     HStack(spacing: 7) {
                         addMenu
+                        modeMenu
                         permissionMenu
                         Spacer(minLength: 10)
                         modelEffortMenu
@@ -477,6 +490,7 @@ struct PromptComposer: View {
             return AnyView(
                 HStack(spacing: 7) {
                     addMenu
+                    modeMenu
                     permissionMenu
                     Spacer(minLength: 10)
                     modelEffortMenu
@@ -515,6 +529,61 @@ struct PromptComposer: View {
                 CodexMenuDivider()
 
                 pluginsFlyout(close: close)
+            }
+        }
+    }
+
+    private var modeMenu: some View {
+        CodexMenuTrigger(minWidth: 300, edge: .top, highlightOnHover: false,
+                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "mode") { _ in
+            HStack(spacing: 7) {
+                Image(systemName: model.activeAgentMode.kind.symbol)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textSecondary)
+                Text(model.activeAgentMode.name)
+                    .font(CodexTheme.composerLabelFont)
+                    .foregroundStyle(CodexTheme.textPrimary)
+                    .lineLimit(1)
+                Text(model.activeModeRouteLabel)
+                    .font(CodexTheme.composerMetaFont)
+                    .foregroundStyle(CodexTheme.textTertiary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            .composerControlCapsule(accented: model.activeAgentMode.kind == .plan)
+        } menu: { close in
+            CodexMenuContainer {
+                CodexMenuSectionHeader(title: "Mode")
+                ForEach(model.agentModes) { mode in
+                    CodexMenuItem(
+                        title: mode.name,
+                        subtitle: mode.routeSummary,
+                        systemImage: mode.kind.symbol,
+                        isSelected: model.activeAgentModeID == mode.id
+                    ) {
+                        model.selectAgentMode(mode.id)
+                        close()
+                    }
+                }
+
+                if let note = model.activeModeRuntimeNote {
+                    CodexMenuDivider()
+                    Text(note)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                }
+
+                CodexMenuDivider()
+
+                CodexMenuItem(title: "Configure modes…", systemImage: "slider.horizontal.3") {
+                    close()
+                    showingModeConfiguration = true
+                }
             }
         }
     }
@@ -603,28 +672,28 @@ struct PromptComposer: View {
                         systemImage: mode.symbol,
                         isSelected: model.permissionMode == mode,
                         shortcut: "\(idx + 1)"
-                    ) { model.permissionMode = mode; close() }
+                    ) { model.applyPermissionMode(mode); close() }
                 }
             }
         }
     }
 
-    // Codex-style combined control: "<Model> <Effort> ⌄" with one dropdown.
-    // Effort/reasoning is only meaningful for reasoning models (grok-4), so it
-    // is only shown when such a model is selected.
+    // Codex-style combined control: "<Provider · Model> <Option> ⌄".
     private var modelEffortMenu: some View {
-        CodexMenuTrigger(minWidth: 260, edge: .top, highlightOnHover: false,
+        CodexMenuTrigger(minWidth: 320, edge: .top, maxHeight: 430, highlightOnHover: false,
                          autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "model") { _ in
             HStack(spacing: 7) {
                 Image(systemName: model.selectedModel?.isReasoningModel == true ? "brain.head.profile" : "sparkles")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(CodexTheme.textSecondary)
-                Text(model.selectedModel?.displayName ?? "Model")
+                Text(model.selectedModel?.providerMenuName ?? "Model")
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
-                if model.selectedModel?.isReasoningModel == true {
-                    Text(model.effortLevel.label)
+                if let descriptor = model.selectedModel?.reasoningDescriptor,
+                   let value = model.selectedOptionValue(for: descriptor),
+                   let choice = descriptor.choices.first(where: { $0.id == value }) {
+                    Text(choice.title)
                         .font(CodexTheme.composerMetaFont)
                         .foregroundStyle(CodexTheme.textTertiary)
                         .lineLimit(1)
@@ -635,23 +704,24 @@ struct PromptComposer: View {
             }
             .composerControlCapsule()
         } menu: { close in
-            let showReasoning = model.selectedModel?.isReasoningModel == true
+            let optionDescriptors = model.selectedModel?.optionDescriptors ?? []
             CodexMenuContainer {
-                CodexMenuSectionHeader(title: "Model")
-                ForEach(model.models) { option in
-                    CodexMenuItem(
-                        title: option.displayName,
-                        subtitle: option.isReasoningModel ? "Reasoning" : "Fast",
-                        isSelected: model.selectedModel == option
-                    ) {
-                        withAnimation(CodexMotion.panelSpring) {
-                            model.selectedModel = option
+                ForEach(model.providerStatuses.filter { !$0.models.isEmpty }) { status in
+                    CodexMenuSectionHeader(title: status.provider.shortName)
+                    ForEach(status.models) { option in
+                        ModelPickerRow(
+                            option: option,
+                            isSelected: model.selectedModel?.providerId == option.providerId && model.selectedModel?.id == option.id
+                        ) {
+                            withAnimation(CodexMotion.panelSpring) {
+                                model.selectModel(option)
+                            }
                         }
-                    }   // keep open so effort can appear
+                    }
                 }
 
-                if showReasoning {
-                    reasoningEffortMenuSection(close: close)
+                if !optionDescriptors.isEmpty {
+                    providerOptionMenuSections(optionDescriptors, close: close)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .move(edge: .top)),
                             removal: .opacity.combined(with: .move(edge: .top))
@@ -659,19 +729,36 @@ struct PromptComposer: View {
                 }
             }
             .clipped()
-            .animation(CodexMotion.panelSpring, value: showReasoning)
+            .animation(CodexMotion.panelSpring, value: optionDescriptors)
         }
     }
 
-    private func reasoningEffortMenuSection(close: @escaping () -> Void) -> some View {
+    private func providerOptionMenuSections(_ descriptors: [ProviderOptionDescriptor], close: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            CodexMenuDivider()
-            CodexMenuSectionHeader(title: "Reasoning effort")
-            ForEach(EffortLevel.allCases) { level in
-                CodexMenuItem(
-                    title: level.label,
-                    isSelected: model.effortLevel == level
-                ) { model.effortLevel = level; close() }
+            ForEach(descriptors) { descriptor in
+                CodexMenuDivider()
+                CodexMenuSectionHeader(title: descriptor.title)
+                if descriptor.kind == .readOnly, let detail = descriptor.detail {
+                    Text(detail)
+                        .font(CodexTheme.sans(11))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 9)
+                        .padding(.bottom, 3)
+                }
+                HStack(spacing: 6) {
+                    ForEach(descriptor.choices) { choice in
+                        ProviderOptionChoicePill(
+                            title: choice.title,
+                            isSelected: model.selectedOptionValue(for: descriptor) == choice.id
+                        ) {
+                            model.setSelectedOptionValue(choice.id, for: descriptor)
+                            close()
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 5)
             }
         }
     }
@@ -723,93 +810,131 @@ struct PromptComposer: View {
         .background(CodexTheme.composerShellBackground.opacity(0.34))
     }
 
+    private var showsProjectClearButton: Bool {
+        isProjectRowHovered && !model.workWithoutProject && model.selectedProject != nil
+    }
+
     private var projectRow: some View {
-        CodexMenuTrigger(minWidth: 280, edge: .top, highlightOnHover: false,
-                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "project") { _ in
-            HStack(spacing: 8) {
-                Image(systemName: model.workWithoutProject ? "folder.badge.minus" : "folder")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(CodexTheme.textSecondary)
-                    .frame(width: 20, height: 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(CodexTheme.pillBackground.opacity(0.46))
-                    )
-                Text(model.workWithoutProject ? "No project" : (model.selectedProject?.name ?? "Select project"))
-                    .font(CodexTheme.composerMetaFont.weight(.semibold))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if !model.workWithoutProject, let branch = model.selectedProject?.gitBranch {
-                    branchChip(branch)
-                }
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textTertiary)
-            }
-            .padding(.leading, 6)
-            .padding(.trailing, 8)
-            .padding(.vertical, 4)
-            .frame(maxWidth: 460, alignment: .leading)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(CodexTheme.composerBackground.opacity(0.58))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(CodexTheme.textTertiary.opacity(0.16), lineWidth: 0.75)
-            )
-            .codexHoverOverlay(Capsule(style: .continuous))
-            .shadow(color: CodexTheme.shadowColor.opacity(0.06), radius: 5, y: 1)
-        } menu: { close in
-            CodexMenuContainer {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundStyle(CodexTheme.textTertiary)
-                    TextField("", text: Binding(
-                        get: { model.projectPickerQuery },
-                        set: { model.projectPickerQuery = $0 }
-                    ))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .placeholderOverlay("Search projects", visible: model.projectPickerQuery.isEmpty)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
-
-                CodexMenuDivider()
-
-                ForEach(model.pickerProjects.prefix(8)) { project in
-                    CodexMenuItem(
-                        title: project.name,
-                        systemImage: "folder",
-                        isSelected: !model.workWithoutProject && model.selectedProject?.id == project.id
-                    ) { model.selectProject(project); model.projectPickerQuery = ""; close() }
-                }
-
-                CodexMenuDivider()
-
-                // Per-project context editor — only meaningful with a project
-                // selected (it edits that project's AGENTS.md / GROK.md).
-                if !model.workWithoutProject, let selected = model.selectedProject {
-                    CodexMenuItem(title: "Edit project context", systemImage: "doc.text") {
-                        close(); model.openProjectContext(for: selected)
+        ZStack(alignment: .trailing) {
+            CodexMenuTrigger(minWidth: 280, edge: .top, highlightOnHover: false,
+                             autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "project") { _ in
+                HStack(spacing: 8) {
+                    Image(systemName: model.workWithoutProject ? "folder.badge.minus" : "folder")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(CodexTheme.pillBackground.opacity(0.46))
+                        )
+                    Text(model.workWithoutProject ? "No project" : (model.selectedProject?.name ?? "Select project"))
+                        .font(CodexTheme.composerMetaFont.weight(.semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !model.workWithoutProject, let branch = model.selectedProject?.gitBranch {
+                        branchChip(branch)
                     }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(width: 20, height: 20)
+                        .opacity(showsProjectClearButton ? 0 : 1)
                 }
+                .padding(.leading, 6)
+                .padding(.trailing, 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(CodexTheme.composerBackground.opacity(0.58))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(CodexTheme.textTertiary.opacity(0.16), lineWidth: 0.75)
+                )
+                .codexHoverOverlay(Capsule(style: .continuous))
+                .shadow(color: CodexTheme.shadowColor.opacity(0.06), radius: 5, y: 1)
+                .contentShape(Capsule(style: .continuous))
+            } menu: { close in
+                CodexMenuContainer {
+                    HStack(spacing: 7) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12))
+                            .foregroundStyle(CodexTheme.textTertiary)
+                        TextField("", text: Binding(
+                            get: { model.projectPickerQuery },
+                            set: { model.projectPickerQuery = $0 }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .placeholderOverlay("Search projects", visible: model.projectPickerQuery.isEmpty)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
 
-                CodexMenuItem(title: "Add new project", systemImage: "folder.badge.plus") {
-                    close(); model.addProjectFromPicker()
+                    CodexMenuDivider()
+
+                    ForEach(model.pickerProjects.prefix(8)) { project in
+                        CodexMenuItem(
+                            title: project.name,
+                            systemImage: "folder",
+                            isSelected: !model.workWithoutProject && model.selectedProject?.id == project.id
+                        ) { model.selectProject(project); model.projectPickerQuery = ""; close() }
+                    }
+
+                    CodexMenuDivider()
+
+                    // Per-project context editor — only meaningful with a project
+                    // selected (it edits that project's AGENTS.md / GROK.md).
+                    if !model.workWithoutProject, let selected = model.selectedProject {
+                        CodexMenuItem(title: "Edit project context", systemImage: "doc.text") {
+                            close(); model.openProjectContext(for: selected)
+                        }
+                    }
+
+                    CodexMenuItem(title: "Add new project", systemImage: "folder.badge.plus") {
+                        close(); model.addProjectFromPicker()
+                    }
+                    CodexMenuItem(
+                        title: "Don't work in a project",
+                        systemImage: "folder.badge.minus",
+                        isSelected: model.workWithoutProject
+                    ) { model.clearProjectSelection(); model.projectPickerQuery = ""; close() }
                 }
-                CodexMenuItem(
-                    title: "Don't work in a project",
-                    systemImage: "folder.badge.minus",
-                    isSelected: model.workWithoutProject
-                ) { model.clearProjectSelection(); model.projectPickerQuery = ""; close() }
+            }
+
+            if showsProjectClearButton {
+                Button {
+                    model.clearProjectSelection()
+                    model.projectPickerQuery = ""
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(CodexTheme.pillBackground.opacity(0.56)))
+                        .overlay(Circle().strokeBorder(CodexTheme.textTertiary.opacity(0.20), lineWidth: 0.75))
+                        .codexHoverOverlay(Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(CodexPressableStyle(scale: 0.9))
+                .padding(.trailing, 4)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .help("Deselect project")
+                .zIndex(1)
             }
         }
+        .frame(minWidth: 220, maxWidth: 520, alignment: .leading)
+        .onHover { hovering in
+            withAnimation(CodexMotion.quickSpring) {
+                isProjectRowHovered = hovering
+            }
+        }
+        .animation(CodexMotion.quickSpring, value: showsProjectClearButton)
     }
 
     private func branchChip(_ branch: String) -> some View {
@@ -819,10 +944,12 @@ struct PromptComposer: View {
             Text(branch)
                 .font(CodexTheme.technicalLabelFont)
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .foregroundStyle(CodexTheme.textTertiary)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
+        .frame(maxWidth: 150)
         .background(Capsule(style: .continuous).fill(CodexTheme.pillBackground.opacity(0.40)))
     }
 }
@@ -942,6 +1069,106 @@ private struct CompletionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct ModelPickerRow: View {
+    let option: GrokModelOption
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private var rowFill: Color {
+        if isSelected { return CodexTheme.accent.opacity(0.12) }
+        if hovering { return CodexTheme.hoverBackground }
+        return .clear
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: option.isReasoningModel ? "brain.head.profile" : "bolt.fill")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(isSelected ? CodexTheme.accent : CodexTheme.textTertiary)
+                    .frame(width: 15)
+
+                Text(option.displayName)
+                    .font(CodexTheme.sans(12.5, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? CodexTheme.accent : CodexTheme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if option.isDefault {
+                    Text("Default")
+                        .font(CodexTheme.sans(9.5, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(CodexTheme.pillBackground.opacity(0.72))
+                        )
+                }
+
+                Spacer(minLength: 12)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(CodexTheme.accent)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(rowFill)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+private struct ProviderOptionChoicePill: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private var fill: Color {
+        if isSelected { return CodexTheme.accent.opacity(0.16) }
+        if hovering { return CodexTheme.hoverBackground }
+        return CodexTheme.pillBackground.opacity(0.48)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(CodexTheme.sans(11.5, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? CodexTheme.accent : CodexTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .frame(minWidth: 42)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(fill)
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(isSelected ? CodexTheme.accent.opacity(0.42) : CodexTheme.divider.opacity(0.45), lineWidth: 0.75)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

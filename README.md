@@ -7,8 +7,8 @@
 [![macOS](https://img.shields.io/badge/macOS-15%2B-000000?style=flat&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=flat&logo=swift&logoColor=white)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-native-0A84FF?style=flat&logo=swift&logoColor=white)](https://developer.apple.com/xcode/swiftui/)
-[![License: Commercial](https://img.shields.io/badge/License-Commercial-6366F1?style=flat)](LICENSE)
-[![Price: $39](https://img.shields.io/badge/Price-%2439_(%2424_launch)-0A84FF?style=flat)](#pricing)
+[![Build](https://img.shields.io/badge/Build-free-22C55E?style=flat)](LICENSE)
+[![Download](https://img.shields.io/badge/Download-latest_release-0A84FF?style=flat)](https://github.com/LogicLeapLtd/grokcode/releases/latest)
 
 ![Codessa chat](docs/chat.png)
 
@@ -54,14 +54,10 @@ It is, deliberately, the ChatGPT‑Codex desktop feel — rebuilt from the groun
 
 ## Pricing
 
-Codessa is a commercial product with a **one‑time** purchase — no subscription.
-
-- **$39** perpetual license — buy once, own it.
-- **$24 launch price** for early adopters.
-- One license activates on up to **2 of your devices**.
-- **7‑day free trial**, no card required — try it before you buy.
-
-> **Buy / start your trial:** _[grokcode download page](https://github.com/logicleaplabs/grokcode) — replace with the published purchase / trial URL._
+Codessa is currently a **free, fully unlocked** macOS app. The old licensing
+code remains in the source tree as dormant infrastructure, but this production
+build does not start a trial, show a paywall, or call Lemon Squeezy licensing
+endpoints on launch.
 
 ---
 
@@ -69,20 +65,21 @@ Codessa is a commercial product with a **one‑time** purchase — no subscripti
 
 ### Download
 
-Start the **7‑day free trial** or download your licensed copy from the Codessa download page. Grab the signed, notarized **`.dmg`**, drag Codessa to **Applications**, and launch. On first run you'll activate your license key (or begin the trial).
+Download the latest **`.dmg`** from GitHub Releases, drag Codessa to
+**Applications**, and launch.
 
-> **Download:** _[grokcode download page](https://github.com/logicleaplabs/grokcode) — replace with the published download URL._
+> **Download:** [latest Codessa release](https://github.com/LogicLeapLtd/grokcode/releases/latest)
 
 ---
 
 ## Requirements
 
 - **macOS 15 or later** (Apple silicon or Intel).
-- A **Codessa license** (or an active free trial) — activated on first launch.
 - The **`grok` CLI** installed at `~/.grok/bin/grok`, and an **xAI API key**. Codessa is a desktop interface for the `grok` CLI — you bring your own `grok` install and xAI account; Codessa does not provide them.
 - A signed‑in CLI — run **`grok login`** once in your terminal before first launch.
 
-Codessa talks to your local `grok` install; it stores nothing in the cloud and phones no home beyond license activation.
+Codessa talks to your local `grok` install; it stores nothing in the cloud for
+normal chat runs. The update checker reads GitHub Releases when enabled.
 
 ---
 
@@ -140,6 +137,7 @@ State lives in a single `@Observable @MainActor` view model; the CLI layer spawn
 
 ## License
 
-Codessa is **commercial, proprietary software** — licensed, not sold. Each purchase grants a personal, non‑transferable license for use on up to **2 devices**. Redistribution and reverse‑engineering are not permitted. See the full [End User License Agreement](LICENSE).
+Codessa is currently distributed as a free LogicLeap build. See [LICENSE](LICENSE)
+for the current terms in this repository.
 
 Made by **LogicLeap Labs**.

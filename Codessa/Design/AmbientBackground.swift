@@ -141,23 +141,23 @@ struct AmbientBackgroundView: View {
         let rate: Double
     }
 
-    /// Muted cool depth with a restrained warm note. The composer focus state is
-    /// cool-toned, so the canvas should not also shout orange around it.
+    /// Deep violet depth, with the teal/green cast deliberately removed so the
+    /// canvas reads purple-black rather than muddy.
     private static let orbs: [Orb] = [
         Orb(home: CGPoint(x: 0.22, y: 0.28), radius: 0.38,
-            color: Color(red: 0.58, green: 0.40, blue: 0.30), phase: 0.0,
+            color: Color(red: 0.28, green: 0.16, blue: 0.58), phase: 0.0,
             driftRate: 1.0, driftRadius: 0.04),
         Orb(home: CGPoint(x: 0.78, y: 0.22), radius: 0.34,
-            color: Color(red: 0.30, green: 0.32, blue: 0.62), phase: 1.7,
+            color: Color(red: 0.22, green: 0.13, blue: 0.50), phase: 1.7,
             driftRate: 1.3, driftRadius: 0.045),
         Orb(home: CGPoint(x: 0.70, y: 0.74), radius: 0.42,
-            color: Color(red: 0.20, green: 0.50, blue: 0.62), phase: 3.1,
+            color: Color(red: 0.18, green: 0.08, blue: 0.38), phase: 3.1,
             driftRate: 0.85, driftRadius: 0.04),
         Orb(home: CGPoint(x: 0.30, y: 0.80), radius: 0.32,
-            color: Color(red: 0.40, green: 0.24, blue: 0.42), phase: 4.4,
+            color: Color(red: 0.38, green: 0.18, blue: 0.62), phase: 4.4,
             driftRate: 1.15, driftRadius: 0.035),
         Orb(home: CGPoint(x: 0.50, y: 0.50), radius: 0.26,
-            color: Color(red: 0.42, green: 0.48, blue: 0.56), phase: 2.2,
+            color: Color(red: 0.16, green: 0.10, blue: 0.28), phase: 2.2,
             driftRate: 0.7, driftRadius: 0.03),
     ]
 

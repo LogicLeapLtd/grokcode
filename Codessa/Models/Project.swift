@@ -40,7 +40,7 @@ struct Project: Identifiable, Hashable, Codable {
     }
 }
 
-struct ProjectThread: Identifiable, Hashable, Codable {
+nonisolated struct ProjectThread: Identifiable, Hashable, Codable {
     let id: String
     var title: String
     var ageLabel: String
@@ -105,7 +105,7 @@ struct GrokSession: Identifiable, Hashable {
     var status: String
 }
 
-enum PermissionMode: String, CaseIterable, Identifiable {
+enum PermissionMode: String, CaseIterable, Identifiable, Codable {
     case fullAccess = "bypassPermissions"
     case acceptEdits = "acceptEdits"
     case auto = "auto"
@@ -141,7 +141,7 @@ enum PermissionMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum EffortLevel: String, CaseIterable, Identifiable {
+enum EffortLevel: String, CaseIterable, Identifiable, Codable {
     case low, medium, high, xhigh, max
 
     var id: String { rawValue }
@@ -158,9 +158,38 @@ enum EffortLevel: String, CaseIterable, Identifiable {
 
 }
 
-struct GrokModelOption: Identifiable, Hashable {
+nonisolated struct GrokModelOption: Identifiable, Hashable {
     let id: String
     var isDefault: Bool
+    var providerId: String
+    var providerName: String
+    var runtimeId: String?
+    var title: String?
+    var shortTitle: String?
+    var isCustom: Bool
+    var optionDescriptors: [ProviderOptionDescriptor]
+
+    init(
+        id: String,
+        isDefault: Bool,
+        providerId: String = AgentProvider.grok.id,
+        providerName: String = AgentProvider.grok.shortName,
+        runtimeId: String? = nil,
+        title: String? = nil,
+        shortTitle: String? = nil,
+        isCustom: Bool = false,
+        optionDescriptors: [ProviderOptionDescriptor] = []
+    ) {
+        self.id = id
+        self.isDefault = isDefault
+        self.providerId = providerId
+        self.providerName = providerName
+        self.runtimeId = runtimeId
+        self.title = title
+        self.shortTitle = shortTitle
+        self.isCustom = isCustom
+        self.optionDescriptors = optionDescriptors
+    }
 
     /// Model ids that are known *fast* (non-reasoning) agents. Anything not in
     /// this set is treated as a reasoning model (see `isReasoningModel`).
@@ -174,6 +203,7 @@ struct GrokModelOption: Identifiable, Hashable {
 
     /// Friendly, human-readable name for the model id.
     var displayName: String {
+        if let title, !title.isEmpty { return title }
         switch id {
         case "grok-composer-2.5-fast": return "Composer 2.5 Fast"
         case "grok-composer-2.5": return "Composer 2.5"
@@ -197,11 +227,23 @@ struct GrokModelOption: Identifiable, Hashable {
         isDefault ? "\(displayName) (default)" : displayName
     }
 
+    var providerMenuName: String {
+        "\(providerName) · \(menuName)"
+    }
+
+    var reasoningDescriptor: ProviderOptionDescriptor? {
+        optionDescriptors.first {
+            let key = $0.id.lowercased()
+            return key.contains("reasoning") || key.contains("effort") || key.contains("thinking")
+        }
+    }
+
     /// True for models that perform multi-step reasoning and honor a reasoning
     /// effort level. Less brittle than an exact id match: any `grok-4*` model or
     /// anything advertising "reasoning" qualifies, as does any id not on the
     /// known-fast list (so newly-released reasoning models default to reasoning).
     var isReasoningModel: Bool {
+        if reasoningDescriptor != nil { return true }
         let lower = id.lowercased()
         if lower.contains("grok-4") || lower.contains("reasoning") { return true }
         return !Self.knownFastModelIDs.contains(id)
@@ -214,7 +256,7 @@ struct GrokModelOption: Identifiable, Hashable {
 /// `tool_call_update`s refine the title/kind and attach a human-readable
 /// `detail`, and the row flips to `.done` when the update carries a result (or
 /// the turn ends).
-struct ToolCallEntry: Identifiable, Hashable {
+nonisolated struct ToolCallEntry: Identifiable, Hashable {
     /// Lifecycle of a tool row. `.running` until the update clearly completes.
     enum Status: String, Hashable {
         case running
@@ -250,7 +292,7 @@ struct ToolCallEntry: Identifiable, Hashable {
     }
 }
 
-struct ChatMessage: Identifiable, Hashable {
+nonisolated struct ChatMessage: Identifiable, Hashable {
     enum Role: String, Hashable {
         case user
         case assistant
@@ -325,9 +367,6 @@ enum MainPage: String, CaseIterable, Identifiable, Hashable {
     case plugins
     case automations
     case settings
-    /// Per-project overview (recent chats + repo/git/deploy info), shown when a
-    /// project is clicked in the sidebar.
-    case projectDetail
     /// Full-page editor for a project's AGENTS.md / GROK.md context file (was a
     /// modal sheet; now a page).
     case projectContext
@@ -354,10 +393,10 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .newChat: "square.and.pencil"
-        case .search: "magnifyingglass"
-        case .plugins: "puzzlepiece.extension"
-        case .automations: "clock"
+        case .newChat: "plus.bubble"
+        case .search: "text.magnifyingglass"
+        case .plugins: "shippingbox"
+        case .automations: "clock.arrow.circlepath"
         }
     }
 }

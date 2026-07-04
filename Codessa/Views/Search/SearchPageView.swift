@@ -42,7 +42,7 @@ struct SearchPageView: View {
     }
 
     var body: some View {
-        PageScaffold(maxWidth: 760, spacing: 18, scrolls: false) {
+        PageScaffold(maxWidth: 820, topPadding: 34, bottomPadding: 28, spacing: 18, scrolls: false) {
             header
 
             searchField
@@ -118,6 +118,9 @@ struct SearchPageView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // Let the results region claim the whole lower half of the window
+                // instead of hugging the top with a band of dead canvas beneath.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onChange(of: highlightedIndex) { _, new in
                     guard let new, results.indices.contains(new) else { return }
                     withAnimation(CodexMotion.quickSpring) {
@@ -143,7 +146,7 @@ struct SearchPageView: View {
                 .font(CodexTheme.headlineFont)
                 .foregroundStyle(CodexTheme.textPrimary)
             Text("Find projects, sessions, branches and previous work without digging through the sidebar.")
-                .font(.system(size: 13))
+                .font(CodexTheme.bodyFont)
                 .foregroundStyle(CodexTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

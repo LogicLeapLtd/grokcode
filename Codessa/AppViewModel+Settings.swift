@@ -37,6 +37,17 @@ struct SessionStorageInfo: Equatable {
     }
 }
 
+struct SettingsDiagnosticsBundle: Codable {
+    let generatedAt: Date
+    let appVersion: String
+    let grokAvailable: Bool
+    let selectedProvider: String
+    let projectCount: Int
+    let sessionCount: Int
+    let preferences: AppPreferences?
+    let system: [String: String]
+}
+
 extension AppViewModel {
 
     // MARK: - General: default project
@@ -152,6 +163,211 @@ extension AppViewModel {
         NSWorkspace.shared.open(url)
     }
 
+    func copyToClipboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    func revealInFinder(_ url: URL) {
+        if FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.open(url.deletingLastPathComponent())
+        }
+    }
+
+    func openFileOrFolder(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
+    var grokConfigURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok/config.toml")
+    }
+
+    var grokSessionsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok/sessions")
+    }
+
+    var grokTempAttachmentsURL: URL {
+        FileManager.default.temporaryDirectory
+    }
+
+    var appSupportURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        return base.appendingPathComponent("Codessa", isDirectory: true)
+    }
+
+    var currentProjectContextURL: URL? {
+        selectedProject.map { projectContext.contextFileURL(for: $0) }
+    }
+
+    func revealCurrentProjectContext() {
+        guard let url = currentProjectContextURL else { return }
+        revealInFinder(url)
+    }
+
+    func exportPreferences(completion: @escaping (String) -> Void) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "codessa-settings-\(Self.exportDateStamp()).json"
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try JSONEncoder.pretty.encode(preferences)
+            try data.write(to: url, options: .atomic)
+            completion("Exported settings to \(url.lastPathComponent)")
+        } catch {
+            completion("Couldn't export settings: \(error.localizedDescription)")
+        }
+    }
+
+    func importPreferences(completion: @escaping (String) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "Import"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            preferences = try JSONDecoder().decode(AppPreferences.self, from: data)
+            completion("Imported settings from \(url.lastPathComponent)")
+        } catch {
+            completion("Couldn't import settings: \(error.localizedDescription)")
+        }
+    }
+
+    func copyDiagnostics() {
+        let bundle = SettingsDiagnosticsBundle(
+            generatedAt: Date(),
+            appVersion: Self.appVersionString,
+            grokAvailable: grokAvailable,
+            selectedProvider: selectedProvider.name,
+            projectCount: projects.count,
+            sessionCount: sessions.count,
+            preferences: preferences.copyDiagnosticsIncludesSettings ? preferences : nil,
+            system: [
+                "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
+                "architecture": Self.architectureLabel,
+                "bundleIdentifier": Bundle.main.bundleIdentifier ?? "unknown",
+                "executable": Bundle.main.executablePath ?? "unknown",
+            ]
+        )
+        if let data = try? JSONEncoder.pretty.encode(bundle),
+           let text = String(data: data, encoding: .utf8) {
+            copyToClipboard(text)
+        }
+    }
+
+    func clearTemporaryAttachments(completion: @escaping (String) -> Void) {
+        Task {
+            let count = await Self.dataBridge.clearTempAttachments()
+            completion("Cleared \(count) temporary attachment\(count == 1 ? "" : "s")")
+        }
+    }
+
+    func runRetentionCleanup(days: Int, completion: @escaping (String, SessionStorageInfo) -> Void) {
+        Task {
+            let deleted = await Self.dataBridge.deleteSessions(olderThanDays: days)
+            let info = await Self.dataBridge.sessionStorageInfo()
+            if deleted > 0 {
+                sessions = (try? await grok.listSessions(limit: preferences.defaultSessionLimit)) ?? sessions
+                refreshSessionSnapshot()
+            }
+            completion("Deleted \(deleted) old session file\(deleted == 1 ? "" : "s")", info)
+        }
+    }
+
+    func refreshModelsNow(completion: @escaping (String) -> Void) {
+        Task {
+            await refreshProviderSnapshots()
+            completion("Refreshed \(models.count) \(selectedProvider.shortName) model\(models.count == 1 ? "" : "s")")
+        }
+    }
+
+    func refreshCLIStatus() {
+        grokAvailable = grok.isAvailable
+        refreshProviders()
+        Task { await refreshProviderSnapshots() }
+    }
+
+    func copySystemInfo() {
+        copyToClipboard([
+            "Codessa \(Self.appVersionString)",
+            ProcessInfo.processInfo.operatingSystemVersionString,
+            Self.architectureLabel,
+            Bundle.main.bundleIdentifier ?? "co.codessa.Codessa",
+        ].joined(separator: "\n"))
+    }
+
+    func resetOnboarding() {
+        UserDefaults.standard.set(false, forKey: Self.hasOnboardedKey)
+        onboardingOpen = true
+    }
+
+    func clearPendingChatPlaceholder() {
+        pendingChat = nil
+    }
+
+    func emptyArchive() {
+        archivedProjectPaths.removeAll()
+        persistSidebarPreferences()
+    }
+
+    func restoreAllArchivedProjects() {
+        archivedProjectPaths.removeAll()
+        persistSidebarPreferences()
+    }
+
+    func archiveSelectedProjectIfAllowed() {
+        guard let project = selectedProject else { return }
+        if preferences.keepPinnedUnarchived, isPinned(project) { return }
+        archiveProject(project)
+    }
+
+    func exportArchiveList(completion: @escaping (String) -> Void) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "codessa-archived-projects-\(Self.exportDateStamp()).json"
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let rows = archivedProjects.map { ["name": $0.name, "path": $0.path.path, "chats": "\($0.threads.count)"] }
+        do {
+            let data = try JSONEncoder.pretty.encode(rows)
+            try data.write(to: url, options: .atomic)
+            completion("Exported archive list to \(url.lastPathComponent)")
+        } catch {
+            completion("Couldn't export archive list: \(error.localizedDescription)")
+        }
+    }
+
+    func personalizationPrefix() -> String {
+        guard preferences.includeStyleRules || preferences.includeProjectRules else { return "" }
+        var rules: [String] = []
+        if preferences.includeStyleRules {
+            rules.append("Response length: \(preferences.responseLength.label).")
+            rules.append("Explanation depth: \(preferences.explanationDepth.label).")
+            rules.append("Tone: \(preferences.tonePreset.label).")
+            if preferences.preferBritishEnglish { rules.append("Use British English.") }
+            if preferences.avoidEmDashes { rules.append("Avoid em dashes.") }
+            if preferences.preserveUserWording { rules.append("Preserve user wording exactly when rewriting.") }
+            if preferences.draftOnlyMessaging { rules.append("For messages or external communications, draft only unless explicitly approved.") }
+            if preferences.showPlansByDefault { rules.append("For substantial work, show a concise plan before broad changes.") }
+            if preferences.askBeforeAssumptions { rules.append("Ask before making high-impact assumptions.") }
+        }
+        if preferences.includeProjectRules, preferences.contextEnabled, let project = selectedProject {
+            let file = projectContext.fileName(for: project)
+            rules.append("Project context file enabled: \(file).")
+        }
+        guard !rules.isEmpty else { return "" }
+        return "[Codessa user preferences]\n" + rules.map { "- " + $0 }.joined(separator: "\n") + "\n\n"
+    }
+
     // MARK: - Hooks origin (derived, no new stored state)
 
     /// Where a pending hook came from, inferred from its file name and the
@@ -175,6 +391,10 @@ extension AppViewModel {
 
     static func resolveGrokPath() -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let override = UserDefaults.standard.string(forKey: "grokcode.preferences.grokBinaryOverride") ?? ""
+        if !override.isEmpty, FileManager.default.isExecutableFile(atPath: override) {
+            return override
+        }
         let candidates = [
             "\(home)/.grok/bin/grok",
             "/usr/local/bin/grok",
@@ -187,6 +407,16 @@ extension AppViewModel {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: Date())
+    }
+
+    private static var architectureLabel: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return "unknown"
+        #endif
     }
 
     private static let mcpBridge = MCPConfigBridge()
@@ -331,6 +561,22 @@ private final class SessionDataBridge: @unchecked Sendable {
         }
     }
 
+    func deleteSessions(olderThanDays days: Int) async -> Int {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: self.deleteSessions(olderThanDays: days))
+            }
+        }
+    }
+
+    func clearTempAttachments() async -> Int {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: self.deleteTempAttachments())
+            }
+        }
+    }
+
     private func computeStorage() -> SessionStorageInfo {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
@@ -382,5 +628,51 @@ private final class SessionDataBridge: @unchecked Sendable {
             do { try fm.removeItem(at: entry) } catch { ok = false }
         }
         return ok
+    }
+
+    private func deleteSessions(olderThanDays days: Int) -> Int {
+        let fm = FileManager.default
+        guard days > 0,
+              let enumerator = fm.enumerator(
+                at: sessionsRoot,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              )
+        else { return 0 }
+
+        let cutoff = Date().addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))
+        var deleted = 0
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == "summary.json" || url.lastPathComponent == "updates.jsonl" else { continue }
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+            guard values?.isRegularFile == true, (values?.contentModificationDate ?? Date()) < cutoff else { continue }
+            do {
+                try fm.removeItem(at: url)
+                deleted += 1
+            } catch {
+                continue
+            }
+        }
+        return deleted
+    }
+
+    private func deleteTempAttachments() -> Int {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory
+        guard let entries = try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil) else { return 0 }
+        var deleted = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard entry.pathExtension.lowercased() == "png",
+                  name.hasPrefix("grok_attach_") || name.hasPrefix("grok_paste_")
+            else { continue }
+            do {
+                try fm.removeItem(at: entry)
+                deleted += 1
+            } catch {
+                continue
+            }
+        }
+        return deleted
     }
 }

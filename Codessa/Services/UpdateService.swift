@@ -60,6 +60,13 @@ final class UpdateService: ObservableObject {
     }
 
     private static let autoCheckDefaultsKey = "codessa.updates.autoCheckOnLaunch"
+    private static let lastBackgroundCheckKey = "codessa.updates.lastBackgroundCheck"
+
+    /// Minimum spacing between *automatic* launch checks. GitHub's unauthenticated
+    /// API allows only 60 requests/hour per IP, so a check on every single launch
+    /// (common during development) burns that budget and trips rate limiting.
+    /// User-initiated "Check for updates" is never throttled.
+    private static let backgroundCheckInterval: TimeInterval = 6 * 60 * 60
 
     // MARK: - Published state
 
@@ -136,8 +143,14 @@ final class UpdateService: ObservableObject {
     }
 
     /// Silent launch-time check. Never opens the dialog; only lights the badge.
+    /// Throttled so repeated relaunches don't exhaust GitHub's hourly rate limit.
     func checkInBackgroundIfEnabled() {
         guard automaticallyChecksOnLaunch else { return }
+        let defaults = UserDefaults.standard
+        let last = defaults.double(forKey: Self.lastBackgroundCheckKey)
+        let now = Date().timeIntervalSince1970
+        if last > 0, now - last < Self.backgroundCheckInterval { return }
+        defaults.set(now, forKey: Self.lastBackgroundCheckKey)
         Task { await checkForUpdates(userInitiated: false) }
     }
 
@@ -339,15 +352,35 @@ final class UpdateService: ObservableObject {
         request.timeoutInterval = 20
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw UpdateError.network("No response from GitHub.") }
+        guard let http = response as? HTTPURLResponse else { throw UpdateError.network("No response from the update server.") }
+
+        // GitHub's unauthenticated API allows only 60 requests/hour per IP. When
+        // that's exhausted it answers 403 (sometimes 429) with a JSON error body,
+        // and `X-RateLimit-Remaining: 0`. Surface that as its own friendly state
+        // instead of a raw decode failure.
+        let remaining = Int(http.value(forHTTPHeaderField: "X-RateLimit-Remaining") ?? "")
+        if http.statusCode == 403 || http.statusCode == 429 || remaining == 0 {
+            let reset = (http.value(forHTTPHeaderField: "X-RateLimit-Reset")).flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) }
+            throw UpdateError.rateLimited(reset)
+        }
 
         if http.statusCode == 404 { return nil } // repo has no published releases yet
         guard (200...299).contains(http.statusCode) else {
-            throw UpdateError.network("GitHub returned HTTP \(http.statusCode).")
+            throw UpdateError.network("The update server returned HTTP \(http.statusCode). Try again shortly.")
         }
 
-        let decoded = try JSONDecoder.githubDecoder.decode(GitHubRelease.self, from: data)
-        return decoded.asUpdateRelease()
+        do {
+            return try JSONDecoder.githubDecoder.decode(GitHubRelease.self, from: data).asUpdateRelease()
+        } catch {
+            // Not a release payload — most often a GitHub `{"message": …}` error
+            // (rate limit / temporary block) that arrived with a 2xx-ish status.
+            // Show its message rather than Foundation's cryptic "data … missing".
+            if let apiError = try? JSONDecoder().decode(GitHubAPIError.self, from: data), !apiError.message.isEmpty {
+                if apiError.message.lowercased().contains("rate limit") { throw UpdateError.rateLimited(nil) }
+                throw UpdateError.network(apiError.message)
+            }
+            throw UpdateError.network("The update server returned an unexpected response. Try again shortly.")
+        }
     }
 
     // MARK: - Version comparison
@@ -422,6 +455,9 @@ final class UpdateService: ObservableObject {
 
     private static func friendlyMessage(for error: Error) -> String {
         if let e = error as? UpdateError { return e.message }
+        if error is DecodingError {
+            return "The update server returned an unexpected response. Try again shortly."
+        }
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain {
             return "Couldn't reach the update server. Check your connection and try again."
@@ -457,6 +493,12 @@ private struct GitHubRelease: Decodable {
         let name: String
         let browserDownloadURL: URL
         let contentType: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case browserDownloadURL = "browser_download_url"
+            case contentType = "content_type"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -501,16 +543,29 @@ private extension JSONDecoder {
 
 enum UpdateError: Error {
     case network(String)
+    case rateLimited(Date?)
     case extractionFailed(String)
     case installFailed(String)
 
     var message: String {
         switch self {
         case .network(let m): return m
+        case .rateLimited(let reset):
+            if let reset {
+                let mins = max(1, Int(reset.timeIntervalSinceNow / 60) + 1)
+                return "GitHub's update-check rate limit was reached (60/hour). Try again in about \(mins) minute\(mins == 1 ? "" : "s")."
+            }
+            return "GitHub's update-check rate limit was reached (60/hour). Try again in a little while."
         case .extractionFailed(let m): return m
         case .installFailed(let m): return m
         }
     }
+}
+
+/// GitHub's error envelope (`{"message": "...", "documentation_url": "..."}`),
+/// used to turn a non-release response into a readable message.
+private struct GitHubAPIError: Decodable {
+    let message: String
 }
 
 // MARK: - Download with progress

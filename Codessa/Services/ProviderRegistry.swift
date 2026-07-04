@@ -65,7 +65,14 @@ nonisolated final class ProviderRegistry: @unchecked Sendable {
     func detectAll() -> [ProviderStatus] {
         catalog().map { provider in
             let path = resolveBinary(for: provider)
-            return ProviderStatus(provider: provider, installed: path != nil, binaryPath: path)
+            return ProviderStatus(
+                provider: provider,
+                installed: path != nil,
+                binaryPath: path,
+                runtimeState: path == nil ? .warning : .warning,
+                message: path == nil ? "\(provider.shortName) CLI was not found." : "Pending status check.",
+                models: AgentProviderModelCatalog.models(for: provider)
+            )
         }
     }
 
@@ -78,8 +85,20 @@ nonisolated final class ProviderRegistry: @unchecked Sendable {
         if let explicit = provider.explicitBinaryPath {
             return FileManager.default.isExecutableFile(atPath: explicit) ? explicit : nil
         }
+        if provider.id == AgentProvider.cursor.id {
+            return resolveCursorBinary(for: provider)
+        }
         for name in provider.binaryNames {
             if let path = which(name) { return path }
+        }
+        return nil
+    }
+
+    private func resolveCursorBinary(for provider: AgentProvider) -> String? {
+        for name in provider.binaryNames {
+            guard let path = which(name) else { continue }
+            if name == "agent", path.contains("/.grok/") { continue }
+            return path
         }
         return nil
     }

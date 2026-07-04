@@ -6,52 +6,28 @@ struct LaunchMascotOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var entered = false
-    @State private var sparksLit = false
-    @State private var floating = false
-    @State private var wink = false
     @State private var exiting = false
     @State private var finished = false
+    @State private var bootProgress: CGFloat = 0
 
     var body: some View {
         ZStack {
             launchBackdrop
 
-            VStack(spacing: 18) {
-                CodessaMascotMark(
-                    entered: entered,
-                    sparksLit: sparksLit,
-                    floating: floating,
-                    wink: wink,
-                    reduceMotion: reduceMotion
-                )
-                .frame(width: 192, height: 152)
+            VStack(spacing: 12) {
+                SpriteSheetMascotView(isAnimating: entered && !reduceMotion)
+                    .frame(width: 238, height: 188)
 
                 VStack(spacing: 5) {
                     Text("Codessa")
                         .font(CodexTheme.serif(31, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
 
-                    HStack(spacing: 7) {
-                        Text(">")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(CodexTheme.accent)
-                        Text("ready")
-                            .font(CodexTheme.sans(12, weight: .medium))
-                            .foregroundStyle(CodexTheme.textSecondary)
-                    }
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(CodexTheme.composerBackground.opacity(0.74))
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(CodexTheme.composerBorder.opacity(0.58), lineWidth: 1)
-                    )
-                    .opacity(entered ? 1 : 0)
-                    .offset(y: entered && !reduceMotion ? 0 : 6)
-                    .animation(.easeOut(duration: 0.32).delay(0.18), value: entered)
+                    LaunchProgressIndicator(progress: bootProgress, isActive: entered && !exiting)
+                        .frame(width: 118, height: 13)
+                        .opacity(entered ? 1 : 0)
+                        .offset(y: entered && !reduceMotion ? 0 : 6)
+                        .animation(.easeOut(duration: 0.32).delay(0.12), value: entered)
                 }
             }
             .opacity(exiting ? 0 : (entered ? 1 : 0))
@@ -61,7 +37,7 @@ struct LaunchMascotOverlay: View {
             .animation(.easeInOut(duration: 0.24), value: exiting)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Codessa ready")
+        .accessibilityLabel("Codessa opening")
         .contentShape(Rectangle())
         .onTapGesture { dismissNow() }
         .task { await playIntro() }
@@ -102,30 +78,21 @@ struct LaunchMascotOverlay: View {
 
         withAnimation(LaunchMascotMotion.arrive) {
             entered = true
-            sparksLit = true
         }
 
         guard !reduceMotion else {
-            try? await Task.sleep(nanoseconds: 850_000_000)
+            bootProgress = 1
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             dismissNow()
             return
         }
 
-        withAnimation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true)) {
-            floating = true
+        bootProgress = 0.08
+        withAnimation(.easeInOut(duration: 2.72)) {
+            bootProgress = 1
         }
 
-        try? await Task.sleep(nanoseconds: 620_000_000)
-        withAnimation(.easeInOut(duration: 0.10)) {
-            wink = true
-        }
-
-        try? await Task.sleep(nanoseconds: 120_000_000)
-        withAnimation(.easeInOut(duration: 0.14)) {
-            wink = false
-        }
-
-        try? await Task.sleep(nanoseconds: 1_050_000_000)
+        try? await Task.sleep(nanoseconds: 3_100_000_000)
         dismissNow()
     }
 
@@ -149,6 +116,132 @@ struct LaunchMascotOverlay: View {
 
 private enum LaunchMascotMotion {
     static let arrive = Animation.spring(response: 0.52, dampingFraction: 0.74)
+}
+
+private struct LaunchProgressIndicator: View {
+    var progress: CGFloat
+    var isActive: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let clampedProgress = min(max(progress, 0), 1)
+            let fillWidth = max(proxy.size.width * clampedProgress, clampedProgress > 0 ? 8 : 0)
+
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(CodexTheme.composerBackground.opacity(0.58))
+                    .frame(height: proxy.size.height)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(CodexTheme.composerBorder.opacity(0.54), lineWidth: 1)
+                    )
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                CodexTheme.accent.opacity(0.88),
+                                CodexTheme.focusAccent.opacity(0.96),
+                                CodexTheme.textPrimary.opacity(0.84)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth, height: proxy.size.height)
+                    .shadow(color: CodexTheme.accent.opacity(0.42), radius: 7, x: 0, y: 0)
+
+                if isActive && clampedProgress > 0.12 && clampedProgress < 0.98 {
+                    Capsule(style: .continuous)
+                        .fill(.white.opacity(0.58))
+                        .frame(width: 16, height: proxy.size.height)
+                        .blur(radius: 1.4)
+                        .offset(x: max(0, fillWidth - 18))
+                        .blendMode(.plusLighter)
+                }
+            }
+        }
+        .frame(height: 5)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SpriteSheetMascotView: View {
+    var isAnimating: Bool
+
+    @State private var frameIndex = 0
+    @State private var frames: [NSImage] = []
+
+    var body: some View {
+        Group {
+            if frames.indices.contains(frameIndex) {
+                Image(nsImage: frames[frameIndex])
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(CodexTheme.accent)
+            }
+        }
+        .accessibilityHidden(true)
+        .task {
+            loadFramesIfNeeded()
+        }
+        .task(id: isAnimating) {
+            loadFramesIfNeeded()
+
+            guard isAnimating, frames.count > 1 else {
+                frameIndex = 0
+                return
+            }
+
+            frameIndex = 0
+
+            for nextIndex in 1..<frames.count {
+                try? await Task.sleep(nanoseconds: 92_000_000)
+                guard !Task.isCancelled, !frames.isEmpty else { return }
+                frameIndex = nextIndex
+            }
+        }
+    }
+
+    @MainActor
+    private func loadFramesIfNeeded() {
+        guard frames.isEmpty else { return }
+        frames = MascotSpriteFrames.load()
+    }
+}
+
+private enum MascotSpriteFrames {
+    private static let directory = "Assets/Sprites/codessa-mascot-v2-frames"
+
+    static func load() -> [NSImage] {
+        (1...32).compactMap { index in
+            let name = String(format: "codessa-mascot-v2-%02d", index)
+            if let bundled = Bundle.main.url(forResource: name, withExtension: "png"),
+               let image = NSImage(contentsOf: bundled) {
+                return image
+            }
+            if let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: directory),
+               let image = NSImage(contentsOf: bundled) {
+                return image
+            }
+
+            #if DEBUG
+            let sourceURL = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .appendingPathComponent("../../Assets/Sprites/codessa-mascot-v2-frames/\(name).png")
+                .standardizedFileURL
+            return NSImage(contentsOf: sourceURL)
+            #else
+            return nil
+            #endif
+        }
+    }
 }
 
 private struct LaunchLineField: View {
@@ -176,171 +269,5 @@ private struct LaunchLineField: View {
             )
         }
         .allowsHitTesting(false)
-    }
-}
-
-private struct CodessaMascotMark: View {
-    var entered: Bool
-    var sparksLit: Bool
-    var floating: Bool
-    var wink: Bool
-    var reduceMotion: Bool
-
-    var body: some View {
-        ZStack {
-            ForEach(0..<8, id: \.self) { index in
-                LaunchSpark(index: index, lit: sparksLit, drifting: floating && !reduceMotion)
-            }
-
-            RoundedRectangle(cornerRadius: 42, style: .continuous)
-                .strokeBorder(CodexTheme.accent.opacity(0.18), lineWidth: 1)
-                .frame(width: entered ? 142 : 82, height: entered ? 110 : 72)
-                .scaleEffect(floating && !reduceMotion ? 1.05 : 0.97)
-                .opacity(entered ? 1 : 0)
-                .animation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true), value: floating)
-
-            mascotBody
-                .scaleEffect(entered ? 1 : 0.72)
-                .offset(y: reduceMotion ? 0 : (floating ? -5 : 3))
-                .rotationEffect(.degrees(reduceMotion ? 0 : (entered ? -1.2 : -8)))
-                .animation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true), value: floating)
-        }
-    }
-
-    private var mascotBody: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            CodexTheme.composerBackground,
-                            CodexTheme.composerShellBackground,
-                            CodexTheme.accentDeep.opacity(0.34)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 112, height: 88)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.58),
-                                    CodexTheme.composerBorder.opacity(0.76),
-                                    CodexTheme.accent.opacity(0.44)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.35
-                        )
-                )
-                .shadow(color: CodexTheme.accent.opacity(0.22), radius: 28, y: 12)
-                .shadow(color: CodexTheme.shadowColor.opacity(0.36), radius: 20, y: 14)
-
-            VStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(CodexTheme.accent.opacity(0.68))
-                        .frame(width: 7, height: 7)
-                    Circle()
-                        .fill(CodexTheme.focusAccent.opacity(0.78))
-                        .frame(width: 7, height: 7)
-                    Capsule(style: .continuous)
-                        .fill(CodexTheme.textTertiary.opacity(0.22))
-                        .frame(width: 28, height: 6)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 17)
-                .padding(.top, 14)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 16) {
-                    MascotEye(isWinking: false)
-                    MascotEye(isWinking: wink)
-                }
-                .padding(.bottom, 8)
-
-                HStack(spacing: 5) {
-                    Text(">")
-                        .font(.system(size: 16, weight: .black, design: .monospaced))
-                        .foregroundStyle(CodexTheme.accent)
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(CodexTheme.textPrimary.opacity(floating && !reduceMotion ? 0.46 : 0.9))
-                        .frame(width: 11, height: 16)
-                }
-                .padding(.bottom, 13)
-            }
-            .frame(width: 112, height: 88)
-
-            Text("</>")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.78))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(CodexTheme.accent.opacity(0.76))
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(.white.opacity(0.32), lineWidth: 1)
-                )
-                .offset(x: 34, y: -44)
-                .rotationEffect(.degrees(5))
-        }
-    }
-}
-
-private struct MascotEye: View {
-    var isWinking: Bool
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(CodexTheme.textPrimary.opacity(0.88))
-            .frame(width: 12, height: isWinking ? 3 : 11)
-            .overlay(alignment: .topLeading) {
-                Circle()
-                    .fill(.white.opacity(isWinking ? 0 : 0.82))
-                    .frame(width: 3.5, height: 3.5)
-                    .offset(x: 2.5, y: 2.3)
-            }
-    }
-}
-
-private struct LaunchSpark: View {
-    let index: Int
-    var lit: Bool
-    var drifting: Bool
-
-    var body: some View {
-        let angle = (Double(index) / 8.0) * 360.0
-        let radians = angle * .pi / 180.0
-        let x = CGFloat(cos(radians)) * (lit ? 78 : 30)
-        let y = CGFloat(sin(radians)) * (lit ? 52 : 22)
-        let long = index.isMultiple(of: 2)
-
-        Capsule(style: .continuous)
-            .fill(sparkFill)
-            .frame(width: long ? 18 : 7, height: 3.5)
-            .rotationEffect(.degrees(angle + (drifting ? 15 : -8)))
-            .offset(x: x, y: y + (drifting ? CGFloat(index % 3 - 1) * 4 : 0))
-            .scaleEffect(lit ? 1 : 0.35)
-            .opacity(lit ? (long ? 0.86 : 0.62) : 0)
-            .animation(.spring(response: 0.42, dampingFraction: 0.72).delay(Double(index) * 0.035), value: lit)
-            .animation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true), value: drifting)
-    }
-
-    private var sparkFill: some ShapeStyle {
-        if index.isMultiple(of: 3) {
-            return AnyShapeStyle(CodexTheme.focusAccent)
-        }
-        if index.isMultiple(of: 2) {
-            return AnyShapeStyle(CodexTheme.accent)
-        }
-        return AnyShapeStyle(CodexTheme.textTertiary.opacity(0.72))
     }
 }

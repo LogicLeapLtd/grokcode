@@ -1,6 +1,39 @@
 import AppKit
 import SwiftUI
 
+private enum SidebarMetrics {
+    static let outerHorizontal: CGFloat = 8
+    static let rowHorizontal: CGFloat = 10
+    static let rowVertical: CGFloat = 5
+    static let headerVertical: CGFloat = 6
+    static let navHorizontal: CGFloat = 9
+    static let navVertical: CGFloat = 6
+    static let navSpacing: CGFloat = 9
+    static let childVertical: CGFloat = 4
+    static let sectionGap: CGFloat = 6
+    static let titleFont: CGFloat = 12
+    static let bodyFont: CGFloat = 13
+    static let navFont: CGFloat = 14
+    static let detailFont: CGFloat = 11.5
+    static let captionFont: CGFloat = 10.5
+    static let iconFont: CGFloat = 13
+    static let navIconFont: CGFloat = 14.5
+    static let navIconBox: CGFloat = 19
+    static let cornerRadius: CGFloat = 7
+    static let nameIndent: CGFloat = 18
+    static let branchHeaderIndent: CGFloat = 11
+    static let railButtonWidth: CGFloat = 38
+    static let railButtonHeight: CGFloat = 32
+}
+
+private struct CollapsedRailTooltipAnchorKey: PreferenceKey {
+    static var defaultValue: [String: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 struct SidebarView: View {
     @Environment(AppViewModel.self) private var model
     @EnvironmentObject private var license: LicenseManager
@@ -17,8 +50,7 @@ struct SidebarView: View {
     @State private var renameDraft: String = ""
     /// Live drag width so the resize feels immediate (committed to the model).
     @State private var dragStartWidth: Double?
-    /// Which collapsed-rail item is hovered, keyed by its label — drives the
-    /// custom slide-in tooltip that replaces the slow system `.help()` bubble.
+    /// Collapsed-rail item currently showing its outside-the-sidebar tooltip.
     @State private var hoveredRailItem: String?
     @State private var sidebarScrollOffset: CGFloat = 0
     @State private var sidebarScrollContentHeight: CGFloat = 0
@@ -66,10 +98,30 @@ struct SidebarView: View {
                 .overlay(CodexTheme.glassTint)
                 .ignoresSafeArea()
         }
+        .overlayPreferenceValue(CollapsedRailTooltipAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if usesCollapsedLayout,
+                   let hoveredRailItem,
+                   let anchor = anchors[hoveredRailItem] {
+                    let rect = proxy[anchor]
+
+                    RailTooltip(text: hoveredRailItem)
+                        .fixedSize()
+                        .offset(x: rect.maxX + 10, y: rect.midY - 15)
+                        .allowsHitTesting(false)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(x: -4)),
+                            removal: .opacity
+                        ))
+                        .zIndex(10)
+                }
+            }
+        }
         .overlay(alignment: .trailing) {
             if !usesCollapsedLayout { resizeHandle }
         }
         .animation(CodexMotion.sidebarCollapse, value: usesCollapsedLayout)
+        .animation(CodexMotion.quickSpring, value: hoveredRailItem)
         // Animate width changes ONLY when they aren't from the live drag (e.g.
         // restoring a saved width). During an active drag the width tracks the
         // cursor 1:1 with no implicit spring, which removes the stutter.
@@ -96,8 +148,8 @@ struct SidebarView: View {
                 .padding(.bottom, 2)
 
             navSection
-                .padding(.horizontal, 8)
-                .padding(.bottom, 14)
+                .padding(.horizontal, SidebarMetrics.outerHorizontal)
+                .padding(.bottom, 10)
 
             projectsSection
 
@@ -109,48 +161,21 @@ struct SidebarView: View {
 
             accountRow
         }
-        .padding(.top, 2)
+        .padding(.top, 0)
     }
 
-    /// Slim top strip that just clears the macOS traffic-light controls, so the
-    /// first nav row ("New chat") sits right beneath them. The collapse toggle
-    /// now lives on the "New chat" row (see `navSection`).
+    /// Tiny top spacer; window-level controls now live beside the traffic
+    /// lights, so the first nav row can sit closer to the title bar.
     private var header: some View {
         Color.clear
-            .frame(height: 12)
-            // The strip overlaps the title-bar drag region; mark it draggable-safe
-            // so a press here doesn't fight the window drag.
+            .frame(height: 2)
             .background(NonDraggableRegion())
     }
 
-    private var collapseToggle: some View {
-        Button { model.toggleSidebarCollapsed() } label: {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(CodexTheme.textSecondary)
-                .frame(width: 28, height: 26)
-                .codexHover(cornerRadius: 7)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(model.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")
-    }
-
     private var navSection: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(SidebarSection.allCases) { section in
-                if section == .newChat {
-                    // The collapse toggle rides on the trailing edge of the
-                    // "New chat" row so it lines up with it, instead of floating
-                    // alone in the title-bar strip above.
-                    ZStack(alignment: .trailing) {
-                        navRow(section)
-                        collapseToggle
-                            .padding(.trailing, 4)
-                    }
-                } else {
-                    navRow(section)
-                }
+                navRow(section)
             }
         }
     }
@@ -163,13 +188,14 @@ struct SidebarView: View {
             guard !locked else { return }
             handleNav(section)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: SidebarMetrics.navSpacing) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                    .frame(width: 16)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: SidebarMetrics.navIconFont, weight: .regular))
+                    .foregroundStyle(navIconColor(active: active, locked: locked))
+                    .frame(width: SidebarMetrics.navIconBox)
                 Text(section.title)
-                    .font(.system(size: 14))
+                    .font(.system(size: SidebarMetrics.navFont, weight: .medium))
                     .foregroundStyle(CodexTheme.textPrimary)
                 Spacer()
                 if locked {
@@ -178,17 +204,17 @@ struct SidebarView: View {
                         .foregroundStyle(CodexTheme.textTertiary)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, SidebarMetrics.navHorizontal)
+            .padding(.vertical, SidebarMetrics.navVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
                     .fill(active ? CodexTheme.navHighlight : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .codexHover(cornerRadius: 8)
+        .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
         .opacity(locked ? 0.5 : 1)
         .help(locked ? "\(section.title) requires the full app" : section.title)
         .animation(CodexMotion.quickSpring, value: active)
@@ -196,17 +222,21 @@ struct SidebarView: View {
     }
 
     private var projectsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SidebarMetrics.sectionGap) {
             SidebarControlsBar()
 
             GeometryReader { viewport in
                 ZStack(alignment: .trailing) {
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(alignment: .leading, spacing: 1) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
                             if model.sidebarGroupBy == .flatList {
                                 flatThreadList
                             } else {
                                 groupedProjectList
+                            }
+
+                            if showsProjectEmptyState {
+                                projectEmptyState
                             }
 
                             if !model.noProjectThreads.isEmpty {
@@ -258,11 +288,11 @@ struct SidebarView: View {
         ForEach(model.sidebarProjectGroups) { group in
             if !group.title.isEmpty {
                 Text(group.title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: SidebarMetrics.captionFont, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                    .padding(.horizontal, SidebarMetrics.rowHorizontal)
+                    .padding(.top, 6)
+                    .padding(.bottom, 3)
             }
 
             ForEach(group.projects) { project in
@@ -280,7 +310,7 @@ struct SidebarView: View {
                     renameDraft: $renameDraft,
                     isThreadPinned: { pinnedThreadIDs.contains($0) },
                     isThreadArchived: { archivedThreadIDs.contains($0) },
-                    onSelectProject: { model.openProjectDetail(project) },
+                    onRevealProject: { model.revealProjectInSidebar(project) },
                     onNewChat: { model.startNewChatInProject(project) },
                     onToggleCollapse: { model.toggleProjectCollapsed(project) },
                     onToggleBranchCollapse: { model.toggleBranchCollapsed(project, branch: $0.branch) },
@@ -298,20 +328,76 @@ struct SidebarView: View {
         }
     }
 
+    private var showsProjectEmptyState: Bool {
+        model.sidebarGroupBy != .flatList
+            && model.sidebarProjectGroups.isEmpty
+            && model.noProjectThreads.isEmpty
+    }
+
+    private var projectEmptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(projectEmptyTitle)
+                .font(.system(size: SidebarMetrics.bodyFont, weight: .medium))
+                .foregroundStyle(CodexTheme.textPrimary)
+            Text(projectEmptyDetail)
+                .font(.system(size: SidebarMetrics.captionFont))
+                .foregroundStyle(CodexTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if model.sidebarStatusFilter != .all, !model.projects.isEmpty {
+                Button {
+                    model.sidebarStatusFilter = .all
+                    model.persistSidebarPreferences()
+                } label: {
+                    Label("Show all folders", systemImage: "square.grid.2x2")
+                        .font(.system(size: SidebarMetrics.captionFont, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(CodexTheme.textSecondary)
+                .codexHover(cornerRadius: 6)
+            }
+        }
+        .padding(.horizontal, SidebarMetrics.rowHorizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var projectEmptyTitle: String {
+        if model.projects.isEmpty { return "No project folders" }
+        switch model.sidebarStatusFilter {
+        case .withChats: return "No projects with chats"
+        case .pinnedOnly: return "No pinned projects"
+        case .noChats, .all: return "No projects"
+        }
+    }
+
+    private var projectEmptyDetail: String {
+        if model.projects.isEmpty {
+            return "Add a folder to scan for projects."
+        }
+        switch model.sidebarStatusFilter {
+        case .withChats:
+            return "\(model.projects.count) folder\(model.projects.count == 1 ? "" : "s") discovered, hidden by the With chats filter."
+        case .pinnedOnly:
+            return "\(model.projects.count) folder\(model.projects.count == 1 ? "" : "s") discovered, but none are pinned."
+        case .noChats, .all:
+            return "Try refreshing projects or adding another folder."
+        }
+    }
+
     private var flatThreadList: some View {
         Group {
             if model.sidebarFlatThreads.isEmpty {
                 Text("No chats")
                     .font(CodexTheme.smallFont)
                     .foregroundStyle(CodexTheme.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, SidebarMetrics.rowHorizontal)
+                    .padding(.vertical, 6)
             } else {
                 ForEach(model.sidebarFlatThreads) { item in
                     if item.isPending {
                         PendingChatRow(leadingInset: 0)
                     } else {
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 0) {
                             flatThreadRow(item)
                             if !item.subThreads.isEmpty {
                                 let expanded = expandedFlatSubagentIDs.contains(item.id)
@@ -343,31 +429,31 @@ struct SidebarView: View {
                 in: item.project
             )
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 0) {
                     Text(item.title)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.system(size: SidebarMetrics.bodyFont, weight: .regular))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 8)
                     Text(item.ageLabel)
-                        .font(.system(size: 12))
+                        .font(.system(size: SidebarMetrics.detailFont))
                         .foregroundStyle(CodexTheme.textTertiary)
                         .fixedSize()
                 }
 
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Text(item.project.name)
-                        .font(.system(size: 12))
+                        .font(.system(size: SidebarMetrics.detailFont))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     BranchChip(branch: item.project.gitBranch ?? "none")
                 }
                 .foregroundStyle(CodexTheme.textTertiary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.rowVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
@@ -378,6 +464,14 @@ struct SidebarView: View {
             threadContextMenu(
                 ProjectThread(id: item.id, title: item.title, ageLabel: item.ageLabel),
                 in: item.project
+            )
+        }
+        .onDrag {
+            NSItemProvider(
+                object: model.dragPayload(
+                    for: ProjectThread(id: item.id, title: item.title, ageLabel: item.ageLabel),
+                    in: item.project
+                ) as NSString
             )
         }
         // Bind hover state to the row identity so a recycled slot
@@ -419,8 +513,8 @@ struct SidebarView: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.childVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
@@ -428,6 +522,14 @@ struct SidebarView: View {
         .buttonStyle(.plain)
         .codexHover(cornerRadius: 0)
         .help(item.title)
+        .onDrag {
+            NSItemProvider(
+                object: model.dragPayload(
+                    for: ProjectThread(id: item.id, title: item.title, ageLabel: item.ageLabel),
+                    in: item.project
+                ) as NSString
+            )
+        }
         .id(item.id)
     }
 
@@ -438,22 +540,22 @@ struct SidebarView: View {
     /// edge) to match the rest of the sidebar's full-width rows.
     private var accountRow: some View {
         CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 AccountAvatar(initials: accountInitials)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(accountDisplayName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: SidebarMetrics.bodyFont, weight: .medium))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Text(accountPlanLabel)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: SidebarMetrics.detailFont))
                         .foregroundStyle(CodexTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isOpen ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
@@ -471,13 +573,13 @@ struct SidebarView: View {
     private func accountMenuContent(close: @escaping () -> Void) -> some View {
         CodexMenuContainer {
             HStack(spacing: 8) {
-                AccountAvatar(initials: accountInitials, diameter: 26)
+                AccountAvatar(initials: accountInitials, diameter: 24)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(accountDisplayName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(CodexTheme.textPrimary)
                     Text(accountPlanLabel)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(CodexTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
@@ -544,20 +646,15 @@ struct SidebarView: View {
 
     // MARK: - Collapsed rail (#23)
 
-    /// A slim icon-only rail. The toggle expands it; nav + the account menu
-    /// stay reachable (the latter mirrors `accountRow` so collapsing the
-    /// sidebar never hides an action that's only reachable when expanded).
+    /// A slim icon-only rail. Nav + the account menu stay reachable (the latter
+    /// mirrors `accountRow` so collapsing the sidebar never hides an action
+    /// that's only reachable when expanded).
     private var collapsedRail: some View {
-        VStack(spacing: 4) {
-            railButton(symbol: "sidebar.left", help: "Expand sidebar") {
-                model.toggleSidebarCollapsed()
-            }
-            .padding(.bottom, 6)
-
+        VStack(spacing: 3) {
             ForEach(SidebarSection.allCases) { section in
                 railButton(
                     symbol: section.symbol,
-                    help: isLimited(section) ? "\(section.title) requires the full app" : section.title,
+                    accessibilityLabel: isLimited(section) ? "\(section.title) requires the full app" : section.title,
                     active: isPrimaryNavActive(section),
                     locked: isLimited(section)
                 ) { handleNav(section) }
@@ -568,11 +665,11 @@ struct SidebarView: View {
             collapsedAccountButton
         }
         .padding(.horizontal, 8)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
-    private func railButton(symbol: String, help: String, active: Bool = false, locked: Bool = false,
+    private func railButton(symbol: String, accessibilityLabel: String, active: Bool = false, locked: Bool = false,
                             action: @escaping () -> Void) -> some View {
         Button {
             guard !locked else { return }
@@ -580,51 +677,44 @@ struct SidebarView: View {
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                    .frame(width: 40, height: 34)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(navIconColor(active: active, locked: locked))
+                    .frame(width: SidebarMetrics.railButtonWidth, height: SidebarMetrics.railButtonHeight)
 
                 if locked {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(CodexTheme.textTertiary)
-                        .offset(x: -6, y: -6)
+                        .offset(x: -5, y: -5)
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
                     .fill(active ? CodexTheme.navHighlight : Color.clear)
             )
-            .codexHover(cornerRadius: 8)
+            .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(locked ? 0.5 : 1)
+        .accessibilityLabel(Text(accessibilityLabel))
         .onHover { hovering in
             if hovering {
-                hoveredRailItem = help
-            } else if hoveredRailItem == help {
+                hoveredRailItem = accessibilityLabel
+            } else if hoveredRailItem == accessibilityLabel {
                 hoveredRailItem = nil
             }
         }
-        // A styled tooltip that floats to the right of the rail. The custom
-        // `.trailing` alignment guide pins the bubble's *leading* edge to the
-        // button's trailing edge, so it sits fully outside the slim rail.
-        .overlay(alignment: .trailing) {
-            if hoveredRailItem == help {
-                RailTooltip(text: help)
-                    .alignmentGuide(.trailing) { $0[.leading] }
-                    .offset(x: 12)
-                    .allowsHitTesting(false)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(x: -6)),
-                        removal: .opacity
-                    ))
-                    .zIndex(1)
-            }
+        .anchorPreference(key: CollapsedRailTooltipAnchorKey.self, value: .bounds) {
+            [accessibilityLabel: $0]
         }
-        .animation(CodexMotion.quickSpring, value: hoveredRailItem)
         .animation(CodexMotion.quickSpring, value: locked)
+    }
+
+    private func navIconColor(active: Bool, locked: Bool) -> Color {
+        if locked { return CodexTheme.textTertiary }
+        return active ? CodexTheme.navIconActiveForeground : CodexTheme.navIconForeground
     }
 
     /// The collapsed rail's account entry point — same sizing/hover treatment
@@ -633,17 +723,18 @@ struct SidebarView: View {
     private var collapsedAccountButton: some View {
         CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
             AccountAvatar(initials: accountInitials, diameter: 22)
-                .frame(width: 40, height: 34)
+                .frame(width: SidebarMetrics.railButtonWidth, height: SidebarMetrics.railButtonHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
                         .fill(isOpen ? CodexTheme.navHighlight : Color.clear)
                 )
-                .codexHover(cornerRadius: 8)
+                .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
                 .contentShape(Rectangle())
         } menu: { close in
             accountMenuContent(close: close)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text("Account"))
         .onHover { hovering in
             if hovering {
                 hoveredRailItem = "Account"
@@ -651,20 +742,9 @@ struct SidebarView: View {
                 hoveredRailItem = nil
             }
         }
-        .overlay(alignment: .trailing) {
-            if hoveredRailItem == "Account" {
-                RailTooltip(text: "Account")
-                    .alignmentGuide(.trailing) { $0[.leading] }
-                    .offset(x: 12)
-                    .allowsHitTesting(false)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(x: -6)),
-                        removal: .opacity
-                    ))
-                    .zIndex(1)
-            }
+        .anchorPreference(key: CollapsedRailTooltipAnchorKey.self, value: .bounds) {
+            ["Account": $0]
         }
-        .animation(CodexMotion.quickSpring, value: hoveredRailItem)
     }
 
     // MARK: - Resize handle (#22)
@@ -724,7 +804,7 @@ struct SidebarView: View {
 
     private var showsProjectSelection: Bool {
         switch model.activePage {
-        case .chat, .projectDetail, .projectContext:
+        case .chat, .projectContext:
             true
         case .home, .search, .plugins, .automations, .settings:
             false
@@ -760,6 +840,8 @@ struct SidebarView: View {
             pinnedThreadIDs.remove(thread.id)
         case .copy:
             model.copyThreadTitle(thread)
+        case .openInSplitView:
+            model.openThreadInNewSplitPane(thread, project: project)
         }
     }
 
@@ -789,6 +871,8 @@ struct SidebarView: View {
             pinnedThreadIDs.remove(thread.id)
         case .copy:
             model.copyThreadTitle(thread)
+        case .openInSplitView:
+            model.openThreadInNewSplitPane(thread, project: nil)
         }
     }
 
@@ -815,6 +899,7 @@ struct SidebarView: View {
             Button("Archive") { handleThreadAction(.archive, thread: thread, in: project) }
         }
         Button("Copy") { handleThreadAction(.copy, thread: thread, in: project) }
+        Button("Open in split view") { handleThreadAction(.openInSplitView, thread: thread, in: project) }
         Divider()
         Button("Delete", role: .destructive) { handleThreadAction(.delete, thread: thread, in: project) }
     }
@@ -822,7 +907,7 @@ struct SidebarView: View {
 
 /// Actions surfaced on a chat row's right-click menu (#27).
 enum ThreadAction {
-    case rename, delete, archive, unarchive, pin, unpin, copy
+    case rename, delete, archive, unarchive, pin, unpin, copy, openInSplitView
 }
 
 // MARK: - Sidebar scroll tuning
@@ -881,51 +966,66 @@ private struct SidebarScrollViewConfigurator: NSViewRepresentable {
     }
 }
 
-// MARK: - Collapsed-rail tooltip
+// MARK: - Collapsed rail tooltip
 
-/// A small, attractive tooltip shown beside a collapsed-rail icon on hover.
-/// Replaces the slow, OS-styled system `.help()` bubble with an instant,
-/// theme-matched glass pill plus a little pointer toward the icon.
 private struct RailTooltip: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 0) {
-            // A small triangular pointer aiming back at the rail icon.
-            Triangle()
-                .fill(.ultraThinMaterial)
-                .frame(width: 6, height: 11)
-                .overlay(
-                    Triangle().stroke(CodexTheme.composerBorder.opacity(0.7), lineWidth: 0.5)
-                )
-
-            Text(text)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(CodexTheme.textPrimary)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(CodexTheme.composerBorder.opacity(0.7), lineWidth: 0.5)
-                )
-        }
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(CodexTheme.textPrimary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.leading, 16)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(
+                TooltipBubble()
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                TooltipBubble()
+                    .stroke(CodexTheme.composerBorder.opacity(0.72), lineWidth: 0.5)
+            )
         .shadow(color: CodexTheme.shadowColor.opacity(0.35), radius: 8, x: 0, y: 3)
     }
 }
 
-/// A left-pointing triangle used as the tooltip's pointer.
-private struct Triangle: Shape {
+private struct TooltipBubble: Shape {
     func path(in rect: CGRect) -> Path {
+        let pointerWidth: CGFloat = 8
+        let pointerHeight: CGFloat = 14
+        let cornerRadius: CGFloat = 8
+        let bodyMinX = rect.minX + pointerWidth
+        let pointerTopY = rect.midY - pointerHeight / 2
+        let pointerBottomY = rect.midY + pointerHeight / 2
+
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.move(to: CGPoint(x: bodyMinX + cornerRadius, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + cornerRadius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - cornerRadius, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: bodyMinX + cornerRadius, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: bodyMinX, y: rect.maxY - cornerRadius),
+            control: CGPoint(x: bodyMinX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: bodyMinX, y: pointerBottomY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: bodyMinX, y: pointerTopY))
+        path.addLine(to: CGPoint(x: bodyMinX, y: rect.minY + cornerRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: bodyMinX + cornerRadius, y: rect.minY),
+            control: CGPoint(x: bodyMinX, y: rect.minY)
+        )
         path.closeSubpath()
         return path
     }
@@ -961,7 +1061,7 @@ private struct BranchChip: View {
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 9, weight: .medium))
             Text(branch)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -992,14 +1092,14 @@ private struct PendingChatRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("New chat")
-                .font(.system(size: 13))
+                .font(.system(size: SidebarMetrics.bodyFont))
                 .foregroundStyle(CodexTheme.textSecondary)
                 .padding(.leading, leadingInset)
                 .lineLimit(1)
             Spacer(minLength: 8)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, SidebarMetrics.rowHorizontal)
+        .padding(.vertical, SidebarMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .opacity(reduceMotion ? 0.6 : (pulse ? 0.35 : 1.0))
@@ -1032,8 +1132,8 @@ private func subagentToggleRow(count: Int, isExpanded: Bool, leadingInset: CGFlo
         }
         .foregroundStyle(CodexTheme.textTertiary)
         .padding(.leading, leadingInset)
-        .padding(.trailing, 8)
-        .padding(.vertical, 3)
+        .padding(.trailing, SidebarMetrics.rowHorizontal)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -1083,7 +1183,7 @@ private struct ProjectSidebarBlock: View {
     @Binding var renameDraft: String
     let isThreadPinned: (String) -> Bool
     let isThreadArchived: (String) -> Bool
-    let onSelectProject: () -> Void
+    let onRevealProject: () -> Void
     let onNewChat: () -> Void
     let onToggleCollapse: () -> Void
     let onToggleBranchCollapse: (SidebarBranchGroup) -> Void
@@ -1103,41 +1203,47 @@ private struct ProjectSidebarBlock: View {
     // aligning fully under the project name — just past the chevron/folder so the
     // nesting reads clearly without eating horizontal space. Branch sub-headers
     // sit a touch shallower so their chats nest visibly beneath them.
-    private let nameIndent: CGFloat = 20
-    private let branchHeaderIndent: CGFloat = 12
+    private let nameIndent: CGFloat = SidebarMetrics.nameIndent
+    private let branchHeaderIndent: CGFloat = SidebarMetrics.branchHeaderIndent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            // Header row: a separate leading chevron toggles collapse, while the
-            // name area selects the project. Both share a single hover highlight.
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row: both the leading chevron and the project name area act
+            // as disclosure controls. The plus keeps new-chat creation separate.
             HStack(spacing: 0) {
                 if collapsibleEnabled {
                     Button(action: onToggleCollapse) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(CodexTheme.textTertiary)
                             .rotationEffect(.degrees(collapsed ? 0 : 90))
-                            .frame(width: 18, height: 22)
+                            .frame(width: 14, height: 18)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help(collapsed ? "Expand project" : "Collapse project")
                 } else {
-                    Color.clear.frame(width: 18, height: 22)
+                    Color.clear.frame(width: 14, height: 18)
                 }
 
-                Button(action: onSelectProject) {
-                    HStack(spacing: 8) {
+                Button {
+                    if collapsibleEnabled {
+                        onToggleCollapse()
+                    } else {
+                        onRevealProject()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
                         Image(systemName: isPinned ? "pin.fill" : "folder")
-                            .font(.system(size: 13, weight: .regular))
+                            .font(.system(size: SidebarMetrics.iconFont, weight: .regular))
                             .foregroundStyle(CodexTheme.textSecondary)
-                            .frame(width: 16)
+                            .frame(width: SidebarMetrics.navIconBox)
 
                         // Full name, truncating only when it actually runs out of
                         // width (no premature hard clip). Takes the space left of
                         // the right-pinned branch chip.
                         Text(project.name)
-                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                            .font(.system(size: SidebarMetrics.bodyFont, weight: isSelected ? .medium : .regular))
                             .foregroundStyle(CodexTheme.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -1145,22 +1251,22 @@ private struct ProjectSidebarBlock: View {
 
                         Spacer(minLength: 8)
 
-                        // Branch indicator pinned to the right; "none" when the
-                        // folder isn't a git repo so it never implies a branch.
+                        // Keep the branch slot visible so project rows retain
+                        // their familiar anchor even in the compact layout.
                         BranchChip(branch: project.gitBranch ?? "none")
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Open \(project.name) overview")
+                .help(collapsibleEnabled ? (collapsed ? "Expand \(project.name)" : "Collapse \(project.name)") : "Select \(project.name)")
 
                 // Quick "new chat in this project" affordance, revealed on hover
                 // of the row so it doesn't clutter the resting state.
                 Button(action: onNewChat) {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(CodexTheme.textSecondary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .codexHover(cornerRadius: 6)
                         .contentShape(Rectangle())
                 }
@@ -1168,9 +1274,9 @@ private struct ProjectSidebarBlock: View {
                 .opacity(rowHovering ? 1 : 0)
                 .help("New chat in \(project.name)")
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 12)
-            .padding(.vertical, 7)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .padding(.vertical, SidebarMetrics.headerVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onHover { rowHovering = $0 }
             .background(isSelected ? CodexTheme.navHighlight : Color.clear)
@@ -1180,14 +1286,6 @@ private struct ProjectSidebarBlock: View {
             // the LazyVStack can't retain a stale highlight from another project.
             .id(project.id)
             .animation(CodexMotion.quickSpring, value: collapsed)
-            // Double-tap anywhere on the project row toggles its expansion
-            // (quick alternative to the leading chevron). Runs alongside the
-            // single-tap "open overview" so both gestures stay available.
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded {
-                    if collapsibleEnabled { onToggleCollapse() }
-                }
-            )
             .contextMenu {
                 if collapsibleEnabled {
                     Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
@@ -1201,13 +1299,13 @@ private struct ProjectSidebarBlock: View {
                 if project.threads.isEmpty {
                     HStack(spacing: 0) {
                         Text("No chats")
-                            .font(.system(size: 13))
+                            .font(.system(size: SidebarMetrics.bodyFont))
                             .foregroundStyle(CodexTheme.textTertiary)
                             .padding(.leading, nameIndent)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, SidebarMetrics.rowHorizontal)
+                    .padding(.vertical, SidebarMetrics.rowVertical)
                 } else if groupByBranch {
                     branchGroupedThreads
                 } else {
@@ -1217,7 +1315,7 @@ private struct ProjectSidebarBlock: View {
                 }
             }
         }
-        .padding(.bottom, collapsed ? 0 : 4)
+        .padding(.bottom, collapsed ? 0 : 2)
     }
 
     /// "By project → branch" sub-grouping (#25): a small branch sub-header per
@@ -1229,7 +1327,7 @@ private struct ProjectSidebarBlock: View {
             Button {
                 if collapsibleEnabled { onToggleBranchCollapse(group) }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     if collapsibleEnabled {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .semibold))
@@ -1246,8 +1344,8 @@ private struct ProjectSidebarBlock: View {
                 }
                 .foregroundStyle(CodexTheme.textTertiary)
                 .padding(.leading, branchHeaderIndent)
-                .padding(.trailing, 8)
-                .padding(.top, 5)
+                .padding(.trailing, SidebarMetrics.rowHorizontal)
+                .padding(.top, 4)
                 .padding(.bottom, 2)
                 .contentShape(Rectangle())
             }
@@ -1269,7 +1367,7 @@ private struct ProjectSidebarBlock: View {
         if thread.isPending {
             PendingChatRow(leadingInset: nameIndent)
         } else {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 singleThreadRow(thread)
                 if !thread.subThreads.isEmpty {
                     let expanded = expandedSubagentThreadIDs.contains(thread.id)
@@ -1302,14 +1400,14 @@ private struct ProjectSidebarBlock: View {
                 renameField(thread)
             } else {
                 Button { onSelectThread(thread) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if isThreadPinned(thread.id) {
                             Image(systemName: "pin.fill")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 8, weight: .semibold))
                                 .foregroundStyle(CodexTheme.textTertiary)
                         }
                         Text(thread.title)
-                            .font(.system(size: 13))
+                            .font(.system(size: SidebarMetrics.bodyFont))
                             .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -1318,12 +1416,12 @@ private struct ProjectSidebarBlock: View {
                         Spacer(minLength: 8)
 
                         Text(thread.ageLabel)
-                            .font(.system(size: 12))
+                            .font(.system(size: SidebarMetrics.detailFont))
                             .foregroundStyle(CodexTheme.textTertiary)
                             .fixedSize()
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, SidebarMetrics.rowHorizontal)
+                    .padding(.vertical, SidebarMetrics.rowVertical)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isActive ? CodexTheme.navHighlight : Color.clear)
                     .opacity(isThreadArchived(thread.id) ? 0.45 : 1)
@@ -1332,6 +1430,9 @@ private struct ProjectSidebarBlock: View {
                 .buttonStyle(.plain)
                 .codexHover(cornerRadius: 0)
                 .contextMenu { rowContextMenu(thread) }
+                .onDrag {
+                    NSItemProvider(object: SplitPaneDragPayload.thread(thread, project: project) as NSString)
+                }
             }
         }
         // Tie hover state to the row's identity so a recycled LazyVStack slot
@@ -1347,7 +1448,7 @@ private struct ProjectSidebarBlock: View {
         let isActive = activeThreadId == thread.id
 
         Button { onSelectThread(thread) } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
@@ -1370,8 +1471,8 @@ private struct ProjectSidebarBlock: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.childVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
@@ -1380,6 +1481,9 @@ private struct ProjectSidebarBlock: View {
         .codexHover(cornerRadius: 0)
         .help(thread.title)
         .contextMenu { rowContextMenu(thread) }
+        .onDrag {
+            NSItemProvider(object: SplitPaneDragPayload.thread(thread, project: project) as NSString)
+        }
         .id(thread.id)
     }
 
@@ -1387,11 +1491,11 @@ private struct ProjectSidebarBlock: View {
     private func renameField(_ thread: ProjectThread) -> some View {
         TextField("", text: $renameDraft)
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .font(.system(size: SidebarMetrics.bodyFont))
             .foregroundStyle(CodexTheme.textPrimary)
             .padding(.leading, nameIndent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.rowVertical)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(CodexTheme.composerBackground)
@@ -1418,6 +1522,7 @@ private struct ProjectSidebarBlock: View {
             Button("Archive") { onThreadAction(.archive, thread) }
         }
         Button("Copy") { onThreadAction(.copy, thread) }
+        Button("Open in split view") { onThreadAction(.openInSplitView, thread) }
         Divider()
         Button("Delete", role: .destructive) { onThreadAction(.delete, thread) }
     }
@@ -1445,27 +1550,27 @@ private struct NoProjectChatsSection: View {
     /// busy chat doesn't flood the sidebar with nested rows by default.
     @State private var expandedSubagentThreadIDs: Set<String> = []
 
-    private let nameIndent: CGFloat = 20
+    private let nameIndent: CGFloat = SidebarMetrics.nameIndent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 collapsed.toggle()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(CodexTheme.textTertiary)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
-                        .frame(width: 18, height: 22)
+                        .frame(width: 14, height: 18)
                     Text("Chats")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: SidebarMetrics.bodyFont, weight: .semibold))
                         .foregroundStyle(CodexTheme.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 8)
-                .padding(.trailing, 12)
-                .padding(.vertical, 7)
+                .padding(.leading, 6)
+                .padding(.trailing, 8)
+                .padding(.vertical, SidebarMetrics.headerVertical)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -1479,14 +1584,14 @@ private struct NoProjectChatsSection: View {
                 }
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 5)
         .animation(CodexMotion.quickSpring, value: collapsed)
     }
 
     /// A chat row plus any subagent chats it spawned, nested beneath it.
     @ViewBuilder
     private func threadRow(_ thread: ProjectThread) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             singleThreadRow(thread)
             if !thread.subThreads.isEmpty {
                 let expanded = expandedSubagentThreadIDs.contains(thread.id)
@@ -1518,14 +1623,14 @@ private struct NoProjectChatsSection: View {
                 renameField(thread)
             } else {
                 Button { onSelectThread(thread) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if isThreadPinned(thread.id) {
                             Image(systemName: "pin.fill")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 8, weight: .semibold))
                                 .foregroundStyle(CodexTheme.textTertiary)
                         }
                         Text(thread.title)
-                            .font(.system(size: 13))
+                            .font(.system(size: SidebarMetrics.bodyFont))
                             .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -1534,12 +1639,12 @@ private struct NoProjectChatsSection: View {
                         Spacer(minLength: 8)
 
                         Text(thread.ageLabel)
-                            .font(.system(size: 12))
+                            .font(.system(size: SidebarMetrics.detailFont))
                             .foregroundStyle(CodexTheme.textTertiary)
                             .fixedSize()
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, SidebarMetrics.rowHorizontal)
+                    .padding(.vertical, SidebarMetrics.rowVertical)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isActive ? CodexTheme.navHighlight : Color.clear)
                     .opacity(isThreadArchived(thread.id) ? 0.45 : 1)
@@ -1548,6 +1653,9 @@ private struct NoProjectChatsSection: View {
                 .buttonStyle(.plain)
                 .codexHover(cornerRadius: 0)
                 .contextMenu { rowContextMenu(thread) }
+                .onDrag {
+                    NSItemProvider(object: SplitPaneDragPayload.thread(thread, project: nil) as NSString)
+                }
             }
         }
         .id(thread.id)
@@ -1558,7 +1666,7 @@ private struct NoProjectChatsSection: View {
         let isActive = activeThreadId == thread.id
 
         Button { onSelectThread(thread) } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
@@ -1581,8 +1689,8 @@ private struct NoProjectChatsSection: View {
                     .foregroundStyle(CodexTheme.textTertiary)
                     .fixedSize()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.childVertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? CodexTheme.navHighlight : Color.clear)
             .contentShape(Rectangle())
@@ -1591,17 +1699,20 @@ private struct NoProjectChatsSection: View {
         .codexHover(cornerRadius: 0)
         .help(thread.title)
         .contextMenu { rowContextMenu(thread) }
+        .onDrag {
+            NSItemProvider(object: SplitPaneDragPayload.thread(thread, project: nil) as NSString)
+        }
         .id(thread.id)
     }
 
     private func renameField(_ thread: ProjectThread) -> some View {
         TextField("", text: $renameDraft)
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .font(.system(size: SidebarMetrics.bodyFont))
             .foregroundStyle(CodexTheme.textPrimary)
             .padding(.leading, nameIndent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, SidebarMetrics.rowHorizontal)
+            .padding(.vertical, SidebarMetrics.rowVertical)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(CodexTheme.composerBackground)
@@ -1628,6 +1739,7 @@ private struct NoProjectChatsSection: View {
             Button("Archive") { onThreadAction(.archive, thread) }
         }
         Button("Copy") { onThreadAction(.copy, thread) }
+        Button("Open in split view") { onThreadAction(.openInSplitView, thread) }
         Divider()
         Button("Delete", role: .destructive) { onThreadAction(.delete, thread) }
     }

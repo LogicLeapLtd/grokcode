@@ -11,7 +11,7 @@ extension AppViewModel {
     // MARK: - Resize handle (#22)
 
     /// Apply a new sidebar width from the trailing drag handle. The stored
-    /// property's `didSet` clamps to `220...420` and persists, so callers can
+    /// property's `didSet` clamps to `240...340` and persists, so callers can
     /// pass a raw drag value; we round to a whole point to avoid sub-pixel
     /// churn while dragging.
     func setSidebarWidth(_ width: Double) {
@@ -26,10 +26,9 @@ extension AppViewModel {
 
     // MARK: - Collapse (#23)
 
-    /// Width of the collapsed icon rail. Wide enough that the rail still covers
-    /// the macOS traffic-light buttons (≈x20–68) when collapsed, so they sit on
-    /// the sidebar glass rather than spilling onto the main pane.
-    var collapsedSidebarWidth: Double { 72 }
+    /// Width of the collapsed icon rail. Keep this close to the icon column's
+    /// natural width so the collapsed sidebar reads as a rail, not a skinny pane.
+    var collapsedSidebarWidth: Double { 56 }
 
     /// Effective sidebar width accounting for the collapsed rail (#22/#23).
     var effectiveSidebarWidth: Double {
@@ -68,6 +67,7 @@ extension AppViewModel {
         if activeSessionId == thread.id {
             startNewChat()
         }
+        invalidateSidebarCaches()
     }
 
     /// Copy a chat's title to the clipboard (#27 "Copy").
@@ -84,6 +84,7 @@ extension AppViewModel {
         if selectedProject?.id == project.id {
             selectedProject = projects[pIndex]
         }
+        invalidateSidebarCaches()
     }
 
     // MARK: - Branch sub-grouping (#25)

@@ -71,13 +71,13 @@ struct SlashCommand: Identifiable, Hashable {
 
     /// All commands, in display order.
     static let all: [SlashCommand] = [
-        SlashCommand(id: "new",         title: "/new",         subtitle: "Start a new chat",       systemImage: "square.and.pencil",            kind: .navigation),
+        SlashCommand(id: "new",         title: "/new",         subtitle: "Start a new chat",       systemImage: "plus.bubble",                  kind: .navigation),
         SlashCommand(id: "clear",       title: "/clear",       subtitle: "Clear the composer",     systemImage: "eraser",                       kind: .action),
         SlashCommand(id: "plan",        title: "/plan",        subtitle: "Toggle Plan mode",       systemImage: "list.bullet.clipboard",        kind: .action),
         SlashCommand(id: "model",       title: "/model",       subtitle: "Choose the model",       systemImage: "cpu",                          kind: .inlineModel),
-        SlashCommand(id: "search",      title: "/search",      subtitle: "Open Search",            systemImage: "magnifyingglass",              kind: .navigation),
-        SlashCommand(id: "plugins",     title: "/plugins",     subtitle: "Open Plugins",           systemImage: "puzzlepiece.extension",        kind: .navigation),
-        SlashCommand(id: "automations", title: "/automations", subtitle: "Open Automations",       systemImage: "wand.and.stars",               kind: .navigation),
+        SlashCommand(id: "search",      title: "/search",      subtitle: "Open Search",            systemImage: "text.magnifyingglass",         kind: .navigation),
+        SlashCommand(id: "plugins",     title: "/plugins",     subtitle: "Open Plugins",           systemImage: "shippingbox",                  kind: .navigation),
+        SlashCommand(id: "automations", title: "/automations", subtitle: "Open Automations",       systemImage: "clock.arrow.circlepath",       kind: .navigation),
         SlashCommand(id: "settings",    title: "/settings",    subtitle: "Open Settings",          systemImage: "gearshape",                    kind: .navigation),
     ]
 

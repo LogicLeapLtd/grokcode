@@ -6,22 +6,30 @@ import Foundation
 /// any custom binary. This extension owns detection, selection, and the
 /// convenience accessors the onboarding dock, composer, and Settings read.
 ///
-/// Execution note: live runs currently route through the wired engine (Grok).
-/// A non-wired provider can be detected and selected — Codessa surfaces that
-/// honestly (`selectedProviderIsWired`) rather than pretending every CLI's
-/// streaming protocol is implemented.
 @MainActor
 extension AppViewModel {
     private var registry: ProviderRegistry { .shared }
+    private var defaultProviderKey: String { "grokcode.defaultProviderInstanceId" }
 
     /// Re-detect installed providers and sync the selected id from the registry.
     func refreshProviders() {
         providerStatuses = registry.detectAll()
-        selectedProviderId = registry.selectedProviderId
+        selectedProviderId = UserDefaults.standard.string(forKey: defaultProviderKey) ?? registry.selectedProviderId
         // If the persisted selection points at a provider that no longer exists
-        // (e.g. a removed custom one), fall back to the wired default.
+        // (e.g. a removed custom one), fall back to the first runnable provider.
         if !providerStatuses.contains(where: { $0.provider.id == selectedProviderId }) {
-            selectProvider(AgentProvider.wiredDefault.id)
+            selectProvider(providerStatuses.first(where: \.installed)?.provider.id ?? AgentProvider.wiredDefault.id)
+        }
+        syncModelsForSelectedProvider()
+    }
+
+    func refreshProviderSnapshots() async {
+        let snapshots = await AgentProviderRuntime.shared.snapshots(for: providerStatuses.isEmpty ? registry.detectAll() : providerStatuses)
+        providerStatuses = snapshots
+        if !providerStatuses.contains(where: { $0.provider.id == selectedProviderId }) {
+            selectProvider(providerStatuses.first(where: \.installed)?.provider.id ?? AgentProvider.wiredDefault.id)
+        } else {
+            syncModelsForSelectedProvider()
         }
     }
 
@@ -31,9 +39,12 @@ extension AppViewModel {
             ?? registry.selectedProvider()
     }
 
-    /// Whether Codessa has a wired streaming adapter for the selected provider.
-    /// Drives the honest "live runs route through Grok" notice in the UI.
+    /// Whether Codessa has a direct runtime path for the selected provider.
     var selectedProviderIsWired: Bool { selectedProvider.streamingWired }
+
+    var selectedProviderStatus: ProviderStatus? {
+        providerStatuses.first { $0.provider.id == selectedProviderId }
+    }
 
     /// Count of providers detected on disk — surfaced in onboarding ("2 of 7
     /// ready").
@@ -50,7 +61,10 @@ extension AppViewModel {
     /// Persist a provider choice and mirror it locally.
     func selectProvider(_ id: String) {
         registry.selectedProviderId = id
+        UserDefaults.standard.set(id, forKey: defaultProviderKey)
         selectedProviderId = id
+        syncModelsForSelectedProvider()
+        persistDefaults()
     }
 
     /// Sign-in / setup entry point for a provider — opens Terminal at the login
@@ -93,5 +107,92 @@ extension AppViewModel {
         guard provider.isCustom else { return }
         registry.removeCustomProvider(id: provider.id)
         refreshProviders()
+    }
+
+    func modelOptions(for providerId: String) -> [GrokModelOption] {
+        providerStatuses.first { $0.provider.id == providerId }?.models
+            ?? AgentProvider.known.first { $0.id == providerId }.map(AgentProviderModelCatalog.models(for:))
+            ?? []
+    }
+
+    func modelOptions(forProviderID providerId: String) -> [GrokModelOption] {
+        modelOptions(for: providerId)
+    }
+
+    func modelOption(providerId: String, modelId: String) -> GrokModelOption? {
+        modelOptions(for: providerId).first { $0.id == modelId }
+    }
+
+    func selectModel(_ option: GrokModelOption) {
+        if option.providerId != selectedProviderId {
+            selectProvider(option.providerId)
+        }
+        selectedModel = option
+        seedDefaultOptions(for: option)
+        persistDefaults()
+    }
+
+    func selectedOptionValue(for descriptor: ProviderOptionDescriptor, model: GrokModelOption? = nil) -> String? {
+        let optionModel = model ?? selectedModel
+        guard let optionModel else { return descriptor.defaultValue }
+        return modelOptionSelections[optionSelectionKey(model: optionModel, descriptorId: descriptor.id)]
+            ?? descriptor.defaultValue
+    }
+
+    func setSelectedOptionValue(_ value: String, for descriptor: ProviderOptionDescriptor, model: GrokModelOption? = nil) {
+        guard let optionModel = model ?? selectedModel else { return }
+        modelOptionSelections[optionSelectionKey(model: optionModel, descriptorId: descriptor.id)] = value
+        persistDefaults()
+    }
+
+    func runOptions(for option: GrokModelOption) -> [String: String] {
+        var out: [String: String] = [:]
+        for descriptor in option.optionDescriptors {
+            if let value = modelOptionSelections[optionSelectionKey(model: option, descriptorId: descriptor.id)]
+                ?? descriptor.defaultValue {
+                out[descriptor.id] = value
+                if descriptor.id.lowercased().contains("reasoning") || descriptor.id.lowercased().contains("effort") {
+                    out["reasoning"] = value
+                }
+            }
+        }
+        return out
+    }
+
+    func syncModelsForSelectedProvider() {
+        let providerModels = modelOptions(for: selectedProviderId)
+        models = providerModels
+
+        let defaults = UserDefaults.standard
+        let savedProviderModel = defaults.string(forKey: "grokcode.defaultModel.\(selectedProviderId)")
+        let legacySaved = selectedProviderId == AgentProvider.grok.id ? defaults.string(forKey: "grokcode.defaultModel") : nil
+        let saved = savedProviderModel ?? legacySaved
+
+        if let current = selectedModel,
+           current.providerId == selectedProviderId,
+           providerModels.contains(where: { $0.id == current.id }) {
+            seedDefaultOptions(for: current)
+            return
+        }
+
+        selectedModel = saved.flatMap { id in providerModels.first { $0.id == id } }
+            ?? providerModels.first(where: \.isDefault)
+            ?? providerModels.first
+        if let selectedModel {
+            seedDefaultOptions(for: selectedModel)
+        }
+    }
+
+    private func seedDefaultOptions(for option: GrokModelOption) {
+        for descriptor in option.optionDescriptors {
+            let key = optionSelectionKey(model: option, descriptorId: descriptor.id)
+            if modelOptionSelections[key] == nil, let value = descriptor.defaultValue {
+                modelOptionSelections[key] = value
+            }
+        }
+    }
+
+    private func optionSelectionKey(model: GrokModelOption, descriptorId: String) -> String {
+        "\(model.providerId)::\(model.id)::\(descriptorId)"
     }
 }

@@ -15,6 +15,7 @@ final class CodexMenuController {
         var content: () -> AnyView    // rebuilt every host render so it stays live
         var minWidth: CGFloat
         var edge: VerticalEdge        // .bottom = open downward, .top = upward
+        var maxHeight: CGFloat?
     }
 
     var active: Active?
@@ -38,12 +39,13 @@ final class CodexMenuController {
     }
 
     func toggle<V: View>(id: UUID, anchor: CGRect, minWidth: CGFloat, edge: VerticalEdge,
+                         maxHeight: CGFloat? = nil,
                          @ViewBuilder content: @escaping () -> V) {
         if active?.id == id {
             active = nil
         } else {
             active = Active(id: id, anchor: anchor, content: { AnyView(content()) },
-                            minWidth: minWidth, edge: edge)
+                            minWidth: minWidth, edge: edge, maxHeight: maxHeight)
         }
     }
 
@@ -79,6 +81,7 @@ final class CodexMenuController {
 
 private struct CodexMenuHost: ViewModifier {
     @Environment(CodexMenuController.self) private var controller
+    private static let maxCardWidth: CGFloat = 360
     /// Last-measured height of the open card, used to decide which way the menu
     /// should open and how tall it may be before it has to scroll.
     @State private var cardHeight: CGFloat = 0
@@ -89,16 +92,20 @@ private struct CodexMenuHost: ViewModifier {
                 GeometryReader { geo in
                     let host = geo.frame(in: .global)
                     let gap: CGFloat = 6
+                    let estimatedWidth = min(
+                        max(active.minWidth, Self.maxCardWidth),
+                        max(0, geo.size.width - 16)
+                    )
                     // Clamp left edge so the card stays on-screen (estimate width via minWidth).
                     let x = min(max(8, active.anchor.minX - host.minX),
-                                max(8, geo.size.width - active.minWidth - 8))
+                                max(8, geo.size.width - estimatedWidth - 8))
                     let topSpace = max(0, active.anchor.minY - host.minY - gap)     // room above anchor
                     let bottomSpace = max(0, host.maxY - active.anchor.maxY - gap)  // room below anchor
                     let belowY = active.anchor.maxY - host.minY + gap              // just below anchor
                     // Honour the requested edge while it fits; otherwise flip to
                     // whichever side has more room so the card never runs
                     // off-screen (the bug on the new-chat page).
-                    let needed = cardHeight + gap
+                    let needed = min(cardHeight, active.maxHeight ?? cardHeight) + gap
                     let openUp: Bool = {
                         switch active.edge {
                         case .top:    return topSpace >= needed || topSpace >= bottomSpace
@@ -117,25 +124,23 @@ private struct CodexMenuHost: ViewModifier {
                         if openUp {
                             VStack(spacing: 0) {
                                 Spacer(minLength: 0)
-                                clampedCard(active, maxHeight: topSpace)
+                                clampedCard(active, maxHeight: active.clampedHeight(for: topSpace))
                             }
                             .frame(height: topSpace, alignment: .bottomLeading)
                             .offset(x: x)
                         } else {
-                            clampedCard(active, maxHeight: bottomSpace)
+                            clampedCard(active, maxHeight: active.clampedHeight(for: bottomSpace))
                                 .offset(x: x, y: belowY)
                         }
                     }
                 }
                 .ignoresSafeArea()
-                .transition(
-                    .scale(scale: 0.96, anchor: .top)
-                        .combined(with: .opacity)
-                        .combined(with: .offset(y: -5))
-                )
+                .transition(.opacity)
             }
         }
-        .animation(CodexMotion.panelSpring, value: controller.active?.id)
+        .onChange(of: controller.active?.id) { _, _ in
+            cardHeight = 0
+        }
     }
 
     /// The menu card, measured (to drive edge selection) and — only when it
@@ -163,8 +168,8 @@ private struct CodexMenuHost: ViewModifier {
 
     private func card(_ active: CodexMenuController.Active) -> some View {
         active.content()
-            .frame(minWidth: active.minWidth, alignment: .leading)
-            .fixedSize()
+            .frame(minWidth: active.minWidth, maxWidth: max(active.minWidth, Self.maxCardWidth), alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .liquidGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous),
                          fallback: CodexTheme.menuBackground)
             .overlay(
@@ -172,7 +177,12 @@ private struct CodexMenuHost: ViewModifier {
                     .strokeBorder(CodexTheme.menuBorder, lineWidth: 1)
             )
             .shadow(color: CodexTheme.menuShadow, radius: 16, y: 6)
-            .animation(CodexMotion.panelSpring, value: cardHeight)
+    }
+}
+
+private extension CodexMenuController.Active {
+    func clampedHeight(for availableSpace: CGFloat) -> CGFloat {
+        min(availableSpace, maxHeight ?? availableSpace)
     }
 }
 
@@ -190,7 +200,9 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
 
     var minWidth: CGFloat = 220
     var edge: VerticalEdge = .bottom
+    var maxHeight: CGFloat? = nil
     var highlightOnHover: Bool = true
+    var fillWidth: Bool = false
     /// Dev/QA only: open this menu automatically shortly after appearing.
     var autoOpen: Bool = false
     @ViewBuilder var label: (_ isOpen: Bool) -> Label
@@ -208,7 +220,7 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
     }
 
     private func open() {
-        controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge) {
+        controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge, maxHeight: maxHeight) {
             menu({ controller.close() })
         }
     }
@@ -216,21 +228,23 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
     var body: some View {
         Button { open() } label: {
             label(isOpen)
+                .frame(maxWidth: fillWidth ? .infinity : nil, alignment: .leading)
                 .padding(.horizontal, highlightOnHover ? 8 : 0)
                 .padding(.vertical, highlightOnHover ? 5 : 0)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule(style: .continuous)
                         // Open → lit in the brand accent so the active trigger
                         // stands out; plain hover stays neutral.
                         .fill(triggerFill)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule(style: .continuous)
                         .strokeBorder(isOpen ? CodexTheme.accent.opacity(0.5) : .clear, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: fillWidth ? .infinity : nil, alignment: .leading)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .animation(CodexMotion.quickSpring, value: isOpen)

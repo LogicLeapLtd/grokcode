@@ -64,8 +64,15 @@ struct Automation: Identifiable, Hashable, Codable {
     /// directory (the "no project" case, matching the chat flow).
     var projectPath: String?
 
+    /// Provider instance id and model id to run with. Older automations did not
+    /// persist `providerId`; they decode as Grok for compatibility.
+    var providerId: String
+
     /// Model id to run with, e.g. "grok-composer-2.5-fast".
     var modelId: String
+
+    /// Provider/model option selections, keyed by provider option id.
+    var optionSelections: [String: String]
 
     /// Trigger type.
     var scheduleKind: AutomationScheduleKind
@@ -104,7 +111,9 @@ struct Automation: Identifiable, Hashable, Codable {
         name: String,
         prompt: String,
         projectPath: String? = nil,
+        providerId: String = AgentProvider.grok.id,
         modelId: String,
+        optionSelections: [String: String] = [:],
         scheduleKind: AutomationScheduleKind = .manual,
         intervalMinutes: Int? = nil,
         timeOfDay: String? = nil,
@@ -117,7 +126,9 @@ struct Automation: Identifiable, Hashable, Codable {
         self.name = name
         self.prompt = prompt
         self.projectPath = projectPath
+        self.providerId = providerId
         self.modelId = modelId
+        self.optionSelections = optionSelections
         self.scheduleKind = scheduleKind
         self.intervalMinutes = intervalMinutes
         self.timeOfDay = timeOfDay
@@ -130,7 +141,7 @@ struct Automation: Identifiable, Hashable, Codable {
     // MARK: Codable — tolerate older blobs without `runHistory`.
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, prompt, projectPath, modelId, scheduleKind
+        case id, name, prompt, projectPath, providerId, modelId, optionSelections, scheduleKind
         case intervalMinutes, timeOfDay, enabled, lastRun, createdAt, runHistory
     }
 
@@ -140,7 +151,9 @@ struct Automation: Identifiable, Hashable, Codable {
         name = try c.decode(String.self, forKey: .name)
         prompt = try c.decode(String.self, forKey: .prompt)
         projectPath = try c.decodeIfPresent(String.self, forKey: .projectPath)
+        providerId = try c.decodeIfPresent(String.self, forKey: .providerId) ?? AgentProvider.grok.id
         modelId = try c.decode(String.self, forKey: .modelId)
+        optionSelections = try c.decodeIfPresent([String: String].self, forKey: .optionSelections) ?? [:]
         scheduleKind = try c.decode(AutomationScheduleKind.self, forKey: .scheduleKind)
         intervalMinutes = try c.decodeIfPresent(Int.self, forKey: .intervalMinutes)
         timeOfDay = try c.decodeIfPresent(String.self, forKey: .timeOfDay)

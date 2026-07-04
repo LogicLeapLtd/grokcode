@@ -91,7 +91,7 @@ nonisolated struct GrokStreamEvent: Decodable {
 /// Thread-safe holder for the per-run streaming state. The stdout readability
 /// handler, the watchdog timer, and the termination handler all run on
 /// different threads, so every field is guarded by `lock`.
-private final class StreamState: @unchecked Sendable {
+private nonisolated final class StreamState: @unchecked Sendable {
     private let lock = NSLock()
     private var sessionId: String?
     private var stderr = ""
@@ -245,6 +245,11 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         return value
     }
 
+    private func resetCancelFlag() {
+        processLock.lock(); defer { processLock.unlock() }
+        didCancel = false
+    }
+
     private func setRunningProcess(_ process: Process?) {
         processLock.lock(); defer { processLock.unlock() }
         runningProcess = process
@@ -299,7 +304,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         onEvent: @escaping @Sendable (GrokStreamEvent) -> Void
     ) async throws -> String? {
         // Reset cancel flag for this run.
-        processLock.lock(); didCancel = false; processLock.unlock()
+        resetCancelFlag()
 
         let state = StreamState()
 

@@ -23,6 +23,23 @@ enum CodexMotion {
         )
     }
 
+    static var utilityPageTransition: AnyTransition {
+        // Dense utility pages (search, plugins, automations) read better as a
+        // workspace being brought forward than as a scaled card. The slight
+        // lateral drift plus blur gives the entrance a new feel without moving
+        // the page far enough to fight the fixed sidebar.
+        .asymmetric(
+            insertion: .modifier(
+                active: UtilityPageTransitionModifier(progress: 0, xOffset: 34),
+                identity: UtilityPageTransitionModifier(progress: 1, xOffset: 0)
+            ),
+            removal: .modifier(
+                active: UtilityPageTransitionModifier(progress: 0, xOffset: -14),
+                identity: UtilityPageTransitionModifier(progress: 1, xOffset: 0)
+            )
+        )
+    }
+
     static var modalTransition: AnyTransition {
         .scale(scale: 0.94, anchor: .center)
             .combined(with: .opacity)
@@ -38,6 +55,26 @@ enum CodexMotion {
     }
 }
 
+private struct UtilityPageTransitionModifier: AnimatableModifier {
+    var progress: Double
+    var xOffset: CGFloat
+
+    var animatableData: AnimatablePair<Double, CGFloat> {
+        get { AnimatablePair(progress, xOffset) }
+        set {
+            progress = newValue.first
+            xOffset = newValue.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(progress)
+            .blur(radius: (1 - progress) * 7)
+            .offset(x: xOffset)
+    }
+}
+
 struct CodexPageTransition: ViewModifier {
     let identity: String
 
@@ -45,6 +82,16 @@ struct CodexPageTransition: ViewModifier {
         content
             .id(identity)
             .transition(CodexMotion.pageTransition)
+    }
+}
+
+struct CodexUtilityPageTransition: ViewModifier {
+    let identity: String
+
+    func body(content: Content) -> some View {
+        content
+            .id(identity)
+            .transition(CodexMotion.utilityPageTransition)
     }
 }
 
@@ -184,6 +231,10 @@ extension View {
 extension View {
     func codexPage(_ identity: String) -> some View {
         modifier(CodexPageTransition(identity: identity))
+    }
+
+    func codexUtilityPage(_ identity: String) -> some View {
+        modifier(CodexUtilityPageTransition(identity: identity))
     }
 
     func codexStaggeredAppear(index: Int = 0) -> some View {

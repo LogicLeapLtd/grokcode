@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-04
+
+### Added
+- **Production recovery release** that rolls in the post-1.1 local work: split
+  workspace panes, expanded Settings, mode routing, attachment previews,
+  provider runtime scaffolding, refreshed launch mascot assets, and the latest
+  shell/composer polish.
+- **Local build handoff flow** for agent sessions. Finished local builds can be
+  dropped into `~/Library/Application Support/Codessa/PendingUpdate/` and the
+  running app prompts with "New build ready" instead of requiring manual bundle
+  copies.
+- **Session finalization gate** via `scripts/finalize-codex-session.sh`, making
+  dirty-tree checks, private builds, local update handoff, and approved release
+  publishing an explicit end-of-session step.
+
+### Changed
+- Codessa is now permanently unlocked as a free build while the old licensing
+  machinery remains dormant for any future paid build.
+- Release source is pushed to a dedicated `release/v<version>` branch before
+  creating the GitHub release, so published DMGs are tied to recoverable source.
+
 ## [1.1.0] - 2026-07-04
 
 ### Added
@@ -80,5 +101,7 @@ First public release of Codessa — a native SwiftUI macOS client for the
 - Fixed input placeholders, mode-menu shortcuts, and modal dropdowns.
 - Fixed no-project privacy prompts and the thinking-dots animation.
 
-[Unreleased]: https://github.com/joshmatthews/GrokCode/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/joshmatthews/GrokCode/releases/tag/v1.0.0
+[Unreleased]: https://github.com/LogicLeapLtd/grokcode/compare/v1.2...HEAD
+[1.2.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.2
+[1.1.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.1
+[1.0.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.0

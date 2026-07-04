@@ -2,14 +2,17 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppViewModel.self) private var model
+    @EnvironmentObject private var update: UpdateService
+
+    private let titlebarControlsTopInset: CGFloat = 1
 
     /// License/trial gate. Owned here as a `@StateObject` so its lifetime matches
     /// the primary window and its published state drives the paywall/banner.
     @StateObject private var license = LicenseManager()
 
-    /// In-app updater. Owned here so its lifetime matches the window; drives the
-    /// "Check for updates" dialog and the sidebar's update badge.
-    @StateObject private var update = UpdateService()
+    /// Local build handoff watcher. Future Codex/Claude sessions drop a built
+    /// app into Application Support; the running canonical app offers it here.
+    @StateObject private var localBuildUpdate = LocalBuildUpdateService()
 
     @State private var showLaunchMascot = true
 
@@ -61,8 +64,10 @@ struct ContentView: View {
                 // the app has bootstrapped, so onboarding wins the initial
                 // surface and license state settles into the non-blocking banner.
                 license.bootstrap()
-                // Quietly check for a newer release in the background; only lights
-                // the sidebar badge, never pops the dialog uninvited.
+                // Quietly check for a newer release in the background. If one is
+                // found, show a small bottom-right prompt instead of popping the
+                // full dialog uninvited.
+                localBuildUpdate.startWatching()
                 update.checkInBackgroundIfEnabled()
             }
             .onChange(of: license.isInLimitedMode) { _, limited in
@@ -116,19 +121,28 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if showLaunchMascot {
+            if showLaunchMascot && model.preferences.showLaunchMascot {
                 LaunchMascotOverlay {
                     showLaunchMascot = false
                 }
                 .transition(.opacity)
-                .zIndex(400)
+                    .zIndex(400)
             }
         }
-        .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
-        .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
-        .animation(.easeOut(duration: 0.18), value: model.fullScreenImagePath)
-        .animation(.easeOut(duration: 0.22), value: showLaunchMascot)
-        .animation(CodexMotion.modalSpring, value: update.isDialogPresented)
+        .overlay(alignment: .bottomTrailing) {
+            bottomRightUpdatePrompts
+                .padding(.trailing, 22)
+                .padding(.bottom, 22)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(350)
+        }
+        .animation(model.preferences.reduceMotion ? nil : CodexMotion.modalSpring, value: model.commandPaletteOpen)
+        .animation(model.preferences.reduceMotion ? nil : CodexMotion.modalSpring, value: model.onboardingOpen)
+        .animation(model.preferences.reduceMotion ? nil : .easeOut(duration: 0.18), value: model.fullScreenImagePath)
+        .animation(model.preferences.reduceMotion ? nil : .easeOut(duration: 0.22), value: showLaunchMascot)
+        .animation(model.preferences.reduceMotion ? nil : CodexMotion.modalSpring, value: update.isDialogPresented)
+        .animation(CodexMotion.quickSpring, value: update.updateAvailableInBackground)
+        .animation(CodexMotion.quickSpring, value: localBuildUpdate.hasPromptableBuild)
         .environmentObject(license)
         .environmentObject(update)
         .codexMenuHost()
@@ -142,6 +156,111 @@ struct ContentView: View {
     private func dismissUpdateDialog() {
         if case .installing = update.phase { return }
         update.isDialogPresented = false
+    }
+
+    @ViewBuilder
+    private var bottomRightUpdatePrompts: some View {
+        if localBuildUpdate.hasPromptableBuild {
+            localBuildPromptToast
+        } else if update.updateAvailableInBackground && !update.isDialogPresented {
+            releaseUpdatePromptToast
+        }
+    }
+
+    private var localBuildPromptToast: some View {
+        HStack(spacing: 10) {
+            Image(systemName: localBuildUpdate.isInstalling ? "arrow.triangle.2.circlepath.circle.fill" : "shippingbox.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(CodexTheme.accent)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(localBuildUpdate.isInstalling ? "Installing update" : "New build ready")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Text(localBuildUpdate.pendingBuild?.versionLabel ?? "Installing and relaunching")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(CodexTheme.textSecondary)
+            }
+
+            if localBuildUpdate.isInstalling {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 24, height: 24)
+            } else {
+                Button { localBuildUpdate.installAndRelaunch() } label: {
+                    Text("Update & Relaunch")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(CodexTheme.sendButtonActiveBackground)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button { localBuildUpdate.snoozeCurrent() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(CodexTheme.pillBackground))
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss this local build")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(CodexTheme.composerBorder.opacity(0.82), lineWidth: 1)
+        )
+        .shadow(color: CodexTheme.shadowColor.opacity(0.30), radius: 18, y: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .help("Install local Codessa build")
+    }
+
+    private var releaseUpdatePromptToast: some View {
+        Button { update.presentDialog() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(CodexTheme.accent)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                    Text("Install the latest Codessa build")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(CodexTheme.composerBorder.opacity(0.82), lineWidth: 1)
+            )
+            .shadow(color: CodexTheme.shadowColor.opacity(0.30), radius: 18, y: 8)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Open software update")
     }
 
     private var windowBackdrop: some View {
@@ -198,7 +317,7 @@ struct ContentView: View {
         }
         .background(NonDraggableRegion())
         .padding(.leading, 74)
-        .padding(.top, 0)
+        .padding(.top, titlebarControlsTopInset)
     }
 
     private func titlebarButton(_ symbol: String,

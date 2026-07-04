@@ -27,10 +27,9 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
     let docsURL: String
     /// A 1–2 char monogram used as a fallback glyph in the provider dock.
     let monogram: String
-    /// Whether Codessa has a wired, tested streaming adapter for this provider's
-    /// CLI protocol. Grok is fully wired today; the others are detected and
-    /// selectable, and Codessa is honest that live runs route through the wired
-    /// engine until each provider's protocol is implemented.
+    /// Whether Codessa has a first-class runtime adapter for this provider's
+    /// CLI protocol. Providers without one can still be surfaced and configured,
+    /// but the run path will use the generic/custom command runner.
     let streamingWired: Bool
 
     var isCustom: Bool { explicitBinaryPath != nil }
@@ -42,18 +41,18 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
         binaryNames: ["claude"], explicitBinaryPath: nil,
         installCommand: "npm install -g @anthropic-ai/claude-code",
         docsURL: "https://docs.anthropic.com/en/docs/claude-code",
-        monogram: "Cl", streamingWired: false)
+        monogram: "Cl", streamingWired: true)
 
     static let codex = AgentProvider(
         id: "codex", name: "Codex", shortName: "Codex",
         binaryNames: ["codex"], explicitBinaryPath: nil,
         installCommand: "npm install -g @openai/codex",
         docsURL: "https://github.com/openai/codex",
-        monogram: "Cx", streamingWired: false)
+        monogram: "Cx", streamingWired: true)
 
     static let cursor = AgentProvider(
         id: "cursor", name: "Cursor", shortName: "Cursor",
-        binaryNames: ["cursor-agent"], explicitBinaryPath: nil,
+        binaryNames: ["cursor-agent", "agent"], explicitBinaryPath: nil,
         installCommand: "curl https://cursor.com/install -fsS | bash",
         docsURL: "https://docs.cursor.com/en/cli/overview",
         monogram: "Cu", streamingWired: false)
@@ -63,7 +62,7 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
         binaryNames: ["gemini"], explicitBinaryPath: nil,
         installCommand: "npm install -g @google/gemini-cli",
         docsURL: "https://github.com/google-gemini/gemini-cli",
-        monogram: "Ge", streamingWired: false)
+        monogram: "Ge", streamingWired: true)
 
     static let grok = AgentProvider(
         id: "grok", name: "Grok Code", shortName: "Grok",
@@ -83,8 +82,8 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
     /// single provider is the focus.
     static let known: [AgentProvider] = [claude, cursor, codex, gemini, grok, zai]
 
-    /// The provider whose engine actually powers live runs today. Selection can
-    /// point elsewhere, but this is the wired fallback.
+    /// The historical default provider. Kept for migrations and Grok-specific
+    /// session imports, not as a universal execution fallback.
     static let wiredDefault: AgentProvider = grok
 
     /// Build a custom provider from a user-picked executable.
@@ -99,7 +98,84 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
             installCommand: binaryPath,
             docsURL: "",
             monogram: String((name.isEmpty ? base : name).prefix(1)).uppercased(),
-            streamingWired: false)
+            streamingWired: true)
+    }
+}
+
+nonisolated enum ProviderAuthStatus: String, Hashable, Codable {
+    case authenticated
+    case unauthenticated
+    case unknown
+
+    var label: String {
+        switch self {
+        case .authenticated: "Authenticated"
+        case .unauthenticated: "Sign in required"
+        case .unknown: "Unknown auth"
+        }
+    }
+}
+
+nonisolated enum ProviderRuntimeState: String, Hashable, Codable {
+    case ready
+    case warning
+    case error
+    case disabled
+
+    var label: String {
+        switch self {
+        case .ready: "Ready"
+        case .warning: "Setup needed"
+        case .error: "Error"
+        case .disabled: "Disabled"
+        }
+    }
+}
+
+nonisolated struct ProviderOptionChoice: Identifiable, Hashable, Codable {
+    let id: String
+    let title: String
+    var isDefault: Bool
+
+    init(id: String, title: String, isDefault: Bool = false) {
+        self.id = id
+        self.title = title
+        self.isDefault = isDefault
+    }
+}
+
+nonisolated struct ProviderOptionDescriptor: Identifiable, Hashable, Codable {
+    enum Kind: String, Hashable, Codable {
+        case select
+        case toggle
+        case readOnly
+    }
+
+    let id: String
+    let title: String
+    let kind: Kind
+    var choices: [ProviderOptionChoice]
+    var currentValue: String?
+    var detail: String?
+
+    init(
+        id: String,
+        title: String,
+        kind: Kind = .select,
+        choices: [ProviderOptionChoice] = [],
+        currentValue: String? = nil,
+        detail: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.choices = choices
+        self.currentValue = currentValue ?? choices.first(where: \.isDefault)?.id
+        self.detail = detail
+    }
+
+    var defaultValue: String? {
+        currentValue ?? choices.first(where: \.isDefault)?.id ?? choices.first?.id
     }
 }
 
@@ -109,6 +185,38 @@ nonisolated struct ProviderStatus: Identifiable, Hashable {
     let provider: AgentProvider
     let installed: Bool
     let binaryPath: String?
+    var version: String?
+    var authStatus: ProviderAuthStatus
+    var authLabel: String?
+    var authEmail: String?
+    var runtimeState: ProviderRuntimeState
+    var message: String?
+    var models: [GrokModelOption]
 
     var id: String { provider.id }
+    var runtimeReady: Bool { installed && runtimeState == .ready }
+
+    init(
+        provider: AgentProvider,
+        installed: Bool,
+        binaryPath: String?,
+        version: String? = nil,
+        authStatus: ProviderAuthStatus = .unknown,
+        authLabel: String? = nil,
+        authEmail: String? = nil,
+        runtimeState: ProviderRuntimeState? = nil,
+        message: String? = nil,
+        models: [GrokModelOption]? = nil
+    ) {
+        self.provider = provider
+        self.installed = installed
+        self.binaryPath = binaryPath
+        self.version = version
+        self.authStatus = authStatus
+        self.authLabel = authLabel
+        self.authEmail = authEmail
+        self.runtimeState = runtimeState ?? (installed ? .warning : .warning)
+        self.message = message
+        self.models = models ?? AgentProviderModelCatalog.models(for: provider)
+    }
 }

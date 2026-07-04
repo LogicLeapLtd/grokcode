@@ -4,6 +4,7 @@ import SwiftUI
 struct CodessaApp: App {
     @State private var appModel = AppViewModel()
     @State private var menuController = CodexMenuController()
+    @StateObject private var update = UpdateService()
 
     init() {
         // Register the bundled brand typefaces before any view renders.
@@ -15,6 +16,7 @@ struct CodessaApp: App {
             ContentView()
                 .environment(appModel)
                 .environment(menuController)
+                .environmentObject(update)
                 .frame(minWidth: 1000, minHeight: 700)
         }
         #if os(macOS)
@@ -33,6 +35,7 @@ struct CodessaApp: App {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { appModel.navigateTo(.settings) }
                     .keyboardShortcut(",", modifiers: .command)
+                Button("Check for Updates…") { update.presentDialog() }
             }
 
             // Navigation shortcuts: ⌘F search, ⌘1..4 for the primary pages.
@@ -58,6 +61,7 @@ struct CodessaApp: App {
             ChatView()
                 .environment(appModel)
                 .environment(menuController)
+                .environmentObject(update)
                 .frame(minWidth: 560, minHeight: 480)
                 .background(CodexTheme.mainBackground)
                 .codexMenuHost()

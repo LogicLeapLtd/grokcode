@@ -11,6 +11,7 @@ DerivedData/
 # Per-agent private derived-data paths, so concurrent agents don't corrupt the
 # shared build/ and don't commit build noise (see "Multi-agent & build discipline").
 .build-agent*/
+.build-final*/
 dist/
 
 # Xcode user-specific state

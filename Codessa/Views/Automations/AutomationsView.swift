@@ -60,8 +60,11 @@ struct AutomationsView: View {
             AutomationEditorSheet(
                 seed: { if case .edit(let automation) = mode { return automation } else { return nil } }(),
                 projects: model.projects,
+                providerStatuses: model.providerStatuses,
                 models: model.models,
+                defaultProviderId: model.selectedProviderId,
                 defaultModelId: model.selectedModel?.id ?? model.models.first?.id ?? "",
+                defaultOptionSelections: model.selectedModel.map { model.runOptions(for: $0) } ?? [:],
                 onSave: { automation in
                     if case .edit = mode {
                         model.updateAutomation(automation)
@@ -375,7 +378,9 @@ private struct AutomationCard: View {
     }
 
     private var modelLabel: String {
-        GrokModelOption(id: automation.modelId, isDefault: false).displayName
+        let provider = AgentProvider.known.first { $0.id == automation.providerId }?.shortName ?? automation.providerId
+        let model = GrokModelOption(id: automation.modelId, isDefault: false).displayName
+        return "\(provider) · \(model)"
     }
 
     private func metaChip(systemImage: String, text: String) -> some View {
@@ -443,15 +448,20 @@ private struct AutomationEditorSheet: View {
     /// `nil` ⇒ creating a new automation; otherwise editing this one.
     let seed: Automation?
     let projects: [Project]
+    let providerStatuses: [ProviderStatus]
     let models: [GrokModelOption]
+    let defaultProviderId: String
     let defaultModelId: String
+    let defaultOptionSelections: [String: String]
     let onSave: (Automation) -> Void
     let onCancel: () -> Void
 
     @State private var name: String = ""
     @State private var prompt: String = ""
     @State private var projectPath: String?          // nil ⇒ Home
+    @State private var providerId: String = AgentProvider.grok.id
     @State private var modelId: String = ""
+    @State private var optionSelections: [String: String] = [:]
     @State private var scheduleKind: AutomationScheduleKind = .manual
     @State private var intervalMinutes: Int = 30
     @State private var timeOfDay: String = "09:00"
@@ -495,8 +505,19 @@ private struct AutomationEditorSheet: View {
     }
 
     private var modelLabel: String {
-        models.first(where: { $0.id == modelId })?.menuName
-            ?? GrokModelOption(id: modelId, isDefault: false).displayName
+        currentModels.first(where: { $0.id == modelId })?.providerMenuName
+            ?? "\(providerLabel(providerId)) · \(modelId.isEmpty ? "Model" : modelId)"
+    }
+
+    private var currentModels: [GrokModelOption] {
+        providerStatuses.first { $0.provider.id == providerId }?.models
+            ?? (providerId == defaultProviderId ? models : [])
+    }
+
+    private func providerLabel(_ id: String) -> String {
+        providerStatuses.first { $0.provider.id == id }?.provider.shortName
+            ?? AgentProvider.known.first { $0.id == id }?.shortName
+            ?? id
     }
 
     var body: some View {
@@ -598,14 +619,20 @@ private struct AutomationEditorSheet: View {
                         field("Model") {
                             menuPicker(label: modelLabel, systemImage: "cpu") { close in
                                 CodexMenuContainer {
-                                    ForEach(models) { option in
-                                        CodexMenuItem(
-                                            title: option.menuName,
-                                            subtitle: option.isReasoningModel ? "Reasoning" : nil,
-                                            systemImage: option.isReasoningModel ? "brain" : "cpu",
-                                            isSelected: option.id == modelId
-                                        ) {
-                                            modelId = option.id; close()
+                                    ForEach(providerStatuses) { status in
+                                        CodexMenuSectionHeader(title: status.provider.shortName)
+                                        ForEach(status.models) { option in
+                                            CodexMenuItem(
+                                                title: option.menuName,
+                                                subtitle: option.isReasoningModel ? "Reasoning" : status.runtimeState.label,
+                                                systemImage: option.isReasoningModel ? "brain" : "cpu",
+                                                isSelected: option.providerId == providerId && option.id == modelId
+                                            ) {
+                                                providerId = option.providerId
+                                                modelId = option.id
+                                                seedOptionSelections(for: option)
+                                                close()
+                                            }
                                         }
                                     }
                                 }
@@ -850,14 +877,27 @@ private struct AutomationEditorSheet: View {
             name = seed.name
             prompt = seed.prompt
             projectPath = seed.projectPath
+            providerId = seed.providerId.isEmpty ? AgentProvider.grok.id : seed.providerId
             modelId = seed.modelId.isEmpty ? defaultModelId : seed.modelId
+            optionSelections = seed.optionSelections
+            if let option = currentModels.first(where: { $0.id == modelId }) {
+                seedOptionSelections(for: option)
+            }
             scheduleKind = seed.scheduleKind
             intervalMinutes = seed.intervalMinutes ?? 30
             timeOfDay = seed.timeOfDay ?? "09:00"
             enabled = seed.enabled
         } else {
+            providerId = defaultProviderId
             modelId = defaultModelId
+            optionSelections = defaultOptionSelections
             DispatchQueue.main.async { nameFocused = true }
+        }
+    }
+
+    private func seedOptionSelections(for option: GrokModelOption) {
+        for descriptor in option.optionDescriptors where optionSelections[descriptor.id] == nil {
+            optionSelections[descriptor.id] = descriptor.defaultValue
         }
     }
 
@@ -873,7 +913,9 @@ private struct AutomationEditorSheet: View {
                 name: trimmedName,
                 prompt: trimmedPrompt,
                 projectPath: projectPath,
+                providerId: providerId,
                 modelId: modelId,
+                optionSelections: optionSelections,
                 scheduleKind: scheduleKind,
                 intervalMinutes: interval,
                 timeOfDay: time,
@@ -887,7 +929,9 @@ private struct AutomationEditorSheet: View {
                 name: trimmedName,
                 prompt: trimmedPrompt,
                 projectPath: projectPath,
+                providerId: providerId,
                 modelId: modelId,
+                optionSelections: optionSelections,
                 scheduleKind: scheduleKind,
                 intervalMinutes: interval,
                 timeOfDay: time,

@@ -246,7 +246,7 @@ struct CommandPalette: View {
         var out: [PaletteCommand] = []
 
         // — Actions —
-        out.append(PaletteCommand(title: "New chat", subtitle: "Start a fresh conversation", symbol: "square.and.pencil", group: .action) {
+        out.append(PaletteCommand(title: "New chat", subtitle: "Start a fresh conversation", symbol: "plus.bubble", group: .action) {
             model.startNewChat()
         })
         out.append(PaletteCommand(title: "Open settings", symbol: "gearshape", group: .action) {
@@ -265,9 +265,9 @@ struct CommandPalette: View {
         // — Pages —
         let pages: [(MainPage, String, String)] = [
             (.home, "Home", "house"),
-            (.search, "Search", "magnifyingglass"),
-            (.plugins, "Plugins", "puzzlepiece.extension"),
-            (.automations, "Automations", "clock"),
+            (.search, "Search", "text.magnifyingglass"),
+            (.plugins, "Plugins", "shippingbox"),
+            (.automations, "Automations", "clock.arrow.circlepath"),
             (.settings, "Settings", "gearshape"),
         ]
         for (page, label, symbol) in pages {

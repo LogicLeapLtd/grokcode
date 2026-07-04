@@ -47,8 +47,28 @@ struct UpdateDialog: View {
                     .font(.system(size: 12))
                     .foregroundStyle(CodexTheme.textSecondary)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            // Always-available dismiss (except mid-install, where quitting the
+            // swap would be unsafe). Guarantees the dialog can be closed from any
+            // state, including errors.
+            if !isInstalling {
+                Button { update.isDialogPresented = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(CodexTheme.pillBackground))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(CodexPressableStyle())
+                .help("Close")
+            }
         }
+    }
+
+    private var isInstalling: Bool {
+        if case .installing = update.phase { return true }
+        return false
     }
 
     private var title: String {

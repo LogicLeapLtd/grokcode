@@ -26,8 +26,9 @@ several agents each run their own `xcodebuild`, then each install/launch a *diff
 build, so the running Codessa keeps flipping versions and work *appears* to vanish — it isn't
 (it's in git or still uncommitted; the running app was just a stale build). Rules, non-negotiable:
 
-1. **Never launch or install the app.** Do NOT run the dev-build promote, do NOT
-   `cp`/`ditto` a build into `/Applications/Codessa.app`, do NOT `open` the app.
+1. **Never launch or install the app during ordinary coding.** Do NOT run the
+   dev-build promote, do NOT hand-copy/`ditto` a build into `/Applications/Codessa.app`,
+   and do NOT `open` the app unless Josh explicitly asks for a final/canonical local build.
    **Deciding which build runs is Josh's job.** Concurrent installs are the #1 cause of
    "different versions launching" and perceived lost work.
 2. **Build only to check compilation, only when needed, to a PRIVATE derived-data path**
@@ -42,20 +43,41 @@ build, so the running Codessa keeps flipping versions and work *appears* to vani
    uncommitted work. If `git status` shows changes you don't recognise, **leave them**.
 5. **Stay in your lane** — only touch files your task needs. If two agents need the same file,
    coordinate through Josh instead of racing edits.
-6. **The in-app updater is for shipping, not dev iteration.** It installs to the stable
-   `/Applications/Codessa.app`; agents promoting dev builds there is exactly what makes the
-   running app thrash. Leave `/Applications` alone — publish real releases only via the runbook
-   below, and only when Josh asks.
+6. **Agent-to-app handoff builds use exactly one script.** If Josh wants the running canonical
+   Dock app to pick up your finished local changes, run `scripts/drop-local-update.sh`. It builds
+   in private `.build-agent-local-update`, drops `Codessa.app` into
+   `~/Library/Application Support/Codessa/PendingUpdate/`, and does **not** install or launch.
+   The running `/Applications/Codessa.app` shows a bottom-right **New build ready** prompt with
+   **Update & Relaunch**. Do not improvise another handoff path.
+7. **Canonical local installs use exactly one script.** If Josh explicitly asks to make the
+   current tree the final local app, run `scripts/install-canonical-local.sh --dock --launch`.
+   That script builds in a private `.build-final` derived-data path, takes a lock, installs
+   to `/Applications/Codessa.app`, keeps the Dock pin stable, and avoids the shared `build/`
+   race. Do not improvise your own install/copy/open commands.
+8. **The in-app updater is for user-visible prompts.** Local handoff builds and published releases
+   both install to stable `/Applications/Codessa.app` only after Josh clicks a prompt. Background
+   release checks show a bottom-right "Update available" prompt that opens the updater dialog;
+   local handoffs show "New build ready" directly. Nothing silently replaces the app.
+   Publish real releases only via the runbook below, and only when Josh asks.
+9. **Mandatory session closure gate.** Any Codex/Claude session that changes code must end by
+   running `scripts/finalize-codex-session.sh --handoff` or, when Josh explicitly approved a
+   production publish, `scripts/finalize-codex-session.sh --publish`. This gate refuses dirty
+   trees, validates a private build, and either drops a local update for the running app or creates
+   the GitHub release the updater can see. Do not tell Josh work is "done" if this gate did not run
+   and pass; report the blocker instead.
 
-When in doubt: make the edit, do a path-scoped commit, and let Josh build and run.
+When in doubt: make the edit, do a path-scoped commit, and run the closure gate so the work is
+recoverable and installable.
 
 ---
 
 ## In-app updates (the update facility)
 
-Implemented in `Codessa/Services/UpdateService.swift` + `Codessa/Views/Shell/UpdateDialog.swift`,
-wired in `ContentView` (owns `UpdateService` as a `@StateObject`, injects via `.environmentObject`),
-surfaced from the sidebar account menu (`SidebarView`) and **Settings › About** (`SettingsView`).
+Implemented in `Codessa/Services/UpdateService.swift`,
+`Codessa/Services/LocalBuildUpdateService.swift`, and `Codessa/Views/Shell/UpdateDialog.swift`,
+wired in `ContentView` (owns the services as `@StateObject`s; `UpdateService` is injected via
+`.environmentObject`), surfaced from the sidebar account menu (`SidebarView`) and
+**Settings › About** (`SettingsView`).
 
 How it behaves:
 
@@ -71,7 +93,16 @@ How it behaves:
   `/Applications`), the dialog offers **"Install this build to /Applications & Relaunch"** — this is
   the fix for the drifting Dock shortcut during development (no more manual quit + re-pin).
 - **Background check on launch** (toggle in Settings › About) lights an "Update available" badge in
-  the account menu; it never pops the dialog uninvited.
+  the account menu and shows a bottom-right "Update available" prompt; it never pops the dialog
+  uninvited.
+- **Local agent handoff builds.** Future Codex/Claude sessions that should hand off a finished
+  build to the running app must run `scripts/drop-local-update.sh`. The running canonical app watches
+  `~/Library/Application Support/Codessa/PendingUpdate/Codessa.app` and shows a bottom-right
+  "New build ready" prompt with **Update & Relaunch**. This keeps the app stable until Josh accepts
+  the update.
+- **Canonical local build install.** When Josh asks to promote the current working tree to the Dock
+  app, use `scripts/install-canonical-local.sh --dock --launch`. Do not manually copy bundles into
+  `/Applications` or launch DerivedData builds.
 - The target repo is set by `UpdateService.repoOwner` / `repoName` constants — change there if
   releases move.
 
@@ -114,7 +145,8 @@ Do all of this whenever you cut a new version. The running app only sees a new v
    xcrun stapler staple dist/Codessa-<version>.dmg
    ```
 
-5. **Package the DMG.** Either run `scripts/build-dmg.sh` (rebuilds + packages), or stage the signed
+5. **Package the DMG.** Either run `scripts/finalize-codex-session.sh --publish` for the guarded
+   end-to-end path, run `scripts/build-dmg.sh` (rebuilds + packages), or stage the signed
    `Codessa.app` plus an `/Applications` symlink and:
    ```sh
    hdiutil create -volname Codessa -srcfolder <staging-dir> -ov -format UDZO dist/Codessa-<version>.dmg
@@ -133,6 +165,16 @@ Do all of this whenever you cut a new version. The running app only sees a new v
 
 7. **Verify:** `curl -s https://api.github.com/repos/LogicLeapLtd/grokcode/releases/latest` shows the
    new `tag_name` + DMG asset, and an older running build's **Check for updates** now offers it.
+
+### Mandatory end-of-session commands
+
+- For ordinary finished local work: commit the exact touched paths, then run
+  `scripts/finalize-codex-session.sh --handoff`.
+- For an approved production release: bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`, add a
+  `CHANGELOG.md` entry, commit the exact touched paths, then run
+  `scripts/finalize-codex-session.sh --publish`.
+- The final answer must say which gate mode ran and whether it passed. If it failed, give the
+  smallest concrete blocker; do not describe unpublished local source as shipped.
 
 ### Signing identities available on this machine
 - **Developer ID Application: LOGICLEAP LTD (DKP8S5XCXU)** — use for distribution.

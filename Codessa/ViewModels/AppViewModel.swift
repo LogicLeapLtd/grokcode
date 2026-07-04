@@ -38,6 +38,7 @@ final class AppViewModel {
     var models: [GrokModelOption] = []
     var selectedProject: Project?
     var selectedModel: GrokModelOption?
+    var modelOptionSelections: [String: String] = [:]
     var permissionMode: PermissionMode = .fullAccess
     var effortLevel: EffortLevel = .medium
     var messages: [ChatMessage] = []
@@ -85,6 +86,22 @@ final class AppViewModel {
     /// the wired engine (Grok) so the shipping run path is unchanged until the
     /// user picks another provider.
     var selectedProviderId: String = AgentProvider.wiredDefault.id
+    /// User-configurable agent modes. Built-ins provide the durable Plan and
+    /// Execute lanes; users can add more profiles with their own provider/model
+    /// routing and extra instructions.
+    var agentModes: [AgentModeProfile] = AgentModeProfile.defaults {
+        didSet {
+            guard agentModes != oldValue else { return }
+            persistAgentModes()
+        }
+    }
+    /// The active mode controls permission, locked instructions, and model route.
+    var activeAgentModeID: String = AgentModeProfile.executeID {
+        didSet {
+            guard activeAgentModeID != oldValue else { return }
+            UserDefaults.standard.set(activeAgentModeID, forKey: Self.activeAgentModeKey)
+        }
+    }
     var pendingHooks: [PendingHook] = []
     var trustedHookIDs: Set<String> = []
     var showHooksReview = false
@@ -150,6 +167,17 @@ final class AppViewModel {
     var pursueGoal = false
     /// The most recent app the user was in before Codessa (for "Attach …").
     var lastActiveApp: NSRunningApplication?
+    /// Durable app-level settings beyond the legacy scalar defaults. This is the
+    /// source of truth for the expanded Settings surface, persisted as one
+    /// versioned Codable blob while the older keys below stay readable.
+    var preferences: AppPreferences = .defaults {
+        didSet {
+            guard preferences != oldValue else { return }
+            UserDefaults.standard.set(preferences.grokBinaryOverride, forKey: Self.grokBinaryOverrideMirrorKey)
+            guard let data = try? JSONEncoder().encode(preferences) else { return }
+            UserDefaults.standard.set(data, forKey: Self.preferencesKey)
+        }
+    }
 
     // MARK: - Appearance & layout preferences (shared contract)
 
@@ -226,8 +254,91 @@ final class AppViewModel {
 
     /// Codex "Plan mode" toggle in the + menu, mapped onto the permission mode.
     var isPlanMode: Bool {
-        get { permissionMode == .plan }
-        set { permissionMode = newValue ? .plan : .fullAccess }
+        get { activeAgentMode.kind == .plan || permissionMode == .plan }
+        set { selectAgentMode(newValue ? AgentModeProfile.planID : AgentModeProfile.executeID) }
+    }
+
+    var activeAgentMode: AgentModeProfile {
+        agentModes.first { $0.id == activeAgentModeID }
+            ?? agentModes.first { $0.id == AgentModeProfile.executeID }
+            ?? AgentModeProfile.defaults[0]
+    }
+
+    var activeModeRouteLabel: String {
+        let route = activeAgentMode.activeRoute
+        guard !route.usesParentModel else {
+            return selectedModel?.displayName ?? "Chat model"
+        }
+        let provider = providerLabel(for: route.providerID)
+        return "\(provider) · \(route.modelID)"
+    }
+
+    var activeModeRuntimeNote: String? {
+        let route = activeAgentMode.activeRoute
+        guard !route.usesParentModel, route.providerID != AgentProvider.wiredDefault.id else { return nil }
+        return "\(providerLabel(for: route.providerID)) is configured for this mode; live streaming still uses the wired Grok adapter until that provider runner lands."
+    }
+
+    func selectAgentMode(_ id: String) {
+        guard let mode = agentModes.first(where: { $0.id == id }) else { return }
+        activeAgentModeID = mode.id
+        permissionMode = mode.permissionMode
+    }
+
+    func applyPermissionMode(_ mode: PermissionMode) {
+        permissionMode = mode
+        if mode == .plan {
+            activeAgentModeID = AgentModeProfile.planID
+        } else if activeAgentMode.kind == .plan {
+            activeAgentModeID = AgentModeProfile.executeID
+        }
+    }
+
+    func upsertAgentMode(_ mode: AgentModeProfile) {
+        var next = normalizedAgentModes(agentModes)
+        if let index = next.firstIndex(where: { $0.id == mode.id }) {
+            next[index] = mode
+        } else {
+            next.append(mode)
+        }
+        agentModes = normalizedAgentModes(next)
+        if activeAgentModeID == mode.id {
+            permissionMode = mode.permissionMode
+        }
+    }
+
+    func addAgentMode() -> AgentModeProfile {
+        let mode = AgentModeProfile(
+            id: "custom-" + UUID().uuidString,
+            name: "Custom mode",
+            kind: .execute,
+            permissionMode: .auto,
+            executionRoute: ModeModelRoute(selection: .inheritParent),
+            customInstructions: "",
+            isBuiltIn: false
+        )
+        agentModes.append(mode)
+        selectAgentMode(mode.id)
+        return mode
+    }
+
+    func deleteAgentMode(_ id: String) {
+        guard !AgentModeProfile.defaults.contains(where: { $0.id == id }) else { return }
+        agentModes.removeAll { $0.id == id }
+        if activeAgentModeID == id {
+            selectAgentMode(AgentModeProfile.executeID)
+        }
+    }
+
+    func resetAgentModes() {
+        agentModes = AgentModeProfile.defaults
+        selectAgentMode(AgentModeProfile.executeID)
+    }
+
+    func providerLabel(for id: String) -> String {
+        providerStatuses.first { $0.provider.id == id }?.provider.shortName
+            ?? AgentProvider.known.first { $0.id == id }?.shortName
+            ?? "Custom"
     }
 
     /// Whether the ⌘K command palette overlay is presented. Driven by
@@ -311,20 +422,25 @@ final class AppViewModel {
         return "AGENTS.md"
     }
 
-    private let grok = GrokCLIService.shared
+    let grok = GrokCLIService.shared
+    private let providerRuntime = AgentProviderRuntime.shared
     /// Set when the user taps Stop so the resulting termination is treated as a
     /// graceful cancel (no error surfaced, queue not auto-advanced).
     private var didUserCancel = false
     /// The model the current grok session was started with. grok locks a session
     /// to one model's agent, so switching models mid-session requires a new one.
     private var sessionModelId: String?
+    /// One-shot route override set when the user approves a rendered plan. It
+    /// lets Plan mode define a distinct "after approval" provider/model without
+    /// permanently changing the normal Execute mode.
+    private var approvedPlanExecutionRoute: ModeModelRoute?
     private let discovery = ProjectDiscovery()
     private let hooksService = HooksService()
     private let sessionIndex = SessionIndexService()
     private let pluginImport = PluginImportService()
     private let automationService = AutomationService()
     private let marketplace = MarketplaceService.shared
-    private let projectContext = ProjectContextService()
+    let projectContext = ProjectContextService()
     private var sessionIndexSnapshot: SessionIndexSnapshot?
     private var sessionSnapshotRefreshTask: Task<Void, Never>?
     private var sessionSnapshotRefreshID = 0
@@ -347,9 +463,52 @@ final class AppViewModel {
     fileprivate static let sendOnReturnKey = "grokcode.sendOnReturn"
     fileprivate static let warmSessionKey = "grokcode.useWarmSession"   // shared with GrokCLIService
     fileprivate static let collapsibleGroupsKey = "grokcode.collapsibleGroups"
+    fileprivate static let preferencesKey = "grokcode.preferences.v1"
+    fileprivate static let grokBinaryOverrideMirrorKey = "grokcode.preferences.grokBinaryOverride"
+    private static let agentModesKey = "grokcode.agentModes.v1"
+    private static let activeAgentModeKey = "grokcode.activeAgentMode"
     private static let activePageKey = "grokcode.activePage"
     /// First-run flag (shared contract). Unset → show onboarding on launch.
-    fileprivate static let hasOnboardedKey = "grokcode.hasOnboarded"
+    static let hasOnboardedKey = "grokcode.hasOnboarded"
+
+    private func persistAgentModes() {
+        guard let data = try? JSONEncoder().encode(agentModes) else { return }
+        UserDefaults.standard.set(data, forKey: Self.agentModesKey)
+    }
+
+    private func restoreAgentModes() {
+        if let data = UserDefaults.standard.data(forKey: Self.agentModesKey),
+           let decoded = try? JSONDecoder().decode([AgentModeProfile].self, from: data) {
+            agentModes = normalizedAgentModes(decoded)
+        } else {
+            agentModes = AgentModeProfile.defaults
+        }
+
+        if let saved = UserDefaults.standard.string(forKey: Self.activeAgentModeKey),
+           agentModes.contains(where: { $0.id == saved }) {
+            activeAgentModeID = saved
+        } else {
+            activeAgentModeID = AgentModeProfile.executeID
+        }
+        permissionMode = activeAgentMode.permissionMode
+    }
+
+    private func normalizedAgentModes(_ modes: [AgentModeProfile]) -> [AgentModeProfile] {
+        var byID = Dictionary(uniqueKeysWithValues: modes.map { ($0.id, $0) })
+        for builtIn in AgentModeProfile.defaults {
+            if var existing = byID[builtIn.id] {
+                existing.kind = builtIn.kind
+                existing.isBuiltIn = true
+                byID[builtIn.id] = existing
+            } else {
+                byID[builtIn.id] = builtIn
+            }
+        }
+
+        let builtIns = AgentModeProfile.defaults.compactMap { byID.removeValue(forKey: $0.id) }
+        let custom = byID.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return builtIns + custom
+    }
 
     func bootstrap() async {
         grokAvailable = grok.isAvailable
@@ -361,6 +520,7 @@ final class AppViewModel {
             GrokAgentSession.shared.prewarm()
         }
         restoreDefaults()
+        await refreshProviderSnapshots()
         trustedHookIDs = hooksService.loadTrustedIDs()
         refreshHooks()
         projects = discovery.discoverProjects(in: projectRoots)
@@ -378,15 +538,7 @@ final class AppViewModel {
         }
 
         do {
-            models = try await grok.listModels()
-            if selectedModel == nil {
-                if let savedId = UserDefaults.standard.string(forKey: "grokcode.defaultModel"),
-                   let saved = models.first(where: { $0.id == savedId }) {
-                    selectedModel = saved
-                } else {
-                    selectedModel = models.first(where: \.isDefault) ?? models.first
-                }
-            }
+            syncModelsForSelectedProvider()
             sessions = try await grok.listSessions()
             // No need to re-scan the session index / re-discover projects here:
             // `refreshSessionSnapshot()` already started right after `projects`
@@ -396,11 +548,7 @@ final class AppViewModel {
         } catch {
             errorMessage = error.localizedDescription
             if models.isEmpty {
-                models = [
-                    GrokModelOption(id: "grok-composer-2.5-fast", isDefault: true),
-                    GrokModelOption(id: "grok-build", isDefault: false),
-                ]
-                selectedModel = models.first
+                syncModelsForSelectedProvider()
             }
         }
 
@@ -418,10 +566,9 @@ final class AppViewModel {
             self?.runDueAutomations(dueIDs)
         }
 
-        // #39 — return the user to the page they left on last launch (never
-        // .chat, which needs live messages). Runs before the smoke hook so the
-        // hook's explicit page override still wins.
-        restoreActivePage()
+        // #39 — return the user to the preferred launch page. Runs before the
+        // smoke hook so explicit QA overrides still win.
+        restorePreferredLaunchPage()
 
         // First-run onboarding (shared contract): show the sheet when the user
         // has never onboarded — but never during a GROKCODE_SMOKE_* run, so smoke
@@ -431,6 +578,9 @@ final class AppViewModel {
         }
 
         runSmokeTestIfRequested()
+        if preferences.openSplitViewOnLaunch, activePage != .settings {
+            openSplitView()
+        }
     }
 
     /// True when any GROKCODE_SMOKE_* environment variable is set — used to
@@ -529,11 +679,18 @@ final class AppViewModel {
         }
         if let modelId = env["GROKCODE_SMOKE_MODEL"],
            let match = models.first(where: { $0.id == modelId }) {
-            selectedModel = match
+            selectModel(match)
         }
         // Force an arbitrary (possibly invalid) model id to exercise the error path.
         if let forced = env["GROKCODE_SMOKE_FORCE_MODEL"] {
-            selectedModel = GrokModelOption(id: forced, isDefault: false)
+            selectedModel = GrokModelOption(
+                id: forced,
+                isDefault: false,
+                providerId: selectedProviderId,
+                providerName: selectedProvider.shortName,
+                title: forced,
+                isCustom: true
+            )
         }
         if let effortRaw = env["GROKCODE_SMOKE_EFFORT"],
            let effort = EffortLevel(rawValue: effortRaw) {
@@ -735,6 +892,21 @@ final class AppViewModel {
         applyNavigation(to: page, recordHistory: false)
     }
 
+    private func restorePreferredLaunchPage() {
+        guard preferences.restoreLastPage, preferences.launchPage == .restoreLast else {
+            switch preferences.launchPage {
+            case .restoreLast: applyNavigation(to: .home, recordHistory: false)
+            case .home: applyNavigation(to: .home, recordHistory: false)
+            case .search: applyNavigation(to: .search, recordHistory: false)
+            case .plugins: applyNavigation(to: .plugins, recordHistory: false)
+            case .automations: applyNavigation(to: .automations, recordHistory: false)
+            case .settings: applyNavigation(to: .settings, recordHistory: false)
+            }
+            return
+        }
+        restoreActivePage()
+    }
+
     func openSettings() {
         // Settings is now a full page (#15) rather than a modal. Keep the modal
         // flag clear and route via the page so existing callers (sidebar gear,
@@ -855,6 +1027,87 @@ final class AppViewModel {
     /// Number of follow-ups the user has queued mid-run.
     var queuedCount: Int { messages.lazy.filter(\.isQueued).count }
 
+    func approvePresentedPlan(_ plan: PresentedPlan) {
+        guard !isRunning else { return }
+        let sourceMode = activeAgentMode
+        approvedPlanExecutionRoute = sourceMode.kind == .plan ? sourceMode.executionRoute : sourceMode.activeRoute
+        selectAgentMode(AgentModeProfile.executeID)
+
+        var text = "Approved. Execute this plan:\n\nTitle: \(plan.title)"
+        if !plan.summary.isEmpty {
+            text += "\nSummary: \(plan.summary)"
+        }
+        if !plan.steps.isEmpty {
+            text += "\nSteps:\n" + plan.steps.enumerated().map { index, step in
+                "\(index + 1). \(step)"
+            }.joined(separator: "\n")
+        }
+        promptText = text
+        submit()
+    }
+
+    private func resolvedRunModelID(routeOverride: ModeModelRoute? = nil) -> String? {
+        resolvedRunModel(routeOverride: routeOverride)?.id
+    }
+
+    private func resolvedRunProviderID(routeOverride: ModeModelRoute? = nil) -> String {
+        let route = routeOverride ?? activeAgentMode.activeRoute
+        return route.usesParentModel ? selectedProviderId : route.providerID
+    }
+
+    private func resolvedRunModel(routeOverride: ModeModelRoute? = nil) -> GrokModelOption? {
+        let providerID = resolvedRunProviderID(routeOverride: routeOverride)
+        let route = routeOverride ?? activeAgentMode.activeRoute
+        let explicit = route.modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if route.usesParentModel {
+            if selectedModel?.providerId == providerID {
+                return selectedModel
+            }
+            return modelOptions(for: providerID).first(where: \.isDefault) ?? modelOptions(for: providerID).first
+        }
+        if explicit.isEmpty { return modelOptions(for: providerID).first(where: \.isDefault) ?? modelOptions(for: providerID).first }
+        return modelOption(providerId: providerID, modelId: explicit)
+            ?? GrokModelOption(
+                id: explicit,
+                isDefault: false,
+                providerId: providerID,
+                providerName: providerLabel(for: providerID),
+                title: explicit,
+                isCustom: true
+            )
+    }
+
+    private func resolvedProviderStatus(routeOverride: ModeModelRoute? = nil) -> ProviderStatus? {
+        let providerID = resolvedRunProviderID(routeOverride: routeOverride)
+        return providerStatuses.first { $0.provider.id == providerID }
+    }
+
+    private func modeInstructionPrefix(routeOverride: ModeModelRoute? = nil) -> String {
+        let mode = activeAgentMode
+        let route = routeOverride ?? mode.activeRoute
+        var lines: [String] = []
+
+        lines.append("[Codessa active mode]")
+        lines.append("- Mode: \(mode.name) (\(mode.kind.label)).")
+        lines.append("- Permission mode: \(mode.permissionMode.label).")
+        if routeOverride != nil {
+            lines.append("- Approved plan execution: use the plan profile's after-approval route for this turn.")
+        }
+        if route.usesParentModel {
+            lines.append("- Model route: inherit the selected chat model.")
+        } else {
+            lines.append("- Configured model route: \(providerLabel(for: route.providerID)) / \(route.modelID).")
+        }
+        lines.append("- Locked mode instructions: \(mode.lockedInstructions.replacingOccurrences(of: "\n", with: " "))")
+
+        let custom = mode.customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty {
+            lines.append("- User mode instructions: \(custom)")
+        }
+
+        return personalizationPrefix() + lines.joined(separator: "\n") + "\n\n"
+    }
+
     /// Primary entry point from the composer (Return / send button). When idle
     /// it starts a run; while a run is in flight it enqueues the message as a
     /// pending bubble that auto-sends when the current run finishes (Codex-style
@@ -865,9 +1118,17 @@ final class AppViewModel {
         // Allow a send with attachments and no typed text.
         guard !(trimmed.isEmpty && attachments.isEmpty),
               (selectedProject != nil || workWithoutProject),
-              selectedModel != nil else { return }
-        promptText = ""
-        composerAttachmentPaths = []
+              resolvedRunModelID() != nil else { return }
+        if isRunning, !preferences.allowFollowupQueue {
+            errorMessage = "A run is already in progress."
+            return
+        }
+        if preferences.clearComposerAfterSend {
+            promptText = ""
+        }
+        if preferences.defaultAttachmentBehavior == .clearAfterSend {
+            composerAttachmentPaths = []
+        }
 
         let sent = Self.composedSendText(trimmed, attachments: attachments)
 
@@ -902,7 +1163,15 @@ final class AppViewModel {
     }
 
     private func runPrompt(userText: String, retriedNewSession: Bool = false) async {
-        guard let model = selectedModel else { return }
+        let routeOverride = approvedPlanExecutionRoute
+        approvedPlanExecutionRoute = nil
+        guard let runModel = resolvedRunModel(routeOverride: routeOverride),
+              let providerStatus = resolvedProviderStatus(routeOverride: routeOverride),
+              let binaryPath = providerStatus.binaryPath else {
+            errorMessage = "Selected provider is not installed or has no model available."
+            return
+        }
+        let runModelID = runModel.id
         let cwd: URL
         if let project = selectedProject {
             cwd = project.path
@@ -914,9 +1183,11 @@ final class AppViewModel {
             return
         }
 
-        // grok locks a session to one model's agent. If the user switched models
-        // since this session started, begin a fresh session so it doesn't error.
-        if let sid = activeSessionId, let started = sessionModelId, started != model.id, sid == activeSessionId {
+        let runSessionModelKey = "\(providerStatus.provider.id)::\(runModelID)"
+
+        // Some agent CLIs lock a session to one model/provider. If the user
+        // switched since this session started, begin a fresh session.
+        if let sid = activeSessionId, let started = sessionModelId, started != runSessionModelKey, sid == activeSessionId {
             activeSessionId = nil
         }
 
@@ -932,16 +1203,22 @@ final class AppViewModel {
         }
         syncActiveSplitPaneFromCurrentState()
 
+        let effectiveUserText = modeInstructionPrefix(routeOverride: routeOverride) + userText
+
         do {
-            let sessionId = try await grok.streamPrompt(
-                userText,
+            let request = ProviderRunRequest(
+                provider: providerStatus.provider,
+                binaryPath: binaryPath,
+                prompt: effectiveUserText,
                 cwd: cwd,
-                model: model.id,
+                model: runModel,
                 permissionMode: permissionMode,
-                effort: effortLevel,
+                options: runOptions(for: runModel),
                 check: pursueGoal,
-                sessionId: activeSessionId
-            ) { event in
+                sessionId: providerStatus.provider.id == AgentProvider.grok.id ? activeSessionId : nil
+            )
+
+            let sessionId = try await providerRuntime.streamPrompt(request: request) { event in
                 Task { @MainActor [weak self] in
                     self?.handleStreamEvent(event, assistantId: assistantId)
                 }
@@ -950,19 +1227,21 @@ final class AppViewModel {
             if let sessionId {
                 activeSessionId = sessionId
             }
-            sessionModelId = model.id
+            sessionModelId = runSessionModelKey
 
             if let index = messages.firstIndex(where: { $0.id == assistantId }) {
                 messages[index].isStreaming = false
                 // An empty answer with no error is unusual — note it rather
                 // than leaving a blank bubble.
                 if messages[index].text.isEmpty && messages[index].reasoning.isEmpty {
-                    messages[index].errorText = "Grok returned an empty response."
+                    messages[index].errorText = "\(providerStatus.provider.shortName) returned an empty response."
                 }
             }
 
-            sessions = (try? await grok.listSessions()) ?? sessions
-            refreshSessionSnapshot()
+            if providerStatus.provider.id == AgentProvider.grok.id {
+                sessions = (try? await grok.listSessions()) ?? sessions
+                refreshSessionSnapshot()
+            }
             syncActiveSplitPaneFromCurrentState()
         } catch {
             let message = error.localizedDescription
@@ -1088,7 +1367,7 @@ final class AppViewModel {
 
     func cancelRun() {
         didUserCancel = true
-        grok.cancel()
+        providerRuntime.cancel()
         if let index = messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
             messages[index].isStreaming = false
         }
@@ -1112,6 +1391,11 @@ final class AppViewModel {
     func persistDefaults() {
         let d = UserDefaults.standard
         d.set(selectedModel?.id, forKey: "grokcode.defaultModel")
+        d.set(selectedProviderId, forKey: "grokcode.defaultProviderInstanceId")
+        if let selectedModel {
+            d.set(selectedModel.id, forKey: "grokcode.defaultModel.\(selectedModel.providerId)")
+        }
+        d.set(modelOptionSelections, forKey: "grokcode.defaultOptionsByInstance")
         d.set(permissionMode.rawValue, forKey: "grokcode.defaultPermission")
         d.set(effortLevel.rawValue, forKey: "grokcode.defaultEffort")
     }
@@ -1122,9 +1406,20 @@ final class AppViewModel {
            let mode = PermissionMode(rawValue: raw) { permissionMode = mode }
         if let raw = d.string(forKey: "grokcode.defaultEffort"),
            let effort = EffortLevel(rawValue: raw) { effortLevel = effort }
+        if let provider = d.string(forKey: "grokcode.defaultProviderInstanceId") {
+            selectedProviderId = provider
+        }
+        if let options = d.dictionary(forKey: "grokcode.defaultOptionsByInstance") as? [String: String] {
+            modelOptionSelections = options
+        }
+        restoreAgentModes()
         if let collapsed = d.array(forKey: collapsedProjectsKey) as? [String] {
             collapsedProjectPaths = Set(collapsed)
         }
+        if preferences.defaultPlanMode {
+            selectAgentMode(AgentModeProfile.planID)
+        }
+        pursueGoal = preferences.defaultPursueGoal
     }
 
     func addProjectFromPicker() {
@@ -1549,17 +1844,12 @@ final class AppViewModel {
         loadAutomations()
     }
 
-    /// Run an automation now (headless via grok). Stamps `lastRun` on success and
+    /// Run an automation now (headless via its selected provider). Stamps `lastRun` and
     /// refreshes the list. Failures are surfaced on `errorMessage`.
     func runAutomation(_ automation: Automation) {
         Task { [weak self] in
             guard let self else { return }
-            do {
-                _ = try await self.automationService.runNow(automation, using: self.grok)
-            } catch {
-                self.errorMessage = error.localizedDescription
-            }
-            self.loadAutomations()
+            _ = await self.runAutomationNow(automation)
         }
     }
 
@@ -1697,7 +1987,7 @@ final class AppViewModel {
     /// Rescans the on-disk session index and each project's git branch in a
     /// latest-wins background task. Navigation never awaits this path: views
     /// render from the last completed snapshot, then settle when this applies.
-    private func refreshSessionSnapshot() {
+    func refreshSessionSnapshot() {
         let paths = projects.map(\.path)
         let sessionIndex = sessionIndex
         let noProjectPath = Self.noProjectScratchDirectory()
@@ -1789,15 +2079,13 @@ final class AppViewModel {
         switch sidebarStatusFilter {
         case .all: break
         case .withChats:
-            // Only surface projects the user has actually chatted in. There is
-            // deliberately NO "show every discovered folder when none have chats"
-            // fallback — that dumped the whole ~/Development tree into the sidebar
-            // (the "loads of empty, chat-less projects" complaint). An empty
-            // active list is correct on first run; the empty state + New chat /
-            // Add-project affordances cover it. The archive group still lists
-            // everything the user explicitly archived, chats or not.
+            // Prefer chatted projects when they exist, but do not dead-end the
+            // sidebar on a first run where every discovered folder is chat-less.
             if !includeArchived {
-                result = result.filter { !$0.threads.isEmpty }
+                let projectsWithChats = result.filter { !$0.threads.isEmpty }
+                if !projectsWithChats.isEmpty {
+                    result = projectsWithChats
+                }
             }
         case .noChats: result = result.filter { $0.threads.isEmpty }
         case .pinnedOnly: result = result.filter { pinnedProjectPaths.contains($0.path.path) }
@@ -1928,6 +2216,7 @@ final class AppViewModel {
     /// (from `init`) so there's no light→dark flash on launch.
     private func loadAppearancePreferences() {
         let d = UserDefaults.standard
+        loadPreferences()
         if let raw = d.string(forKey: Self.appearanceKey),
            let value = AppAppearance(rawValue: raw) {
             appearance = value
@@ -1946,6 +2235,105 @@ final class AppViewModel {
         if d.object(forKey: Self.warmSessionKey) != nil {
             warmSessionEnabled = d.bool(forKey: Self.warmSessionKey)
         }
+    }
+
+    private func loadPreferences() {
+        guard let data = UserDefaults.standard.data(forKey: Self.preferencesKey),
+              let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data)
+        else { return }
+        preferences = decoded
+    }
+
+    func resetPreferencesScope(_ scope: SettingsPreferenceScope) {
+        var copy = preferences
+        let defaults = AppPreferences.defaults
+        switch scope {
+        case .all:
+            copy = defaults
+        case .general:
+            copy.launchPage = defaults.launchPage
+            copy.restoreLastPage = defaults.restoreLastPage
+            copy.openSplitViewOnLaunch = defaults.openSplitViewOnLaunch
+            copy.showLaunchMascot = defaults.showLaunchMascot
+            copy.allowFollowupQueue = defaults.allowFollowupQueue
+            copy.defaultPursueGoal = defaults.defaultPursueGoal
+            copy.defaultPlanMode = defaults.defaultPlanMode
+            copy.keepComposerDraft = defaults.keepComposerDraft
+            copy.clearComposerAfterSend = defaults.clearComposerAfterSend
+            copy.confirmStopRunning = defaults.confirmStopRunning
+            copy.confirmDestructiveActions = defaults.confirmDestructiveActions
+            copy.defaultAttachmentBehavior = defaults.defaultAttachmentBehavior
+            copy.defaultNewChatLocation = defaults.defaultNewChatLocation
+        case .appearance:
+            copy.accent = defaults.accent
+            copy.highContrast = defaults.highContrast
+            copy.vibrancyEnabled = defaults.vibrancyEnabled
+            copy.ambientBackgroundEnabled = defaults.ambientBackgroundEnabled
+            copy.reduceMotion = defaults.reduceMotion
+            copy.animationSpeed = defaults.animationSpeed
+            copy.uiFontSize = defaults.uiFontSize
+            copy.chatFontSize = defaults.chatFontSize
+            copy.codeFontSize = defaults.codeFontSize
+            copy.messageDensity = defaults.messageDensity
+            copy.bubbleStyle = defaults.bubbleStyle
+            copy.showTimestamps = defaults.showTimestamps
+            copy.toolCallStyle = defaults.toolCallStyle
+            copy.wrapCode = defaults.wrapCode
+            copy.showCodeLineNumbers = defaults.showCodeLineNumbers
+        case .personalization:
+            copy.contextFilePolicy = defaults.contextFilePolicy
+            copy.contextEnabled = defaults.contextEnabled
+            copy.languagePreference = defaults.languagePreference
+            copy.responseLength = defaults.responseLength
+            copy.explanationDepth = defaults.explanationDepth
+            copy.tonePreset = defaults.tonePreset
+            copy.preferBritishEnglish = defaults.preferBritishEnglish
+            copy.avoidEmDashes = defaults.avoidEmDashes
+            copy.preserveUserWording = defaults.preserveUserWording
+            copy.draftOnlyMessaging = defaults.draftOnlyMessaging
+            copy.showPlansByDefault = defaults.showPlansByDefault
+            copy.askBeforeAssumptions = defaults.askBeforeAssumptions
+            copy.includeProjectRules = defaults.includeProjectRules
+            copy.includeStyleRules = defaults.includeStyleRules
+        case .shortcuts:
+            copy.shortcutPreset = defaults.shortcutPreset
+            copy.shortcutsEnabled = defaults.shortcutsEnabled
+            copy.shortcutSearch = defaults.shortcutSearch
+            copy.customShortcuts = defaults.customShortcuts
+        case .mcp:
+            copy.mcpSearch = defaults.mcpSearch
+            copy.mcpFilter = defaults.mcpFilter
+            copy.mcpSort = defaults.mcpSort
+            copy.mcpShowDetails = defaults.mcpShowDetails
+            copy.mcpShowEnvKeys = defaults.mcpShowEnvKeys
+            copy.mcpRequireWriteConfirmation = defaults.mcpRequireWriteConfirmation
+        case .hooks:
+            copy.hookSearch = defaults.hookSearch
+            copy.hookFilter = defaults.hookFilter
+            copy.hookCompactView = defaults.hookCompactView
+            copy.hookShowCommandPreview = defaults.hookShowCommandPreview
+            copy.hookRequireTrustAllConfirmation = defaults.hookRequireTrustAllConfirmation
+        case .cli:
+            copy.grokBinaryOverride = defaults.grokBinaryOverride
+            copy.forceOneShotMode = defaults.forceOneShotMode
+            copy.inactivityTimeoutSeconds = defaults.inactivityTimeoutSeconds
+            copy.defaultSessionLimit = defaults.defaultSessionLimit
+            copy.copyDiagnosticsIncludesSettings = defaults.copyDiagnosticsIncludesSettings
+        case .data:
+            copy.retentionDays = defaults.retentionDays
+            copy.autoCleanOnLaunch = defaults.autoCleanOnLaunch
+            copy.exportBeforeDelete = defaults.exportBeforeDelete
+            copy.includeSettingsInDiagnostics = defaults.includeSettingsInDiagnostics
+            copy.includeSystemInfoInDiagnostics = defaults.includeSystemInfoInDiagnostics
+        case .archive:
+            copy.archiveSearch = defaults.archiveSearch
+            copy.archiveSort = defaults.archiveSort
+            copy.archiveFilter = defaults.archiveFilter
+            copy.keepPinnedUnarchived = defaults.keepPinnedUnarchived
+            copy.autoArchiveInactiveProjects = defaults.autoArchiveInactiveProjects
+            copy.archiveInactiveDays = defaults.archiveInactiveDays
+        }
+        preferences = copy
     }
 
     /// Toggle the sidebar collapsed state (didSet persists it).

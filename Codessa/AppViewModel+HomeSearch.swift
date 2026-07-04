@@ -74,16 +74,16 @@ extension AppViewModel {
         [
             HomeQuickAction(id: "new", title: "New chat",
                             subtitle: "Start a fresh conversation",
-                            systemImage: "square.and.pencil", page: .home),
+                            systemImage: "plus.bubble", page: .home),
             HomeQuickAction(id: "plugins", title: "Browse plugins",
                             subtitle: "Add tools & MCP servers",
-                            systemImage: "puzzlepiece.extension", page: .plugins),
+                            systemImage: "shippingbox", page: .plugins),
             HomeQuickAction(id: "search", title: "Search",
                             subtitle: "Find projects & past chats",
-                            systemImage: "magnifyingglass", page: .search),
+                            systemImage: "text.magnifyingglass", page: .search),
             HomeQuickAction(id: "automations", title: "Automations",
                             subtitle: "Saved prompts & schedules",
-                            systemImage: "clock", page: .automations),
+                            systemImage: "clock.arrow.circlepath", page: .automations),
         ]
     }
 

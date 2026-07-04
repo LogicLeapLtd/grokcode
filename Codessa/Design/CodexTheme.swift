@@ -29,20 +29,20 @@ enum CodexTheme {
     // MARK: - Surfaces
 
     static let sidebarBackground = dynamic(
-        light: rgb(0.992, 0.992, 0.991),                 // ~white, matches Codex
-        dark:  rgb(0.110, 0.110, 0.117)                  // #1C1C1E-ish raised panel
+        light: rgb(0.965, 0.967, 0.962),
+        dark:  rgb(0.115, 0.105, 0.145)
     )
     static let mainBackground = dynamic(
-        light: rgb(1.0, 1.0, 1.0),
-        dark:  rgb(0.035, 0.035, 0.040)                  // dark black canvas (header/page/modals)
+        light: rgb(0.972, 0.973, 0.968),
+        dark:  rgb(0.070, 0.060, 0.105)
     )
     static let composerShellBackground = dynamic(
-        light: rgb(0.941, 0.941, 0.941),
-        dark:  rgb(0.145, 0.145, 0.153)
+        light: rgb(0.920, 0.923, 0.920),
+        dark:  rgb(0.175, 0.180, 0.195)
     )
     static let composerBackground = dynamic(
-        light: rgb(1.0, 1.0, 1.0),
-        dark:  rgb(0.169, 0.169, 0.180)
+        light: rgb(0.985, 0.986, 0.982),
+        dark:  rgb(0.205, 0.210, 0.226)
     )
     // Border palette: cool, translucent edge colours tuned for the ambient
     // canvas. These replace flat grey hairlines so cards, menus, and the
@@ -60,45 +60,54 @@ enum CodexTheme {
         dark:  rgb(0.70, 0.80, 0.88, 0.22)
     )
     static let divider = dynamic(
-        light: rgb(0.84, 0.87, 0.91),
-        dark:  rgb(0.46, 0.52, 0.60, 0.25)
+        light: rgb(0.78, 0.80, 0.84),
+        dark:  rgb(0.56, 0.60, 0.66, 0.24)
     )
 
     // MARK: - Text
 
     static let textPrimary = dynamic(
-        light: rgb(0.09, 0.09, 0.09),
-        dark:  rgb(0.94, 0.94, 0.95)
+        light: rgb(0.13, 0.14, 0.16),
+        dark:  rgb(0.835, 0.850, 0.875)
     )
     static let textSecondary = dynamic(
-        light: rgb(0.42, 0.42, 0.42),
-        dark:  rgb(0.66, 0.66, 0.69)
+        light: rgb(0.39, 0.40, 0.43),
+        dark:  rgb(0.655, 0.675, 0.720)
     )
     static let textTertiary = dynamic(
-        light: rgb(0.58, 0.58, 0.58),
-        dark:  rgb(0.50, 0.50, 0.53)
+        light: rgb(0.56, 0.57, 0.60),
+        dark:  rgb(0.485, 0.505, 0.555)
     )
 
     // MARK: - Pills / chrome
 
     static let pillBackground = dynamic(
-        light: rgb(0.92, 0.92, 0.92),
-        dark:  rgb(0.20, 0.20, 0.22)
+        light: rgb(0.900, 0.903, 0.900),
+        dark:  rgb(0.230, 0.236, 0.252)
     )
     static let pillBackgroundPressed = dynamic(
-        light: rgb(0.86, 0.86, 0.86),
-        dark:  rgb(0.27, 0.27, 0.29)
+        light: rgb(0.835, 0.840, 0.842),
+        dark:  rgb(0.285, 0.292, 0.312)
     )
     static let modalBackdrop = dynamic(
-        light: rgb(0.94, 0.94, 0.94),
-        dark:  rgb(0.10, 0.10, 0.11)
+        light: rgb(0.925, 0.928, 0.925),
+        dark:  rgb(0.095, 0.085, 0.132)
     )
 
     /// Selection / nav highlight. Light mode *darkens* the translucent sidebar;
     /// dark mode *lightens* it so the active row reads against the dark glass.
     static let navHighlight = dynamic(
-        light: rgb(0.0, 0.0, 0.0, 0.085),
-        dark:  rgb(1.0, 1.0, 1.0, 0.12)
+        light: rgb(0.22, 0.28, 0.34, 0.095),
+        dark:  rgb(0.50, 0.56, 0.66, 0.18)
+    )
+
+    static let navIconForeground = dynamic(
+        light: rgb(0.30, 0.33, 0.38),
+        dark:  rgb(0.690, 0.720, 0.780)
+    )
+    static let navIconActiveForeground = dynamic(
+        light: rgb(0.16, 0.23, 0.31),
+        dark:  rgb(0.800, 0.850, 0.930)
     )
 
     // MARK: - Toggle switch (MiniSwitch)
@@ -142,27 +151,31 @@ enum CodexTheme {
         dark:  rgb(0.36, 0.26, 0.72)                      // #5C42B8-ish
     )
     static let focusAccent = dynamic(
-        light: rgb(0.22, 0.47, 0.70),
-        dark:  rgb(0.48, 0.68, 0.82)
+        light: rgb(0.38, 0.28, 0.76),
+        dark:  rgb(0.56, 0.42, 0.90)
     )
 
     // MARK: - Send button
 
     static let sendButtonBackground = dynamic(
-        light: rgb(0.90, 0.90, 0.90),
-        dark:  rgb(0.24, 0.24, 0.26)
+        light: rgb(0.890, 0.894, 0.894),
+        dark:  rgb(0.250, 0.258, 0.278)
     )
     static let sendButtonForeground = dynamic(
         light: rgb(0.55, 0.55, 0.55),
-        dark:  rgb(0.60, 0.60, 0.63)
+        dark:  rgb(0.62, 0.64, 0.69)
     )
+    // Active (ready-to-send / primary-action) fill is the brand violet with
+    // white glyph, so the app's single most important control — and every
+    // primary CTA that shares these tokens — actually carries brand weight
+    // instead of reading as a neutral grey disc.
     static let sendButtonActiveBackground = dynamic(
-        light: rgb(0.15, 0.15, 0.15),
-        dark:  rgb(0.95, 0.95, 0.96)                      // bright pill on dark
+        light: rgb(0.42, 0.33, 0.86),                     // #6B54DB
+        dark:  rgb(0.58, 0.47, 0.94)                      // #9478F0 — a touch deeper than accent so white pops
     )
     static let sendButtonActiveForeground = dynamic(
         light: rgb(1.0, 1.0, 1.0),
-        dark:  rgb(0.09, 0.09, 0.10)                      // dark glyph on bright pill
+        dark:  rgb(1.0, 1.0, 1.0)
     )
 
     // MARK: - Hover / menus
@@ -171,15 +184,15 @@ enum CodexTheme {
     /// Used for full-width menu/list rows, which sit on a solid card surface
     /// where even a subtle tint reads clearly.
     static let hoverBackground = dynamic(
-        light: rgb(0.0, 0.0, 0.0, 0.07),
-        dark:  rgb(1.0, 1.0, 1.0, 0.10)
+        light: rgb(0.0, 0.0, 0.0, 0.055),
+        dark:  rgb(1.0, 1.0, 1.0, 0.075)
     )
     /// Stronger hover tint for standalone chrome controls (pills, capsules,
     /// icon buttons, circular buttons) whose own fill is already tinted or
     /// opaque — `hoverBackground` alone barely reads on top of those.
     static let controlHoverBackground = dynamic(
-        light: rgb(0.0, 0.0, 0.0, 0.12),
-        dark:  rgb(1.0, 1.0, 1.0, 0.18)
+        light: rgb(0.0, 0.0, 0.0, 0.095),
+        dark:  rgb(1.0, 1.0, 1.0, 0.120)
     )
     /// Border color standalone chrome controls brighten to on hover, paired
     /// with `controlHoverBackground` for a clearer "lit up" state.
@@ -188,8 +201,8 @@ enum CodexTheme {
         dark:  rgb(1.0, 1.0, 1.0, 0.40)
     )
     static let menuBackground = dynamic(
-        light: rgb(0.99, 0.99, 0.99),
-        dark:  rgb(0.16, 0.16, 0.17)
+        light: rgb(0.965, 0.968, 0.965),
+        dark:  rgb(0.205, 0.210, 0.226)
     )
     static let menuBorder = dynamic(
         light: rgb(0.76, 0.81, 0.87),
@@ -203,8 +216,8 @@ enum CodexTheme {
     // MARK: - Chat bubble / errors
 
     static let userBubbleBackground = dynamic(
-        light: rgb(0.945, 0.945, 0.945),                 // #F1F1F1
-        dark:  rgb(0.18, 0.18, 0.20)
+        light: rgb(0.920, 0.924, 0.922),
+        dark:  rgb(0.225, 0.232, 0.252)
     )
     static let errorForeground = dynamic(
         light: rgb(0.70, 0.18, 0.13),
@@ -298,8 +311,8 @@ enum CodexTheme {
     /// A faint tint laid over the behind-window vibrancy so the sidebar reads as
     /// a panel in both appearances.
     static let glassTint = dynamic(
-        light: rgb(1.0, 1.0, 1.0, 0.0),
-        dark:  rgb(0.06, 0.06, 0.07, 0.68)
+        light: rgb(0.94, 0.95, 0.94, 0.18),
+        dark:  rgb(0.14, 0.12, 0.19, 0.52)
     )
 
     // MARK: - Metrics & fonts (appearance-independent)
@@ -352,12 +365,16 @@ enum CodexTheme {
 
     // Typography direction: Fraunces for headlines, Manrope for the shell, with
     // monospaced type reserved for genuinely technical values.
-    static let headlineFont = serif(28, weight: .semibold)
+    static let headlineFont = serif(24, weight: .semibold)
     static let bodyFont = sans(16)
-    static let composerInputFont = sans(18)
+    static let composerInputFont = sans(14.5)
     static let composerLabelFont = sans(13, weight: .semibold)
     static let composerMetaFont = sans(12, weight: .medium)
     static let technicalLabelFont = Font.system(size: 12, weight: .medium, design: .monospaced)
+    static let sectionLabelFont = sans(12, weight: .bold)
+    static let controlTitleFont = sans(13.5, weight: .semibold)
+    static let listTitleFont = sans(13.5, weight: .medium)
+    static let listMetaFont = sans(12, weight: .medium)
     static let captionFont = sans(12)
     static let smallFont = sans(11)
 }
