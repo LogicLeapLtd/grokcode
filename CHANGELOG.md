@@ -1,5 +1,7 @@
 # Changelog
 
+- Errors are now human and actionable instead of cryptic exit codes. "Grok exited with code 75" (a transient rate-limit/network failure) now reads "Grok hit a temporary failure — usually rate limiting or a brief network/backend hiccup. Wait a few seconds and try again."; auth, rate-limit, timeout and other common failures get tailored guidance.
+- Errors on the home screen are now shown in the same styled card (icon, container, dismiss/retry) as in-chat errors, instead of as bare red text.
 - Composer "+" (add attachment) button is now circular instead of a rounded square.
 - Home quick-action cards: removed the redundant "New chat" card (the Home page is already the new-chat surface) and made all remaining labels render at the same font size ("Browse plugins" no longer auto-shrinks to fit).
 - Composer toolbar: pills now size to their content (no more truncated mode/permission labels or "Full access" wrapping); model pill drops the "(default)" suffix.

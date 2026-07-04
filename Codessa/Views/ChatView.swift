@@ -1020,44 +1020,7 @@ private struct ErrorBlock: View {
     var onRetry: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(CodexTheme.errorForeground)
-                Text(text)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(CodexTheme.errorForeground)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button(action: onRetry) {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold))
-                    Text("Retry").font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundStyle(CodexTheme.errorForeground)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(CodexTheme.errorBorder, lineWidth: 1)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(CodexTheme.errorBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(CodexTheme.errorBorder, lineWidth: 1)
-        )
+        CodexErrorBanner(text: text, onRetry: onRetry)
     }
 }
 

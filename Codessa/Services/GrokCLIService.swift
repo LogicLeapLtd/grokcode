@@ -288,7 +288,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
                     continuation.resume(returning: out + err)
                 } else {
                     continuation.resume(throwing: GrokCLIError.processFailed(
-                        err.isEmpty ? "Grok exited with code \(proc.terminationStatus)" : err))
+                        CLIProcessMessage.friendly(name: "Grok", exitCode: proc.terminationStatus, stderr: err)))
                 }
             }
 
@@ -395,7 +395,7 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
                 } else {
                     let err = snapshot.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                     continuation.resume(throwing: GrokCLIError.processFailed(
-                        err.isEmpty ? "Grok exited with code \(proc.terminationStatus)" : err))
+                        CLIProcessMessage.friendly(name: "Grok", exitCode: proc.terminationStatus, stderr: err)))
                 }
             }
 

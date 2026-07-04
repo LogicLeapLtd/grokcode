@@ -33,9 +33,7 @@ struct HomeView: View {
                             .frame(maxWidth: CodexTheme.composerMaxWidth)
 
                         if let error = model.errorMessage {
-                            Text(error)
-                                .font(CodexTheme.captionFont)
-                                .foregroundStyle(CodexTheme.errorForeground)
+                            CodexErrorBanner(text: error, onDismiss: { model.errorMessage = nil })
                                 .frame(maxWidth: CodexTheme.composerMaxWidth, alignment: .leading)
                                 .transition(CodexMotion.bannerTransition)
                         }

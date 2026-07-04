@@ -400,11 +400,10 @@ nonisolated final class AgentProviderRuntime: @unchecked Sendable {
                 if proc.terminationStatus == 0 || !out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     continuation.resume(returning: out + (err.isEmpty ? "" : "\n" + err))
                 } else {
+                    let name = (binaryPath as NSString).lastPathComponent.capitalized
                     continuation.resume(throwing: AgentProviderRuntimeError.processFailed(
-                        err.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Provider exited with code \(proc.terminationStatus)."
-                            : err.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ))
+                        CLIProcessMessage.friendly(name: name.isEmpty ? "The provider" : name,
+                                                   exitCode: proc.terminationStatus, stderr: err)))
                 }
             }
 
