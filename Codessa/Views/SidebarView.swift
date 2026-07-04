@@ -996,6 +996,57 @@ private struct SidebarScrollViewConfigurator: NSViewRepresentable {
     }
 }
 
+// MARK: - Right-click catcher
+
+/// Reports right-clicks (and control-clicks) so we can open a themed `CodexMenu`
+/// instead of AppKit's native `NSMenu`. Placed as an overlay: its `hitTest`
+/// returns `nil` for ordinary left-clicks so hover, selection and inner buttons
+/// keep working — it only claims secondary clicks, then fires `onRightClick`.
+private struct RightClickCatcher: NSViewRepresentable {
+    let onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.onRightClick = onRightClick
+        return view
+    }
+
+    func updateNSView(_ nsView: CatcherView, context: Context) {
+        nsView.onRightClick = onRightClick
+    }
+
+    final class CatcherView: NSView {
+        var onRightClick: (() -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            // Only intercept secondary (right / control) clicks; pass every other
+            // event straight through to the SwiftUI content beneath.
+            guard let event = NSApp.currentEvent else { return nil }
+            switch event.type {
+            case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+                return super.hitTest(point)
+            case .leftMouseDown, .leftMouseUp
+                where event.modifierFlags.contains(.control):
+                return super.hitTest(point)
+            default:
+                return nil
+            }
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            onRightClick?()
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            if event.modifierFlags.contains(.control) {
+                onRightClick?()
+            } else {
+                super.mouseDown(with: event)
+            }
+        }
+    }
+}
+
 // MARK: - Collapsed rail tooltip
 
 private struct RailTooltip: View {
@@ -1227,6 +1278,11 @@ private struct ProjectSidebarBlock: View {
     let onThreadAction: (ThreadAction, ProjectThread) -> Void
     let onCommitRename: (ProjectThread) -> Void
 
+    /// Drives the themed right-click menu (custom `CodexMenu`, not native NSMenu).
+    @Environment(CodexMenuController.self) private var menuController
+    @State private var menuID = UUID()
+    @State private var headerFrame: CGRect = .zero
+
     /// Reveals the trailing "+" (new chat) button while the row is hovered.
     @State private var rowHovering = false
     /// Threads whose subagent rows are expanded. Subagents start collapsed so a
@@ -1320,44 +1376,16 @@ private struct ProjectSidebarBlock: View {
             // the LazyVStack can't retain a stale highlight from another project.
             .id(project.id)
             .animation(CodexMotion.quickSpring, value: collapsed)
-            .contextMenu {
-                if collapsibleEnabled {
-                    Button(collapsed ? "Expand" : "Collapse", action: onToggleCollapse)
-                    Divider()
+            // Track the header's global frame so the themed menu can anchor to it,
+            // then catch right-/control-clicks to open it (no native NSMenu).
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { headerFrame = geo.frame(in: .global) }
+                        .onChange(of: geo.frame(in: .global)) { _, frame in headerFrame = frame }
                 }
-                Button {
-                    onTogglePin()
-                } label: {
-                    Label(isPinned ? "Unpin project" : "Pin project",
-                          systemImage: isPinned ? "pin.slash" : "pin")
-                }
-                Button {
-                    onRevealInFinder()
-                } label: {
-                    Label("Reveal in Finder", systemImage: "folder")
-                }
-                Button {
-                    onCreateWorktree()
-                } label: {
-                    Label("Create permanent worktree", systemImage: "arrow.triangle.branch")
-                }
-                Button {
-                    onBeginRename()
-                } label: {
-                    Label("Rename project", systemImage: "pencil")
-                }
-                Divider()
-                Button {
-                    onArchive()
-                } label: {
-                    Label("Archive chats", systemImage: "archivebox")
-                }
-                Button(role: .destructive) {
-                    onRemove()
-                } label: {
-                    Label("Remove", systemImage: "xmark")
-                }
-            }
+            )
+            .overlay(RightClickCatcher { openProjectMenu() })
 
             if !collapsed {
                 if project.threads.isEmpty {
@@ -1380,6 +1408,54 @@ private struct ProjectSidebarBlock: View {
             }
         }
         .padding(.bottom, collapsed ? 0 : 2)
+    }
+
+    // MARK: - Themed right-click menu
+
+    private func openProjectMenu() {
+        menuController.toggle(id: menuID, anchor: headerFrame, minWidth: 224, edge: .bottom) {
+            projectMenuContent
+        }
+    }
+
+    /// Runs a menu action and dismisses the menu in one step.
+    private func runMenu(_ action: @escaping () -> Void) {
+        menuController.close()
+        action()
+    }
+
+    @ViewBuilder
+    private var projectMenuContent: some View {
+        CodexMenuContainer {
+            CodexMenuSectionHeader(title: project.name)
+            if collapsibleEnabled {
+                CodexMenuItem(title: collapsed ? "Expand" : "Collapse",
+                              systemImage: collapsed ? "chevron.down" : "chevron.up") {
+                    runMenu(onToggleCollapse)
+                }
+                CodexMenuDivider()
+            }
+            CodexMenuItem(title: isPinned ? "Unpin project" : "Pin project",
+                          systemImage: isPinned ? "pin.slash" : "pin") {
+                runMenu(onTogglePin)
+            }
+            CodexMenuItem(title: "Reveal in Finder", systemImage: "folder") {
+                runMenu(onRevealInFinder)
+            }
+            CodexMenuItem(title: "Create permanent worktree", systemImage: "arrow.triangle.branch") {
+                runMenu(onCreateWorktree)
+            }
+            CodexMenuItem(title: "Rename project", systemImage: "pencil") {
+                runMenu(onBeginRename)
+            }
+            CodexMenuDivider()
+            CodexMenuItem(title: "Archive chats", systemImage: "archivebox") {
+                runMenu(onArchive)
+            }
+            CodexMenuItem(title: "Remove", systemImage: "xmark", isDestructive: true) {
+                runMenu(onRemove)
+            }
+        }
     }
 
     /// "By project → branch" sub-grouping (#25): a small branch sub-header per
