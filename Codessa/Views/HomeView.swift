@@ -8,7 +8,7 @@ struct HomeView: View {
         GeometryReader { geo in
             ScrollView {
                 VStack(spacing: 0) {
-                    Spacer(minLength: 64)
+                    Spacer(minLength: 64).frame(maxHeight: 64)
 
                     VStack(spacing: 20) {
                         Text(headline)
@@ -48,7 +48,7 @@ struct HomeView: View {
                     .padding(.horizontal, 48)
                     .animation(CodexMotion.pageSpring, value: model.selectedProject?.id)
 
-                    Spacer(minLength: 48)
+                    Spacer(minLength: 48).frame(maxHeight: 48)
                 }
                 // Fill at least the viewport so the content centres vertically
                 // when it's shorter than the window, and scrolls when taller.
