@@ -1218,10 +1218,16 @@ final class AppViewModel {
                 sessionId: providerStatus.provider.id == AgentProvider.grok.id ? activeSessionId : nil
             )
 
+            // Coalesce the provider's stream onto the main actor. Delivering each
+            // chunk with its own `Task { @MainActor }` has no backpressure: a fast
+            // (or runaway) stream floods the main actor faster than SwiftUI drains
+            // it, pinning the UI and ballooning memory. The coalescer keeps at most
+            // one flush in flight and batches everything that arrives in between.
+            let coalescer = StreamCoalescer { [weak self] batch in
+                self?.applyStreamBatch(batch, assistantId: assistantId)
+            }
             let sessionId = try await providerRuntime.streamPrompt(request: request) { event in
-                Task { @MainActor [weak self] in
-                    self?.handleStreamEvent(event, assistantId: assistantId)
-                }
+                coalescer.enqueue(event)
             }
 
             if let sessionId {
@@ -1877,34 +1883,26 @@ final class AppViewModel {
         }
     }
 
-    private func handleStreamEvent(_ event: GrokStreamEvent, assistantId: UUID) {
+    /// Apply one coalesced batch of stream events to the assistant message. Runs
+    /// once per flush (not once per chunk), so the transcript grows with a single
+    /// append + re-render per frame instead of thousands. See `StreamCoalescer`.
+    private func applyStreamBatch(_ batch: StreamCoalescer.Batch, assistantId: UUID) {
         guard let index = messages.firstIndex(where: { $0.id == assistantId }) else { return }
 
-        switch event.type {
-        case "thought":
-            if let data = event.data {
-                messages[index].reasoning += data
-            }
-        case "text":
-            if let data = event.data {
-                messages[index].text += data
-            }
-        case "tool":
-            if let tool = event.tool {
-                upsertToolCall(tool, at: index)
-            }
-        case "end":
+        if !batch.reasoning.isEmpty { messages[index].reasoning += batch.reasoning }
+        if !batch.text.isEmpty { messages[index].text += batch.text }
+        for tool in batch.tools { upsertToolCall(tool, at: index) }
+
+        if batch.ended {
             messages[index].isStreaming = false
             // Any tool row still showing "running" at turn-end is complete.
             for i in messages[index].toolCalls.indices
             where messages[index].toolCalls[i].status == .running {
                 messages[index].toolCalls[i].status = .done
             }
-            if let sessionId = event.sessionId {
+            if let sessionId = batch.endSessionId {
                 activeSessionId = sessionId
             }
-        default:
-            break
         }
     }
 
@@ -1915,10 +1913,15 @@ final class AppViewModel {
     /// (non-empty) title/kind/detail never overwrite known values with blanks.
     private func upsertToolCall(_ tool: ToolEventPayload, at index: Int) {
         let status: ToolCallEntry.Status = tool.done ? .done : .running
+        // ACP `tool_call_update`s often carry the tool's *cumulative* output, so a
+        // long-running / looping tool re-sends an ever-larger `detail`. Cap it: the
+        // UI can't usefully show more, and this stops one row's string from growing
+        // without bound.
+        let detail = Self.cappedToolDetail(tool.detail)
         if let row = messages[index].toolCalls.firstIndex(where: { $0.id == tool.id }) {
             if !tool.title.isEmpty { messages[index].toolCalls[row].title = tool.title }
             if !tool.kind.isEmpty { messages[index].toolCalls[row].kind = tool.kind }
-            if !tool.detail.isEmpty { messages[index].toolCalls[row].detail = tool.detail }
+            if !detail.isEmpty { messages[index].toolCalls[row].detail = detail }
             // Never regress a completed row back to running.
             if tool.done { messages[index].toolCalls[row].status = .done }
         } else {
@@ -1927,11 +1930,21 @@ final class AppViewModel {
                     id: tool.id,
                     title: tool.title,
                     kind: tool.kind,
-                    detail: tool.detail,
+                    detail: detail,
                     status: status
                 )
             )
         }
+    }
+
+    /// Longest tool-call detail we retain per row. Generous enough for a full diff
+    /// or command output, small enough that a pathological cumulative stream can't
+    /// grow the transcript into the gigabytes.
+    private static let maxToolDetailLength = 64_000
+
+    private static func cappedToolDetail(_ detail: String) -> String {
+        guard detail.count > maxToolDetailLength else { return detail }
+        return String(detail.prefix(maxToolDetailLength)) + "\n… (truncated)"
     }
 
     /// An isolated, empty working directory for "Don't work in a project" runs,
