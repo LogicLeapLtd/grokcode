@@ -344,21 +344,11 @@ struct OnboardingView: View {
             Button { model.completeOnboarding() } label: {
                 HStack(spacing: 6) {
                     Text("Get started")
-                        .font(CodexTheme.sans(14, weight: .semibold))
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .semibold))
                 }
-                .foregroundStyle(CodexTheme.sendButtonActiveForeground)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(CodexTheme.sendButtonActiveBackground)
-                )
-                .contentShape(Rectangle())
             }
-            .buttonStyle(CodexPressableStyle())
-            .codexHoverOverlay(cornerRadius: 11)
+            .buttonStyle(CodexProminentButtonStyle(cornerRadius: 11))
         }
         .padding(.horizontal, 26)
         .padding(.top, 16)

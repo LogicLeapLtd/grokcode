@@ -64,16 +64,120 @@ struct CodexAppearAnimation: ViewModifier {
     }
 }
 
+/// The app-wide tactile press style. Wired into nearly every button, so its
+/// feel *is* the app's feel. A press now dips scale + opacity with a springy
+/// settle instead of a flat opacity fade — the control reacts to the finger.
+/// The scale is applied ONLY while pressed (rest stays at 1.0), so text is
+/// never permanently rasterized/softened. Honours Reduce Motion.
 struct CodexPressableStyle: ButtonStyle {
-    var scale: CGFloat = 0.97
+    /// How far the control shrinks at the bottom of a press.
+    var scale: CGFloat = 0.955
 
     func makeBody(configuration: Configuration) -> some View {
-        // Press feedback via opacity rather than scaleEffect: a permanent
-        // scaleEffect forces layer-backed rasterization that visibly softens
-        // text. opacity(1) at rest is a no-op, keeping text crisp.
-        configuration.label
-            .opacity(configuration.isPressed ? 0.55 : 1)
-            .animation(CodexMotion.quickSpring, value: configuration.isPressed)
+        PressableLabel(configuration: configuration, pressedScale: scale)
+    }
+
+    private struct PressableLabel: View {
+        let configuration: Configuration
+        let pressedScale: CGFloat
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            let pressed = configuration.isPressed
+            configuration.label
+                .scaleEffect(pressed && !reduceMotion ? pressedScale : 1)
+                .opacity(pressed ? 0.72 : 1)
+                .animation(reduceMotion ? .easeOut(duration: 0.1)
+                                        : .spring(response: 0.3, dampingFraction: 0.62),
+                           value: pressed)
+        }
+    }
+}
+
+/// A prominent accent CTA — filled violet, spring press, a soft accent glow, and
+/// a subtle top highlight so it reads as raised. Use for the primary action on a
+/// surface (`Button("Save") {}.buttonStyle(CodexProminentButtonStyle())`).
+struct CodexProminentButtonStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 11
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .font(CodexTheme.sans(13.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [CodexTheme.accent, CodexTheme.accentDeep],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.white.opacity(pressed ? 0.10 : 0))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(.white.opacity(0.22), lineWidth: 1)
+                    .blendMode(.plusLighter)
+            )
+            .shadow(color: CodexTheme.accent.opacity(pressed ? 0.20 : 0.42),
+                    radius: pressed ? 5 : 12, y: pressed ? 2 : 5)
+            .scaleEffect(pressed && !reduceMotion ? 0.96 : 1)
+            .animation(reduceMotion ? .easeOut(duration: 0.1)
+                                    : .spring(response: 0.3, dampingFraction: 0.6),
+                       value: pressed)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+/// A quieter companion to the prominent style — a tinted, bordered surface for
+/// secondary actions. Neutral at rest, accent-tinted border on hover-less press.
+struct CodexSecondaryButtonStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 11
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .font(CodexTheme.sans(13, weight: .medium))
+            .foregroundStyle(CodexTheme.textPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(CodexTheme.composerBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(pressed ? CodexTheme.accent.opacity(0.7) : CodexTheme.composerBorder,
+                                  lineWidth: 1)
+            )
+            .scaleEffect(pressed && !reduceMotion ? 0.965 : 1)
+            .opacity(pressed ? 0.9 : 1)
+            .animation(reduceMotion ? .easeOut(duration: 0.1)
+                                    : .spring(response: 0.3, dampingFraction: 0.62),
+                       value: pressed)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+extension View {
+    /// A focus/emphasis ring in the brand accent — a crisp inner stroke plus a
+    /// soft outer halo. Use for keyboard focus or to mark the active control.
+    func codexFocusRing(_ visible: Bool, cornerRadius: CGFloat = 10) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(CodexTheme.accent.opacity(visible ? 0.9 : 0), lineWidth: 2)
+                .shadow(color: CodexTheme.accent.opacity(visible ? 0.5 : 0), radius: 6)
+                .allowsHitTesting(false)
+        )
+        .animation(CodexMotion.quickSpring, value: visible)
     }
 }
 

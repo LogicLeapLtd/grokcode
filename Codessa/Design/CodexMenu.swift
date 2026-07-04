@@ -128,10 +128,14 @@ private struct CodexMenuHost: ViewModifier {
                     }
                 }
                 .ignoresSafeArea()
-                .transition(.opacity)
+                .transition(
+                    .scale(scale: 0.96, anchor: .top)
+                        .combined(with: .opacity)
+                        .combined(with: .offset(y: -5))
+                )
             }
         }
-        .animation(.easeOut(duration: 0.12), value: controller.active?.id)
+        .animation(CodexMotion.panelSpring, value: controller.active?.id)
     }
 
     /// The menu card, measured (to drive edge selection) and — only when it
@@ -194,6 +198,15 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
 
     private var isOpen: Bool { controller.active?.id == id }
 
+    /// Trigger background: accent-tinted while its menu is open, a neutral hover
+    /// tint on hover, else clear. Only when `highlightOnHover` is set.
+    private var triggerFill: Color {
+        guard highlightOnHover else { return .clear }
+        if isOpen { return CodexTheme.accent.opacity(0.16) }
+        if hovering { return CodexTheme.hoverBackground }
+        return .clear
+    }
+
     private func open() {
         controller.toggle(id: id, anchor: frame, minWidth: minWidth, edge: edge) {
             menu({ controller.close() })
@@ -207,12 +220,20 @@ struct CodexMenuTrigger<Label: View, Menu: View>: View {
                 .padding(.vertical, highlightOnHover ? 5 : 0)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(highlightOnHover && (isOpen || hovering) ? CodexTheme.hoverBackground : .clear)
+                        // Open → lit in the brand accent so the active trigger
+                        // stands out; plain hover stays neutral.
+                        .fill(triggerFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isOpen ? CodexTheme.accent.opacity(0.5) : .clear, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(CodexMotion.quickSpring, value: isOpen)
         .background(
             GeometryReader { geo in
                 Color.clear
@@ -281,34 +302,53 @@ struct CodexMenuItem: View {
     @State private var hovering = false
     @Environment(CodexMenuController.self) private var menuController
 
+    /// Foreground for the icon + title: the accent when selected, error red when
+    /// destructive, otherwise the normal ink. Selection now reads in the brand
+    /// colour rather than as a lone grey checkmark.
+    private var titleColor: Color {
+        if isDestructive { return CodexTheme.errorForeground }
+        if isSelected { return CodexTheme.accent }
+        return CodexTheme.textPrimary
+    }
+    private var iconColor: Color {
+        if isDestructive { return CodexTheme.errorForeground }
+        if isSelected { return CodexTheme.accent }
+        return CodexTheme.textSecondary
+    }
+    private var rowFill: Color {
+        if isSelected { return CodexTheme.accent.opacity(0.14) }
+        if hovering { return CodexTheme.hoverBackground }
+        return .clear
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(isDestructive ? CodexTheme.errorForeground : CodexTheme.textSecondary)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(iconColor)
                         .frame(width: 16)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(isDestructive ? CodexTheme.errorForeground : CodexTheme.textPrimary)
+                        .font(CodexTheme.sans(13, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(titleColor)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(CodexTheme.sans(11))
                             .foregroundStyle(CodexTheme.textTertiary)
                     }
                 }
                 Spacer(minLength: 16)
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(CodexTheme.textPrimary)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(CodexTheme.accent)
                 }
                 if let shortcut {
                     Text(shortcut)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(CodexTheme.sans(12))
                         .foregroundStyle(CodexTheme.textTertiary)
                         .frame(minWidth: 12)
                 }
@@ -318,12 +358,13 @@ struct CodexMenuItem: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(hovering ? CodexTheme.hoverBackground : .clear)
+                    .fill(rowFill)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .onAppear { if let shortcut { menuController.registerShortcut(shortcut, action) } }
         .onDisappear { if let shortcut { menuController.unregisterShortcut(shortcut) } }
     }
