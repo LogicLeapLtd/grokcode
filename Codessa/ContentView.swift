@@ -7,6 +7,10 @@ struct ContentView: View {
     /// the primary window and its published state drives the paywall/banner.
     @StateObject private var license = LicenseManager()
 
+    /// In-app updater. Owned here so its lifetime matches the window; drives the
+    /// "Check for updates" dialog and the sidebar's update badge.
+    @StateObject private var update = UpdateService()
+
     var body: some View {
         ZStack {
             windowBackdrop
@@ -58,6 +62,9 @@ struct ContentView: View {
                 // the app has bootstrapped, so onboarding wins the initial
                 // surface and license state settles into the non-blocking banner.
                 license.bootstrap()
+                // Quietly check for a newer release in the background; only lights
+                // the sidebar badge, never pops the dialog uninvited.
+                update.checkInBackgroundIfEnabled()
             }
             .onChange(of: license.isInLimitedMode) { _, limited in
                 if limited, model.activePage == .automations {
@@ -76,6 +83,13 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .strokeBorder(CodexTheme.composerBorder, lineWidth: 1)
                     )
+            }
+
+            // Software-update dialog. A download/install is in flight-safe: the
+            // backdrop tap only dismisses when we're not mid-install.
+            AnimatedModal(isPresented: update.isDialogPresented, onDismiss: { dismissUpdateDialog() }) {
+                UpdateDialog()
+                    .environmentObject(update)
             }
         }
         .overlay {
@@ -100,11 +114,20 @@ struct ContentView: View {
         .animation(CodexMotion.modalSpring, value: model.commandPaletteOpen)
         .animation(CodexMotion.modalSpring, value: model.onboardingOpen)
         .animation(.easeOut(duration: 0.18), value: model.fullScreenImagePath)
+        .animation(CodexMotion.modalSpring, value: update.isDialogPresented)
         .environmentObject(license)
+        .environmentObject(update)
         .codexMenuHost()
         .focusEffectDisabled()
         .background(WindowConfigurator())
         .preferredColorScheme(model.appearance.colorScheme)
+    }
+
+    /// Backdrop-tap / dismiss handler for the update dialog. Ignored while an
+    /// install is running so a stray click can't abandon the swap-and-relaunch.
+    private func dismissUpdateDialog() {
+        if case .installing = update.phase { return }
+        update.isDialogPresented = false
     }
 
     private var windowBackdrop: some View {

@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(AppViewModel.self) private var model
     @EnvironmentObject private var license: LicenseManager
+    @EnvironmentObject private var update: UpdateService
     var limitedMode = false
     var forceCollapsed = false
 
@@ -490,8 +491,12 @@ struct SidebarView: View {
                 model.navigateTo(.settings)
                 close()
             }
-            CodexMenuItem(title: "Check for updates", systemImage: "arrow.down.circle") {
-                NSWorkspace.shared.open(Self.releasesURL)
+            CodexMenuItem(
+                title: update.updateAvailableInBackground ? "Update available" : "Check for updates",
+                subtitle: update.updateAvailableInBackground ? "A newer version is ready to install" : nil,
+                systemImage: "arrow.down.circle"
+            ) {
+                update.presentDialog()
                 close()
             }
 
@@ -509,8 +514,6 @@ struct SidebarView: View {
             }
         }
     }
-
-    private static let releasesURL = URL(string: "https://github.com/LogicLeapLtd/grokcode/releases/latest")!
 
     /// Two-letter initials for the avatar, from the macOS account's full name.
     private var accountInitials: String {

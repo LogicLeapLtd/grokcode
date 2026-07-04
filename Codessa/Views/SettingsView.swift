@@ -11,6 +11,7 @@ import AppKit
 /// storage size, toast, confirmations, nav search) is held here as `@State`.
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var model
+    @EnvironmentObject private var update: UpdateService
     @State private var section: Section = .general
     @State private var navQuery = ""
 
@@ -731,6 +732,12 @@ struct SettingsView: View {
                 Spacer(minLength: 0)
             }
 
+            updateCard
+
+            toggleRow("Check for updates automatically",
+                      "Quietly check for a newer version each time Codessa launches.",
+                      isOn: $update.automaticallyChecksOnLaunch)
+
             cardContainer {
                 VStack(spacing: 0) {
                     linkRow("GitHub repository", icon: "chevron.left.forwardslash.chevron.right",
@@ -744,6 +751,53 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// Update status + action card in About. Opens the full update dialog, and
+    /// surfaces the "development build → install to /Applications" hint inline so
+    /// the fix for the drifting Dock shortcut is discoverable from Settings too.
+    private var updateCard: some View {
+        cardContainer {
+            HStack(spacing: 12) {
+                Image(systemName: update.updateAvailableInBackground ? "arrow.down.circle.fill" : "checkmark.seal")
+                    .font(.system(size: 18))
+                    .foregroundStyle(update.updateAvailableInBackground ? CodexTheme.accent : CodexTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(update.updateAvailableInBackground ? "An update is available" : "Software updates")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                    Text(updateStatusDetail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Button { update.presentDialog() } label: {
+                    Text(update.updateAvailableInBackground ? "Install…" : "Check now")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+                        .padding(.horizontal, 14)
+                        .frame(height: 28)
+                        .background(Capsule(style: .continuous).fill(CodexTheme.sendButtonActiveBackground))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(CodexPressableStyle())
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private var updateStatusDetail: String {
+        if update.updateAvailableInBackground {
+            return "Click to review the changes and install."
+        }
+        if !update.isRunningFromCanonicalLocation {
+            return update.isDevBuild
+                ? "Running a development build — check for updates to install it to /Applications and stop re-pinning the Dock."
+                : "Running from outside /Applications. Check for updates to install it to a stable location."
+        }
+        return "You're on version \(update.currentVersion)."
     }
 
     // MARK: - Toast
