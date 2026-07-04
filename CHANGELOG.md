@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-04
+
+### Fixed
+
+- **Runaway memory / "Not Responding" during long or fast agent turns.** The
+  provider stream delivered one main-actor task per chunk with no backpressure,
+  so a fast (or looping) stream flooded the UI thread faster than SwiftUI could
+  drain it — the task backlog plus an unbounded, cumulative tool-output string
+  pinned the main thread and grew memory without limit (~50 GB observed). Stream
+  events are now coalesced into at most one in-flight flush and applied in a
+  single batched mutation, and per-tool detail is capped, so memory stays bounded
+  no matter how fast the agent streams.
+
 ## [1.5.0] - 2026-07-04
 
 ### Changed

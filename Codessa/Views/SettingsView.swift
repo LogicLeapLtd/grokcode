@@ -916,18 +916,11 @@ struct SettingsView: View {
     }
 
     private func enumPicker<T: CaseIterable & Identifiable>(_ title: String, selection: Binding<T>, cases: T.AllCases) -> some View where T: Hashable, T.AllCases: RandomAccessCollection {
-        HStack(spacing: 12) {
-            rowLabel(title, "")
-            Spacer()
-            Picker(title, selection: selection) {
-                ForEach(cases) { option in
-                    Text(label(for: option)).tag(option)
-                }
+        menuRow(title, "", value: label(for: selection.wrappedValue)) {
+            ForEach(cases) { option in
+                Button(label(for: option)) { selection.wrappedValue = option }
             }
-            .labelsHidden()
-            .frame(width: 220)
         }
-        .rowPadding()
     }
 
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
@@ -998,14 +991,16 @@ struct SettingsView: View {
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(CodexTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, 10)
-                .frame(width: 240, height: 28)
+                .frame(minWidth: 230, idealWidth: 250, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7).fill(CodexTheme.mainBackground.opacity(0.46)))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(CodexTheme.divider, lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
         .rowPadding()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func rowLabel(_ title: String, _ subtitle: String) -> some View {
