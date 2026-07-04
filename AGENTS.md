@@ -11,8 +11,43 @@ Native macOS SwiftUI app — a front-end for the Grok CLI.
 - **Git:** this folder (`GrokCode/`) is the repo root. It has **no git remote**. Releases are
   published to the GitHub repo **`LogicLeapLtd/grokcode`** with the `gh` CLI (authed as the
   `LogicLeapLtd` org, ADMIN on that repo).
-- **Validate** with `xcodebuild -project Codessa.xcodeproj -scheme Codessa -configuration Debug -derivedDataPath build build`
-  before claiming a change is done.
+- **Validate** compilation with
+  `xcodebuild -project Codessa.xcodeproj -scheme Codessa -configuration Debug -derivedDataPath .build-agent build`
+  — note the **private** `.build-agent` derived-data path (git-ignored), NOT the shared `build/`,
+  so concurrent agents don't corrupt each other's build. Build only to verify it compiles; never to launch.
+
+---
+
+## Multi-agent & build discipline — READ THIS FIRST (learned the hard way)
+
+**This working tree is edited by more than one agent at the same time** (Claude Code *and*
+Codex, plus Josh). Assume you are **not** alone. The failure mode that has already bitten us:
+several agents each run their own `xcodebuild`, then each install/launch a *different* in-flight
+build, so the running Codessa keeps flipping versions and work *appears* to vanish — it isn't
+(it's in git or still uncommitted; the running app was just a stale build). Rules, non-negotiable:
+
+1. **Never launch or install the app.** Do NOT run the dev-build promote, do NOT
+   `cp`/`ditto` a build into `/Applications/Codessa.app`, do NOT `open` the app.
+   **Deciding which build runs is Josh's job.** Concurrent installs are the #1 cause of
+   "different versions launching" and perceived lost work.
+2. **Build only to check compilation, only when needed, to a PRIVATE derived-data path**
+   (`.build-agent…`, git-ignored) — never the shared `build/`. Don't build "just to be safe";
+   it contends with other agents' builds.
+3. **Commit small, often, and ONLY your paths.** Never `git add -A` / `git add .`. Stage the
+   exact files you touched, by name. A giant shared uncommitted blob is what makes work look
+   "lost" — frequent path-scoped commits keep each agent's work isolated and recoverable.
+4. **NEVER run destructive/history git ops on this shared tree:** no `git reset --hard`, no
+   `git checkout -- <path>` on files you didn't author, no `git stash`, `git clean`,
+   `git rebase`, force-push, or `commit --amend`. They silently wipe another agent's
+   uncommitted work. If `git status` shows changes you don't recognise, **leave them**.
+5. **Stay in your lane** — only touch files your task needs. If two agents need the same file,
+   coordinate through Josh instead of racing edits.
+6. **The in-app updater is for shipping, not dev iteration.** It installs to the stable
+   `/Applications/Codessa.app`; agents promoting dev builds there is exactly what makes the
+   running app thrash. Leave `/Applications` alone — publish real releases only via the runbook
+   below, and only when Josh asks.
+
+When in doubt: make the edit, do a path-scoped commit, and let Josh build and run.
 
 ---
 
