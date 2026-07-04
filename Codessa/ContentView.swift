@@ -4,7 +4,7 @@ struct ContentView: View {
     @Environment(AppViewModel.self) private var model
     @EnvironmentObject private var update: UpdateService
 
-    private let titlebarControlsTopInset: CGFloat = 1
+    private let titlebarControlsTopInset: CGFloat = 6
 
     /// License/trial gate. Owned here as a `@StateObject` so its lifetime matches
     /// the primary window and its published state drives the paywall/banner.
