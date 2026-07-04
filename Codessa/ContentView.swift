@@ -38,18 +38,13 @@ struct ContentView: View {
                                 .frame(width: 1)
                                 .zIndex(2)
 
-                            // License banner sits at the top of the PAGE column only, so
-                            // the sidebar runs the full height of the window.
+                            // Page column runs the full height of the window.
                             VStack(spacing: 0) {
-                                if license.isInTrial || license.isInLimitedMode {
-                                    TrialBanner(license: license)
-                                        .transition(CodexMotion.bannerTransition)
-                                }
                                 MainContentView()
                             }
                             .layoutPriority(1)
                             // Pull the column up into the transparent title-bar strip so the
-                            // trial banner sits flush at the very top instead of leaving a
+                            // page content sits flush at the very top instead of leaving a
                             // dead ~28pt gap beneath the title bar. Traffic-light buttons
                             // live over the sidebar, so the page column's top edge is free.
                             .ignoresSafeArea(.container, edges: .top)
