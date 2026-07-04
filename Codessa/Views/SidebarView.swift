@@ -24,6 +24,7 @@ private enum SidebarMetrics {
     static let branchHeaderIndent: CGFloat = 11
     static let railButtonWidth: CGFloat = 38
     static let railButtonHeight: CGFloat = 32
+    static let accountMenuWidth: CGFloat = 260
 }
 
 private struct CollapsedRailTooltipAnchorKey: PreferenceKey {
@@ -539,7 +540,7 @@ struct SidebarView: View {
     /// divider above it, since it sits flush against the sidebar's bottom
     /// edge) to match the rest of the sidebar's full-width rows.
     private var accountRow: some View {
-        CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
+        CodexMenuTrigger(minWidth: 240, maxWidth: SidebarMetrics.accountMenuWidth, edge: .top, highlightOnHover: false) { isOpen in
             HStack(spacing: 9) {
                 AccountAvatar(initials: accountInitials)
                 VStack(alignment: .leading, spacing: 0) {
@@ -578,6 +579,8 @@ struct SidebarView: View {
                     Text(accountDisplayName)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Text(accountPlanLabel)
                         .font(.system(size: 10.5))
                         .foregroundStyle(CodexTheme.textTertiary)
@@ -721,7 +724,7 @@ struct SidebarView: View {
     /// as `railButton`, but an avatar opening the shared account menu instead
     /// of navigating straight to Settings.
     private var collapsedAccountButton: some View {
-        CodexMenuTrigger(minWidth: 240, edge: .top, highlightOnHover: false) { isOpen in
+        CodexMenuTrigger(minWidth: 240, maxWidth: SidebarMetrics.accountMenuWidth, edge: .top, highlightOnHover: false) { isOpen in
             AccountAvatar(initials: accountInitials, diameter: 22)
                 .frame(width: SidebarMetrics.railButtonWidth, height: SidebarMetrics.railButtonHeight)
                 .background(

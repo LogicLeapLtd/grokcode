@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-04
+
+### Added
+- **Final loose-artifact preservation pass**: copied the design-system sync notes
+  and current Automations/Command Palette screenshots into `docs/design-system/`
+  so the parent-workspace reference artifacts from July 4 are committed and
+  pushed with the app source.
+
 ## [1.3.0] - 2026-07-04
 
 ### Added
@@ -123,7 +131,8 @@ First public release of Codessa — a native SwiftUI macOS client for the
 - Fixed input placeholders, mode-menu shortcuts, and modal dropdowns.
 - Fixed no-project privacy prompts and the thinking-dots animation.
 
-[Unreleased]: https://github.com/LogicLeapLtd/grokcode/compare/v1.3...HEAD
+[Unreleased]: https://github.com/LogicLeapLtd/grokcode/compare/v1.4...HEAD
+[1.4.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.4
 [1.3.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.3
 [1.2.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.2
 [1.1.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.1
