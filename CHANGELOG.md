@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-04
+
+### Changed
+
+- **Reasoning level is now its own composer dropdown**, split out of the combined
+  model picker so the model menu no longer carries the reasoning pills inline.
+
 ## [1.7.0] - 2026-07-04
 
 ### Added
