@@ -528,11 +528,9 @@ struct PromptComposer: View {
 
                 CodexMenuDivider()
 
-                CodexMenuToggle(
-                    title: "Plan mode",
-                    systemImage: "list.bullet.clipboard",
-                    isOn: Binding(get: { model.isPlanMode }, set: { model.isPlanMode = $0 })
-                )
+                // Plan is a first-class control via the always-visible mode pill
+                // (and the ⇧⌘M permission menu), so a third "Plan mode" toggle here
+                // was redundant — removed to stop Plan showing up three times.
                 CodexMenuToggle(
                     title: "Pursue goal",
                     systemImage: "scope",

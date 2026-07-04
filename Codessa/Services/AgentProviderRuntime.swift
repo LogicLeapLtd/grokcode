@@ -452,12 +452,37 @@ nonisolated final class AgentProviderRuntime: @unchecked Sendable {
             .joined(separator: providerId == AgentProvider.claude.id ? "" : "\n")
         if !joined.isEmpty { return joined }
 
+        // Claude's stream-json ends with a `type:"result"` object whose top-level
+        // `result` string is the authoritative final answer. On a hard error (rate
+        // limit / 429 / auth) the assistant `content` blocks come back empty and the
+        // reason lives ONLY in that `result` field — so surface it rather than
+        // reporting a blank "empty response" and hiding why the run failed.
+        if let resultText = claudeResultText(from: lines), !resultText.isEmpty {
+            return resultText
+        }
+
         return output
             .split(whereSeparator: \.isNewline)
             .map(String.init)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The `result` string from Claude's terminal `type:"result"` stream-json line,
+    /// used as a fallback when no assistant text was produced (e.g. API errors,
+    /// rate limits) so the user sees the real reason instead of a blank response.
+    private func claudeResultText(from lines: [String]) -> String? {
+        for line in lines.reversed() {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (object["type"] as? String) == "result",
+                  let result = object["result"] as? String
+            else { continue }
+            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 
     private func extractStrings(from value: Any, preferredKeys: [String]) -> [String] {

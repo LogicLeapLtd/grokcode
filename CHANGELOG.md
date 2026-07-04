@@ -1,5 +1,8 @@
 # Changelog
 
+- Claude runs that fail on a hard API error (rate limit / 429 / auth) no longer show a blank "Claude returned an empty response". Claude's stream-json puts the reason only in the terminal `result` field on those errors while leaving the assistant `content` blocks empty; the extractor now falls back to that `result` text, so you see the actual message (e.g. "You've reached your Fable 5 limit. Run /usage-credits…") instead of an empty bubble.
+- Removed the redundant "Plan mode" toggle from the composer "+" menu. Plan was surfacing three times (the + toggle, the mode pill, and the permission menu); the always-visible mode pill and the ⇧⌘M permission menu already cover it.
+
 - Stopped loading the grok CLI session list on launch. The app used to shell out to `grok sessions list` during startup to "restore previous sessions", but that list only feeds the Search page (the sidebar renders from the on-disk session index). It's now loaded lazily the first time you open Search — opening the app no longer spawns a grok process to pull old sessions.
 
 - Stopped prewarming the warm `grok agent stdio` session on launch. Previously the app booted the entire MCP server fleet (dozens of subprocesses) the moment Codessa opened — even while the user was still on the home screen and might never send anything — pinning a large amount of idle memory and spawning a storm of processes on startup. The warm session now boots lazily on the first real send, so MCP starts on demand instead of on every launch.
