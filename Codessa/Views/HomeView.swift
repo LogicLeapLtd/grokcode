@@ -157,8 +157,7 @@ private struct QuickActionCard: View {
                     .font(CodexTheme.controlTitleFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .allowsTightening(true)
+                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
 
                 Spacer(minLength: 0)

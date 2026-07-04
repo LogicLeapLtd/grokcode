@@ -1,5 +1,6 @@
 # Changelog
 
+- Home quick-action cards: all labels now render at the same font size ("Browse plugins" no longer auto-shrinks to fit).
 - Composer toolbar: pills now size to their content (no more truncated mode/permission labels or "Full access" wrapping); model pill drops the "(default)" suffix.
 
 All notable changes to Codessa are documented in this file.
