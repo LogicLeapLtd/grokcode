@@ -214,7 +214,7 @@ struct SidebarView: View {
                     .foregroundStyle(navIconColor(active: active, locked: locked))
                     .frame(width: SidebarMetrics.navIconBox)
                 Text(section.title)
-                    .font(.system(size: SidebarMetrics.navFont, weight: .medium))
+                    .font(.system(size: SidebarMetrics.bodyFont, weight: .regular))
                     .foregroundStyle(CodexTheme.textPrimary)
                 Spacer()
                 if locked {
