@@ -244,21 +244,12 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         Self.providerScopedName(providerName: providerName, modelName: menuName)
     }
 
+    /// The model-name label. Provider names never belong in a model-name field —
+    /// the UI already conveys the provider via its logo and section header — so
+    /// this returns the model name alone (never "Provider · Model").
     static func providerScopedName(providerName: String, modelName: String) -> String {
-        let provider = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !provider.isEmpty else { return model.isEmpty ? "Model" : model }
-        guard !model.isEmpty else { return provider }
-        return hasProviderPrefix(modelName: model, providerName: provider) ? model : "\(provider) · \(model)"
-    }
-
-    private static func hasProviderPrefix(modelName: String, providerName: String) -> Bool {
-        let model = modelName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        let provider = providerName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        guard model.hasPrefix(provider) else { return false }
-        guard model.count > provider.count else { return true }
-        let separator = model[model.index(model.startIndex, offsetBy: provider.count)]
-        return separator == " " || separator == "-" || separator == "·" || separator == ":" || separator == "("
+        return model.isEmpty ? "Model" : model
     }
 
     var reasoningDescriptor: ProviderOptionDescriptor? {
