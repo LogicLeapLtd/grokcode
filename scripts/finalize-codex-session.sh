@@ -6,6 +6,8 @@ PROJECT="$ROOT/Codessa.xcodeproj"
 SCHEME="Codessa"
 PUBLISH_REPO="${PUBLISH_REPO:-LogicLeapLtd/grokcode}"
 DERIVED_DATA="${DERIVED_DATA:-$ROOT/.build-agent-finalize}"
+PRODUCTION_BRANCH="${PRODUCTION_BRANCH:-production}"
+RECOVERY_AUDIT_SINCE="${RECOVERY_AUDIT_SINCE:-24 hours ago}"
 MODE=""
 DRY_RUN=0
 NOTES_FILE=""
@@ -21,7 +23,82 @@ Mandatory Codessa session closure gate:
 Environment:
   PUBLISH_REPO   GitHub repo for releases (default: LogicLeapLtd/grokcode)
   DERIVED_DATA   private derived data path for the validation build
+  PRODUCTION_BRANCH  moving remote branch that must point at the published commit (default: production)
+  RECOVERY_AUDIT_SINCE  lookback for dangling WIP commit warnings (default: 24 hours ago)
 USAGE
+}
+
+remote_url() {
+  printf 'https://github.com/%s.git' "$PUBLISH_REPO"
+}
+
+remote_ref_sha() {
+  local ref="$1"
+  git ls-remote "$(remote_url)" "$ref" | awk '{print $1}'
+}
+
+verify_remote_ref() {
+  local label="$1"
+  local ref="$2"
+  local expected="$3"
+  local actual
+  actual="$(remote_ref_sha "$ref")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "ERROR: $label is not published at $expected (actual: ${actual:-missing})." >&2
+    exit 1
+  fi
+  echo "==> Verified $label -> $expected"
+}
+
+verify_dmg_version() {
+  local dmg="$1"
+  local expected_version="$2"
+  local expected_build="$3"
+  local mount
+  mount="$(mktemp -d "${TMPDIR:-/tmp}/codessa-dmg-mount.XXXXXX")"
+
+  hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly -quiet
+  trap 'hdiutil detach "$mount" -quiet >/dev/null 2>&1 || true; rm -rf "$mount"; [[ -n "${TMP_NOTES:-}" ]] && rm -f "$TMP_NOTES"' EXIT
+
+  local app="$mount/Codessa.app"
+  if [[ ! -d "$app" ]]; then
+    echo "ERROR: mounted DMG does not contain Codessa.app" >&2
+    exit 1
+  fi
+
+  local actual_version actual_build
+  actual_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+  actual_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
+
+  hdiutil detach "$mount" -quiet
+  rm -rf "$mount"
+  trap '[[ -n "${TMP_NOTES:-}" ]] && rm -f "$TMP_NOTES"' EXIT
+
+  if [[ "$actual_version" != "$expected_version" || "$actual_build" != "$expected_build" ]]; then
+    echo "ERROR: DMG app version mismatch. Expected ${expected_version} (${expected_build}), got ${actual_version} (${actual_build})." >&2
+    exit 1
+  fi
+  echo "==> Verified DMG contains Codessa ${actual_version} (${actual_build})"
+}
+
+print_recent_unreachable_commits() {
+  local rows
+  rows="$(
+    git fsck --no-reflogs --unreachable 2>/dev/null \
+      | awk '/unreachable commit/ {print $3}' \
+      | while read -r commit; do
+          git log --no-walk --since="$RECOVERY_AUDIT_SINCE" --format='%H %ci %s' "$commit" 2>/dev/null || true
+        done \
+      | sed '/^$/d' \
+      | sort
+  )"
+
+  if [[ -n "$rows" ]]; then
+    echo "==> Recent dangling WIP commits found since '$RECOVERY_AUDIT_SINCE' (audit before deleting build artifacts):"
+    echo "$rows"
+  else
+    echo "==> No recent dangling WIP commits found since '$RECOVERY_AUDIT_SINCE'"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -67,6 +144,7 @@ if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
 fi
 
 git diff --check
+print_recent_unreachable_commits
 
 VERSION="$(
   xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showBuildSettings 2>/dev/null \
@@ -106,6 +184,7 @@ command -v gh >/dev/null 2>&1 || {
 TAG="v${VERSION}"
 SOURCE_BRANCH="release/${TAG}"
 DMG="$ROOT/dist/Codessa-${VERSION}.dmg"
+HEAD_SHA="$(git rev-parse HEAD)"
 
 if gh release view "$TAG" --repo "$PUBLISH_REPO" >/dev/null 2>&1; then
   echo "ERROR: release $TAG already exists on $PUBLISH_REPO. Bump MARKETING_VERSION before publishing." >&2
@@ -139,15 +218,19 @@ fi
 
 echo "==> DMG checksum"
 shasum -a 256 "$DMG"
+verify_dmg_version "$DMG" "$VERSION" "$BUILD"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  echo "DRY RUN: would push HEAD to $SOURCE_BRANCH and create $TAG on $PUBLISH_REPO with $DMG"
+  echo "DRY RUN: would push HEAD to $SOURCE_BRANCH + $PRODUCTION_BRANCH and create $TAG on $PUBLISH_REPO with $DMG"
   [[ -n "$TMP_NOTES" ]] && rm -f "$TMP_NOTES"
   exit 0
 fi
 
 echo "==> Pushing release source branch $SOURCE_BRANCH"
-git push "https://github.com/${PUBLISH_REPO}.git" HEAD:"refs/heads/${SOURCE_BRANCH}"
+git push "$(remote_url)" HEAD:"refs/heads/${SOURCE_BRANCH}"
+
+echo "==> Pushing moving production branch $PRODUCTION_BRANCH"
+git push "$(remote_url)" HEAD:"refs/heads/${PRODUCTION_BRANCH}"
 
 echo "==> Creating GitHub release $TAG"
 gh release create "$TAG" \
@@ -159,6 +242,36 @@ gh release create "$TAG" \
 
 echo "==> Verifying latest release"
 gh release view "$TAG" --repo "$PUBLISH_REPO" --json tagName,publishedAt,url,assets
+
+verify_remote_ref "release source branch $SOURCE_BRANCH" "refs/heads/${SOURCE_BRANCH}" "$HEAD_SHA"
+verify_remote_ref "production branch $PRODUCTION_BRANCH" "refs/heads/${PRODUCTION_BRANCH}" "$HEAD_SHA"
+verify_remote_ref "release tag $TAG" "refs/tags/${TAG}" "$HEAD_SHA"
+
+LATEST_TAG="$(gh release view --repo "$PUBLISH_REPO" --json tagName --jq '.tagName')"
+if [[ "$LATEST_TAG" != "$TAG" ]]; then
+  echo "ERROR: latest GitHub release is $LATEST_TAG, expected $TAG." >&2
+  exit 1
+fi
+
+LOCAL_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+REMOTE_DIGEST="$(gh release view "$TAG" --repo "$PUBLISH_REPO" --json assets --jq ".assets[] | select(.name == \"Codessa-${VERSION}.dmg\") | .digest")"
+if [[ "$REMOTE_DIGEST" != "sha256:$LOCAL_SHA" ]]; then
+  echo "ERROR: release asset digest mismatch. Expected sha256:$LOCAL_SHA, got ${REMOTE_DIGEST:-missing}." >&2
+  exit 1
+fi
+echo "==> Verified release asset digest sha256:$LOCAL_SHA"
+
+INSTALLED_VERSION=""
+if [[ -f "/Applications/Codessa.app/Contents/Info.plist" ]]; then
+  INSTALLED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Codessa.app/Contents/Info.plist 2>/dev/null || true)"
+fi
+if [[ -n "$INSTALLED_VERSION" && "$INSTALLED_VERSION" != "$VERSION" ]]; then
+  echo "==> Update-ready: installed Codessa is $INSTALLED_VERSION; published Codessa is $VERSION"
+elif [[ -n "$INSTALLED_VERSION" ]]; then
+  echo "==> Installed Codessa already matches published version $VERSION"
+else
+  echo "==> No installed /Applications/Codessa.app detected; release is published for fresh install"
+fi
 
 [[ -n "$TMP_NOTES" ]] && rm -f "$TMP_NOTES"
 echo "==> Published Codessa ${VERSION}"

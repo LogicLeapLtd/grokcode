@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codessa Home Alternatives</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="home-alternatives.css" />
+</head>
+<body>
+  <main class="board">
+    <header class="board-head">
+      <p>Codessa home screen exploration</p>
+      <h1>Less landing page. More actual app.</h1>
+    </header>
+
+    <section class="concept concept-desk">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="desk-shell">
+        <aside class="mini-sidebar">
+          <div class="brand-dot">C</div>
+          <div class="rail active"></div>
+          <div class="rail"></div>
+          <div class="rail"></div>
+          <div class="rail"></div>
+        </aside>
+        <section class="desk-main">
+          <div class="topline">
+            <span class="status-dot"></span>
+            GrokCodeGUI · warm · full access · build mode
+          </div>
+          <div class="desk-composer">
+            <div class="prompt-line">What should we do next?</div>
+            <div class="composer-bottom">
+              <span>+</span><span>Execute</span><span>Build</span><span>Full access</span><button>↑</button>
+            </div>
+          </div>
+          <div class="desk-cards">
+            <button>New thread</button>
+            <button>Search everything</button>
+            <button>Open plugins</button>
+          </div>
+        </section>
+        <aside class="desk-right">
+          <p>Session</p>
+          <div><strong>2</strong><span>running agents</span></div>
+          <div><strong>38</strong><span>changed files</span></div>
+          <div><strong>4</strong><span>recent threads</span></div>
+        </aside>
+      </div>
+      <aside class="concept-note"><strong>01 · Control Desk</strong> Still centered on command input, but the home screen becomes a compact operator desk with session status always visible.</aside>
+    </section>
+
+    <section class="concept concept-inbox">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="inbox-layout">
+        <aside class="inbox-list">
+          <p>Suggested starts</p>
+          <button class="selected">Review today’s changes<span>HomeView, Settings, Sidebar</span></button>
+          <button>Continue license gate<span>Last active 12m ago</span></button>
+          <button>Check local build errors<span>xcodebuild context</span></button>
+          <button>Draft release notes<span>From git diff</span></button>
+        </aside>
+        <section class="inbox-compose">
+          <div class="context-bar">
+            <span>harden-license-gate</span>
+            <span>private build</span>
+            <span>no launch</span>
+          </div>
+          <div class="large-field">Review today’s changes and tell me what is risky.</div>
+          <div class="compact-tools">
+            <span>Execute</span><span>Full access</span><span>GrokCodeGUI</span><button>↑</button>
+          </div>
+        </section>
+      </div>
+      <aside class="concept-note"><strong>02 · Agent Inbox</strong> Instead of asking the user to invent the first move, Codessa offers useful next prompts based on the current repo/session.</aside>
+    </section>
+
+    <section class="concept concept-map">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="map-layout">
+        <section class="map-canvas">
+          <div class="node root">GrokCodeGUI</div>
+          <div class="node n1">HomeView</div>
+          <div class="node n2">PromptComposer</div>
+          <div class="node n3">Settings</div>
+          <div class="node n4">Plugins</div>
+          <svg class="links" viewBox="0 0 720 420" aria-hidden="true">
+            <path d="M360 210 C260 190 230 125 170 100" />
+            <path d="M360 210 C510 190 535 105 610 90" />
+            <path d="M360 210 C270 265 245 330 160 340" />
+            <path d="M360 210 C505 250 530 325 620 330" />
+          </svg>
+        </section>
+        <aside class="map-panel">
+          <p>Ask from context</p>
+          <div class="map-field">What should we change in HomeView?</div>
+          <button>Run with selected files ↑</button>
+        </aside>
+      </div>
+      <aside class="concept-note"><strong>03 · Repo Map</strong> A more unusual first screen: the project graph is the empty state. Click a node, then prompt from selected context.</aside>
+    </section>
+
+    <section class="concept concept-console">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="console-layout">
+        <section class="terminal-panel">
+          <div class="term-line muted">last run · 03:44 · exited 0</div>
+          <div class="term-line">xcodebuild check completed</div>
+          <div class="term-line muted">dirty tree detected · 38 files · shared worktree</div>
+          <div class="term-line active">codessa <span>ready for next instruction</span></div>
+        </section>
+        <section class="console-compose">
+          <div class="console-field">Do anything</div>
+          <div class="console-tools"><span>+</span><span>Execute</span><span>Build</span><span>Full access</span><button>↑</button></div>
+        </section>
+      </div>
+      <aside class="concept-note"><strong>04 · Quiet Console</strong> More developer-native. The previous execution log gives the prompt surface meaning without becoming a terminal clone.</aside>
+    </section>
+
+    <section class="concept concept-timeline">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="timeline-layout">
+        <aside class="timeline">
+          <p>Today</p>
+          <div class="event now"><strong>Now</strong><span>Warm session ready</span></div>
+          <div class="event"><strong>03:41</strong><span>Home alternatives opened</span></div>
+          <div class="event"><strong>03:18</strong><span>Split panes changed</span></div>
+          <div class="event"><strong>Yesterday</strong><span>Plugin publish sheet</span></div>
+        </aside>
+        <section class="timeline-main">
+          <div class="project-chip">GrokCodeGUI</div>
+          <div class="timeline-prompt">Pick up from any moment, or start fresh.</div>
+          <div class="timeline-field">Ask about the selected event...</div>
+          <div class="timeline-actions"><button>Continue here</button><button>Summarize today</button><button>New chat</button></div>
+        </section>
+      </div>
+      <aside class="concept-note"><strong>05 · Time Machine</strong> Home as continuity: recent work becomes the navigation model, not a row of generic shortcuts.</aside>
+    </section>
+
+    <section class="concept concept-palette">
+      <div class="window-actions" aria-hidden="true"><span></span><span></span></div>
+      <div class="palette-card">
+        <div class="palette-search">⌘K&nbsp;&nbsp; What should we work on?</div>
+        <div class="palette-results">
+          <div><strong>Ask GrokCodeGUI</strong><span>Start a new warm-session thread</span></div>
+          <div><strong>Run build check</strong><span>Uses private derived data</span></div>
+          <div><strong>Open recent: License gate hardening</strong><span>12 minutes ago</span></div>
+          <div><strong>Browse plugins</strong><span>Marketplace and installed MCPs</span></div>
+        </div>
+        <div class="palette-footer"><span>Execute</span><span>Full access</span><button>↑</button></div>
+      </div>
+      <aside class="concept-note"><strong>06 · Palette First</strong> Radical but native: the whole home screen is a command palette, with the composer and navigation collapsed into one focused object.</aside>
+    </section>
+  </main>
+</body>
+</html>

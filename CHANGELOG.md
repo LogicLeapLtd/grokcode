@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-04
+
+### Added
+- **Recovery audit** for the July 4 overnight work, including the exact commit
+  coverage, dropped WIP snapshot check, parent-workspace artifact handling, and
+  live app/release verification evidence.
+- **Home alternative design artifacts** under `docs/design/home-alternatives/`,
+  preserving the loose parent-workspace HTML/CSS/screenshots inside the pushed
+  source tree.
+
+### Changed
+- **Finalization gate is stricter.** Publishing now verifies the DMG's embedded
+  app version/build, pushes both a versioned release branch and a moving
+  `production` branch, confirms remote branch/tag SHAs, checks the uploaded asset
+  digest against the local DMG, and reports whether the installed app is behind
+  the newly published version.
+
 ## [1.2.0] - 2026-07-04
 
 ### Added
@@ -101,7 +118,8 @@ First public release of Codessa — a native SwiftUI macOS client for the
 - Fixed input placeholders, mode-menu shortcuts, and modal dropdowns.
 - Fixed no-project privacy prompts and the thinking-dots animation.
 
-[Unreleased]: https://github.com/LogicLeapLtd/grokcode/compare/v1.2...HEAD
+[Unreleased]: https://github.com/LogicLeapLtd/grokcode/compare/v1.3...HEAD
+[1.3.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.3
 [1.2.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.2
 [1.1.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.1
 [1.0.0]: https://github.com/LogicLeapLtd/grokcode/releases/tag/v1.0

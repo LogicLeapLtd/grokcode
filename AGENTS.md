@@ -63,8 +63,10 @@ build, so the running Codessa keeps flipping versions and work *appears* to vani
    running `scripts/finalize-codex-session.sh --handoff` or, when Josh explicitly approved a
    production publish, `scripts/finalize-codex-session.sh --publish`. This gate refuses dirty
    trees, validates a private build, and either drops a local update for the running app or creates
-   the GitHub release the updater can see. Do not tell Josh work is "done" if this gate did not run
-   and pass; report the blocker instead.
+   the GitHub release the updater can see. Publish mode must also verify the DMG's embedded
+   version/build, the remote `release/v<version>` branch, the moving `production` branch, the
+   release tag, and the uploaded asset checksum. Do not tell Josh work is "done" if this gate did
+   not run and pass; report the blocker instead.
 
 When in doubt: make the edit, do a path-scoped commit, and run the closure gate so the work is
 recoverable and installable.
@@ -175,6 +177,8 @@ Do all of this whenever you cut a new version. The running app only sees a new v
   `scripts/finalize-codex-session.sh --publish`.
 - The final answer must say which gate mode ran and whether it passed. If it failed, give the
   smallest concrete blocker; do not describe unpublished local source as shipped.
+- Publish mode pushes both `release/v<version>` and `production`, then verifies both remote refs,
+  the release tag, the DMG app version/build, and the GitHub asset digest.
 
 ### Signing identities available on this machine
 - **Developer ID Application: LOGICLEAP LTD (DKP8S5XCXU)** — use for distribution.
