@@ -1019,14 +1019,14 @@ private struct ComposerIconControl: View {
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(CodexTheme.textSecondary)
             .frame(width: 30, height: 30)
-            .liquidGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous),
+            .liquidGlass(in: Circle(),
                          interactive: true,
                          fallback: CodexTheme.pillBackground.opacity(0.7))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                Circle()
                     .strokeBorder(CodexTheme.composerBorder.opacity(0.58), lineWidth: 0.75)
             )
-            .codexHoverOverlay(cornerRadius: 10)
+            .codexHoverOverlay(cornerRadius: 15)
             .contentShape(Rectangle())
     }
 }
