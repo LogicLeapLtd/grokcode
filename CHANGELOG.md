@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.11] - 2026-07-05
+
+- Automatic updater-visible release for the latest Codessa code changes.
+
+
 - Local integration management is now centralized on the Plugins page, where installed MCP servers/plugins/skills are synced into one list with disable, enable, and delete controls; Codessa session finalization now publishes updater-visible GitHub releases by default and captures dirty trees instead of silently skipping publish.
 
 - Claude/Codex/Gemini one-shot provider replies are now flushed into chat before the UI checks for an empty response, fixing the false "Claude returned an empty response" banner. Claude stream-json parsing is also narrowed to assistant/result records so hook output never pollutes the answer.
