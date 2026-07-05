@@ -213,10 +213,10 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         onEvent: @escaping @Sendable (GrokStreamEvent) -> Void
     ) async throws -> String? {
         // Fast path: the long-lived `grok agent stdio` session keeps MCP warm,
-        // so prompts after the first stream instantly. Plan mode (read-only) and
-        // Pursue-goal (`--check`) need the one-shot path's `--permission-mode` /
-        // `--check`, so they fall through to the per-message process below.
-        if Self.useWarmSession, permissionMode != .plan, !check {
+        // so prompts after the first stream instantly. Use it only when doing so
+        // would not drop per-turn CLI flags; permission/effort overrides and
+        // Pursue-goal (`--check`) use the one-shot path below.
+        if Self.useWarmSession, permissionMode == .fullAccess, effort == .medium, !check {
             return try await GrokAgentSession.shared.streamPrompt(
                 prompt, cwd: cwd, model: model, sessionId: sessionId, onEvent: onEvent)
         }
