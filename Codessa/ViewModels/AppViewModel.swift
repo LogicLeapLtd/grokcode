@@ -1285,6 +1285,7 @@ final class AppViewModel {
             let sessionId = try await providerRuntime.streamPrompt(request: request) { event in
                 coalescer.enqueue(event)
             }
+            coalescer.flushPending()
 
             if let sessionId {
                 activeSessionId = sessionId

@@ -74,6 +74,12 @@ nonisolated final class StreamCoalescer: @unchecked Sendable {
         }
     }
 
+    /// Force-apply anything buffered so callers that just finished a one-shot
+    /// provider run can observe the final text before checking for emptiness.
+    @MainActor func flushPending() {
+        flush()
+    }
+
     /// Merge a tool payload into the pending buffer, keyed by ACP `toolCallId`.
     /// Non-empty fields win over blanks and `done` latches true — the same rules
     /// `AppViewModel.upsertToolCall` applies — so collapsing repeated updates for
@@ -95,6 +101,12 @@ nonisolated final class StreamCoalescer: @unchecked Sendable {
 
     @MainActor private func flush() {
         lock.lock()
+        let hasBufferedContent = !text.isEmpty || !reasoning.isEmpty || !tools.isEmpty || ended || endSessionId != nil
+        if !hasBufferedContent {
+            flushScheduled = false
+            lock.unlock()
+            return
+        }
         let batch = Batch(
             text: text,
             reasoning: reasoning,

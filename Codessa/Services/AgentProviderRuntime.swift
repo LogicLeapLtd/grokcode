@@ -435,6 +435,11 @@ nonisolated final class AgentProviderRuntime: @unchecked Sendable {
 
     private func extractAssistantText(from output: String, providerId: String) -> String {
         let lines = output.split(whereSeparator: \.isNewline).map(String.init)
+
+        if providerId == AgentProvider.claude.id {
+            return extractClaudeAssistantText(from: lines) ?? rawNonJSONText(from: output)
+        }
+
         var fragments: [String] = []
 
         for line in lines {
@@ -452,37 +457,76 @@ nonisolated final class AgentProviderRuntime: @unchecked Sendable {
             .joined(separator: providerId == AgentProvider.claude.id ? "" : "\n")
         if !joined.isEmpty { return joined }
 
-        // Claude's stream-json ends with a `type:"result"` object whose top-level
-        // `result` string is the authoritative final answer. On a hard error (rate
-        // limit / 429 / auth) the assistant `content` blocks come back empty and the
-        // reason lives ONLY in that `result` field — so surface it rather than
-        // reporting a blank "empty response" and hiding why the run failed.
-        if let resultText = claudeResultText(from: lines), !resultText.isEmpty {
-            return resultText
+        return rawNonJSONText(from: output)
+    }
+
+    /// Claude Code's `stream-json` contains lifecycle and hook records alongside
+    /// assistant output. Parse only the assistant/result shapes we intentionally
+    /// surface so hook stdout or metadata never becomes chat text, and so partial
+    /// deltas are still usable if the final assistant message is absent.
+    private func extractClaudeAssistantText(from lines: [String]) -> String? {
+        var finalAssistantText: [String] = []
+        var streamedDeltas: [String] = []
+        var resultText: String?
+
+        for line in lines {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String
+            else { continue }
+
+            switch type {
+            case "assistant":
+                if let message = object["message"] as? [String: Any] {
+                    finalAssistantText += claudeTextBlocks(from: message["content"])
+                }
+            case "stream_event":
+                guard let event = object["event"] as? [String: Any],
+                      let eventType = event["type"] as? String
+                else { continue }
+                if eventType == "content_block_delta",
+                   let delta = event["delta"] as? [String: Any],
+                   let text = delta["text"] as? String {
+                    streamedDeltas.append(text)
+                }
+            case "result":
+                if let result = object["result"] as? String {
+                    let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { resultText = trimmed }
+                }
+            default:
+                continue
+            }
         }
 
-        return output
+        let final = finalAssistantText.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !final.isEmpty { return final }
+
+        let streamed = streamedDeltas.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !streamed.isEmpty { return streamed }
+
+        if let resultText { return resultText }
+        return nil
+    }
+
+    private func claudeTextBlocks(from value: Any?) -> [String] {
+        if let array = value as? [Any] {
+            return array.flatMap { claudeTextBlocks(from: $0) }
+        }
+        guard let dict = value as? [String: Any],
+              (dict["type"] as? String) == "text",
+              let text = dict["text"] as? String
+        else { return [] }
+        return [text]
+    }
+
+    private func rawNonJSONText(from output: String) -> String {
+        output
             .split(whereSeparator: \.isNewline)
             .map(String.init)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// The `result` string from Claude's terminal `type:"result"` stream-json line,
-    /// used as a fallback when no assistant text was produced (e.g. API errors,
-    /// rate limits) so the user sees the real reason instead of a blank response.
-    private func claudeResultText(from lines: [String]) -> String? {
-        for line in lines.reversed() {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  (object["type"] as? String) == "result",
-                  let result = object["result"] as? String
-            else { continue }
-            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return nil
     }
 
     private func extractStrings(from value: Any, preferredKeys: [String]) -> [String] {
