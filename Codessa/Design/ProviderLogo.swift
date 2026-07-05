@@ -20,6 +20,8 @@ struct ProviderLogo: View {
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
+        case .gemini:
+            GeminiLogoMark()
         case .zai:
             ZAILogoMark()
         case .custom:
@@ -107,6 +109,7 @@ struct ModelMenuItem: View {
 
 private enum ProviderLogoKind {
     case bundledAsset(String)
+    case gemini
     case zai
     case custom
 
@@ -119,7 +122,7 @@ private enum ProviderLogoKind {
         case AgentProvider.codex.id:
             self = .bundledAsset("ProviderLogoChatGPT")
         case AgentProvider.gemini.id:
-            self = .bundledAsset("ProviderLogoGemini")
+            self = .gemini
         case AgentProvider.grok.id:
             self = .bundledAsset("ProviderLogoGrok")
         case AgentProvider.zai.id:
@@ -127,6 +130,75 @@ private enum ProviderLogoKind {
         default:
             self = .custom
         }
+    }
+}
+
+private struct GeminiLogoMark: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let rect = CGRect(
+                x: (proxy.size.width - side) / 2,
+                y: (proxy.size.height - side) / 2,
+                width: side,
+                height: side
+            ).insetBy(dx: side * 0.04, dy: side * 0.04)
+
+            GeminiSparkleShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.26, green: 0.52, blue: 0.96),
+                            Color(red: 0.62, green: 0.43, blue: 0.92),
+                            Color(red: 0.86, green: 0.39, blue: 0.63),
+                            Color(red: 0.98, green: 0.69, blue: 0.23),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    GeminiSparkleShape()
+                        .stroke(.white.opacity(0.24), lineWidth: max(0.45, side * 0.04))
+                )
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+private struct GeminiSparkleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width
+        let height = rect.height
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
+        var path = Path()
+        path.move(to: CGPoint(x: center.x, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: center.y),
+            control1: CGPoint(x: center.x + width * 0.08, y: rect.minY + height * 0.32),
+            control2: CGPoint(x: rect.maxX - width * 0.32, y: center.y - height * 0.08)
+        )
+        path.addCurve(
+            to: CGPoint(x: center.x, y: rect.maxY),
+            control1: CGPoint(x: rect.maxX - width * 0.32, y: center.y + height * 0.08),
+            control2: CGPoint(x: center.x + width * 0.08, y: rect.maxY - height * 0.32)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: center.y),
+            control1: CGPoint(x: center.x - width * 0.08, y: rect.maxY - height * 0.32),
+            control2: CGPoint(x: rect.minX + width * 0.32, y: center.y + height * 0.08)
+        )
+        path.addCurve(
+            to: CGPoint(x: center.x, y: rect.minY),
+            control1: CGPoint(x: rect.minX + width * 0.32, y: center.y - height * 0.08),
+            control2: CGPoint(x: center.x - width * 0.08, y: rect.minY + height * 0.32)
+        )
+        path.closeSubpath()
+
+        return path
     }
 }
 

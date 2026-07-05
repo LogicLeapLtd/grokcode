@@ -52,13 +52,13 @@ nonisolated enum AgentProviderModelCatalog {
             ]
         case AgentProvider.gemini.id:
             return [
-                model("auto-gemini-3", "Auto (Gemini 3)", provider, runtimeId: "gemini-3-pro-preview", isDefault: true, options: [geminiThinking(defaultValue: "high", values: ["low", "high"])]),
-                model("auto-gemini-2.5", "Auto (Gemini 2.5)", provider, runtimeId: "gemini-2.5-pro", options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
-                model("gemini-3.1-pro-preview", "gemini-3.1-pro-preview", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
-                model("gemini-3-pro-preview", "gemini-3-pro-preview", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
-                model("gemini-3-flash-preview", "gemini-3-flash-preview", provider, options: [geminiThinking(defaultValue: "high", values: ["minimal", "low", "medium", "high"])]),
-                model("gemini-2.5-pro", "gemini-2.5-pro", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
-                model("gemini-2.5-flash", "gemini-2.5-flash", provider, options: [geminiThinking(defaultValue: "medium", values: ["low", "medium", "high"])]),
+                model("auto-gemini-3", "Auto (Gemini 3 Pro)", provider, runtimeId: "gemini-3-pro-preview", isDefault: true, options: [geminiThinking(defaultValue: "high", values: ["low", "high"])]),
+                model("auto-gemini-2.5", "Auto (Gemini 2.5 Pro)", provider, runtimeId: "gemini-2.5-pro", options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
+                model("gemini-3.1-pro-preview", "Gemini 3.1 Pro (Preview)", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
+                model("gemini-3-pro-preview", "Gemini 3 Pro (Preview)", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
+                model("gemini-3-flash-preview", "Gemini 3 Flash (Preview)", provider, options: [geminiThinking(defaultValue: "high", values: ["minimal", "low", "medium", "high"])]),
+                model("gemini-2.5-pro", "Gemini 2.5 Pro", provider, options: [geminiThinking(defaultValue: "high", values: ["low", "medium", "high"])]),
+                model("gemini-2.5-flash", "Gemini 2.5 Flash", provider, options: [geminiThinking(defaultValue: "medium", values: ["low", "medium", "high"])]),
             ]
         case AgentProvider.grok.id:
             return [

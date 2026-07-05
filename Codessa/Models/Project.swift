@@ -218,6 +218,13 @@ nonisolated struct GrokModelOption: Identifiable, Hashable {
         case "claude-haiku-4-5", "claude-haiku-4-5-20251001": return "Haiku 4.5"
         case "gpt-5.5": return "GPT-5.5"
         case "gpt-5", "gpt-5-codex": return "GPT-5"
+        case "auto-gemini-3": return "Auto (Gemini 3 Pro)"
+        case "auto-gemini-2.5": return "Auto (Gemini 2.5 Pro)"
+        case "gemini-3.1-pro-preview": return "Gemini 3.1 Pro (Preview)"
+        case "gemini-3-pro-preview": return "Gemini 3 Pro (Preview)"
+        case "gemini-3-flash-preview": return "Gemini 3 Flash (Preview)"
+        case "gemini-2.5-pro": return "Gemini 2.5 Pro"
+        case "gemini-2.5-flash": return "Gemini 2.5 Flash"
         default:
             // Fall back to a title-cased version of the raw id, with common
             // suffixes normalised (e.g. "2.5" stays intact, "fast" → "Fast").
