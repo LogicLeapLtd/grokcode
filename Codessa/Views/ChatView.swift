@@ -4,8 +4,10 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppViewModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     var showHeader = true
     var showsComposer = true
+    var showsWindowActions = true
     var horizontalPadding: CGFloat = 48
     var verticalPadding: CGFloat = 28
     var transcriptMaxWidth: CGFloat = 760
@@ -176,18 +178,84 @@ struct ChatView: View {
             }
             Spacer(minLength: 8)
 
-            exportControl
+            if showsWindowActions {
+                headerActions
+                    .layoutPriority(2)
+            } else {
+                exportControl
+            }
         }
         .padding(.leading, 24)
-        // Reserve room on the right for the two global window controls (split
-        // view + popout) that float at the top-trailing corner (see
-        // MainContentView.windowControls), so "Export" never sits under them.
-        .padding(.trailing, 78)
+        .padding(.trailing, 24)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle().fill(CodexTheme.divider).frame(height: 1)
         }
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: 4) {
+            exportControl
+
+            headerActionDivider
+
+            headerActionButton(
+                title: model.isSplitViewVisible ? "Add pane" : "Split",
+                systemImage: "rectangle.split.2x1",
+                help: model.isSplitViewVisible ? "Add another split pane" : "Open split view"
+            ) {
+                model.openSplitView()
+            }
+
+            headerActionButton(
+                title: "Pop out",
+                systemImage: "macwindow",
+                help: "Open chat in a new window"
+            ) {
+                openWindow(id: "chat-popout")
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(CodexTheme.pillBackground.opacity(0.50))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(CodexTheme.composerBorder.opacity(0.38), lineWidth: 0.75)
+        )
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var headerActionDivider: some View {
+        Rectangle()
+            .fill(CodexTheme.divider.opacity(0.82))
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 2)
+    }
+
+    private func headerActionButton(title: String, systemImage: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            headerActionLabel(title: title, systemImage: systemImage)
+        }
+        .buttonStyle(CodexPressableStyle(scale: 0.98))
+        .help(help)
+    }
+
+    private func headerActionLabel(title: String, systemImage: String, isActive: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(isActive ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .codexHover(cornerRadius: 7, color: CodexTheme.controlHoverBackground)
     }
 
     // MARK: - Export / share
@@ -197,13 +265,7 @@ struct ChatView: View {
     /// until the conversation has at least one settled, non-empty turn.
     private var exportControl: some View {
         CodexMenuTrigger(minWidth: 220, edge: .bottom) { isOpen in
-            HStack(spacing: 5) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 12, weight: .medium))
-                Text("Export")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(isOpen ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+            headerActionLabel(title: "Export", systemImage: "square.and.arrow.up", isActive: isOpen)
         } menu: { close in
             CodexMenuContainer {
                 CodexMenuSectionHeader(title: "Export chat")

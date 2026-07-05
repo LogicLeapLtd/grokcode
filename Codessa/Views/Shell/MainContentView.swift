@@ -51,9 +51,17 @@ struct MainContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .topTrailing) { windowControls }
+        .overlay(alignment: .topTrailing) {
+            if showsFloatingWindowControls {
+                windowControls
+            }
+        }
         .clipped()
         .animation(pageAnimation, value: model.activePage)
+    }
+
+    private var showsFloatingWindowControls: Bool {
+        model.activePage != .chat || model.isSplitViewVisible
     }
 
     private var pageAnimation: Animation? {
@@ -66,7 +74,7 @@ struct MainContentView: View {
             topBarButton("rectangle.split.2x1", help: model.isSplitViewVisible ? "Add split pane" : "Open split view") {
                 model.openSplitView()
             }
-            topBarButton("square.on.square", help: "Open chat in a new window") {
+            topBarButton("macwindow", help: "Open chat in a new window") {
                 openWindow(id: "chat-popout")
             }
         }

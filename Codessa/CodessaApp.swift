@@ -58,7 +58,7 @@ struct CodessaApp: App {
         // Popped-out chat window — shares the same view model, so it mirrors
         // the conversation live.
         WindowGroup("Chat", id: "chat-popout") {
-            ChatView()
+            ChatView(showsWindowActions: false)
                 .environment(appModel)
                 .environment(menuController)
                 .environmentObject(update)
