@@ -6,6 +6,7 @@ import SwiftUI
 ///  - Installed: what you've added.
 struct PluginsView: View {
     @Environment(AppViewModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Tab: String, CaseIterable, Identifiable {
         case discover, importing, installed
@@ -27,28 +28,37 @@ struct PluginsView: View {
     }
 
     @State private var tab: Tab = .discover
+    @State private var pageSettled = false
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         PageScaffold(maxWidth: 900, horizontalPadding: 36, topPadding: 44, spacing: 18) {
             header
+                .pluginPageReveal(index: 0)
             overviewStrip
+                .pluginPageReveal(index: 1)
             filterBar
+                .pluginPageReveal(index: 2)
             LazyVStack(alignment: .leading, spacing: 24) {
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
+            .pluginPageReveal(index: 3)
         }
         .overlay(alignment: .bottom) { toastOverlay }
         .onAppear {
             model.refreshPlugins()
             model.syncInstalledFromGrok()
             searchFocused = false
+            withAnimation(reduceMotion ? nil : CodexMotion.panelSpring.delay(0.03)) {
+                pageSettled = true
+            }
             // Refresh the community list from the marketplace (remote manifest,
             // on-disk cache fallback) each time the page appears.
             Task { await model.loadCommunityPlugins() }
         }
+        .opacity(pageSettled ? 1 : 0)
         .sheet(isPresented: Binding(
             get: { model.publishSheetOpen },
             set: { model.publishSheetOpen = $0 }
@@ -448,6 +458,7 @@ struct PluginsView: View {
             } else {
                 if !marketplaceFiltered.isEmpty {
                     sectionHeaderRow(icon: "sparkles", title: "Curated by Codessa", count: marketplaceFiltered.count)
+                        .pluginPageReveal(index: 0)
                     cardStack(marketplaceFiltered)
                 }
                 communitySection
@@ -468,6 +479,7 @@ struct PluginsView: View {
                             countBadge(items.count)
                             Spacer(minLength: 0)
                         }
+                        .pluginPageReveal(index: 0)
                         cardStack(items)
                     }
                 }
@@ -501,12 +513,14 @@ struct PluginsView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeaderRow(icon: "person.2", title: "Community",
                              count: communityFiltered.isEmpty ? 0 : communityFiltered.count)
+            .pluginPageReveal(index: 0)
             if communityFiltered.isEmpty {
                 if isSearching {
                     Text("No community plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
                         .font(.system(size: 13))
                         .foregroundStyle(CodexTheme.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .pluginPageReveal(index: 1)
                 } else {
                     Button { model.publishSheetOpen = true } label: {
                         Text("No community plugins yet — be the first to publish.")
@@ -517,6 +531,7 @@ struct PluginsView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Publish your own plugin to the Codessa marketplace")
+                    .pluginPageReveal(index: 1)
                 }
             } else {
                 communityCardStack(communityFiltered)
@@ -534,6 +549,7 @@ struct PluginsView: View {
                         .padding(.leading, PluginRow.Metrics.textColumnInset)
                 }
                 PluginRow(plugin: plugin, authorOverride: plugin.rawConfig["author"])
+                    .pluginPageReveal(index: index)
             }
         }
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.composerBackground))
@@ -562,6 +578,7 @@ struct PluginsView: View {
                         .padding(.leading, PluginRow.Metrics.textColumnInset)
                 }
                 PluginRow(plugin: plugin)
+                    .pluginPageReveal(index: index)
             }
         }
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.composerBackground))
@@ -879,6 +896,35 @@ private struct PluginToast: View {
                 .shadow(color: CodexTheme.shadowColor.opacity(0.28), radius: 14, y: 5)
         )
         .overlay(Capsule(style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+    }
+}
+
+// MARK: - Animation helpers
+
+private struct PluginPageReveal: ViewModifier {
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 5)
+            .onAppear {
+                if reduceMotion {
+                    appeared = true
+                } else {
+                    withAnimation(CodexMotion.panelSpring.delay(min(Double(index) * 0.018, 0.10))) {
+                        appeared = true
+                    }
+                }
+            }
+    }
+}
+
+private extension View {
+    func pluginPageReveal(index: Int) -> some View {
+        modifier(PluginPageReveal(index: index))
     }
 }
 
