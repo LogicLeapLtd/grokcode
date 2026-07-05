@@ -17,8 +17,8 @@ usage() {
 Usage: scripts/finalize-codex-session.sh (--handoff | --publish) [--notes-file FILE] [--dry-run]
 
 Mandatory Codessa session closure gate:
-  --handoff   require clean git state, build, then drop a Release app for the running app's "New build ready" prompt
-  --publish   require clean git state, build/package DMG, push release source branch, create GitHub release
+  --handoff   capture dirty git state if needed, build, then drop a Release app for the running app's "New build ready" prompt
+  --publish   capture dirty git state if needed, build/package DMG, push release source branch, create GitHub release
 
 Environment:
   PUBLISH_REPO   GitHub repo for releases (default: LogicLeapLtd/grokcode)
@@ -101,6 +101,27 @@ print_recent_unreachable_commits() {
   fi
 }
 
+capture_dirty_tree() {
+  if [[ -z "$(git status --porcelain --untracked-files=all)" ]]; then
+    return 0
+  fi
+
+  echo "==> Working tree is dirty; capturing it before finalizing"
+  git status --short --branch --untracked-files=all
+  git add -A
+
+  if git diff --cached --quiet; then
+    echo "==> Dirty-tree capture produced no staged changes"
+    return 0
+  fi
+
+  local stamp
+  stamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  git commit -m "chore: capture dirty tree before Codessa finalization
+
+Automatically captured by finalize-codex-session.sh at ${stamp} so every Codessa code-changing session can produce a versioned handoff or published update even when concurrent work left the tree dirty."
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --handoff|--local-update)
@@ -137,11 +158,7 @@ fi
 
 cd "$ROOT"
 
-if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
-  echo "ERROR: working tree is not clean. Commit or intentionally remove every change before finalizing." >&2
-  git status --short --branch --untracked-files=all >&2
-  exit 1
-fi
+capture_dirty_tree
 
 git diff --check
 print_recent_unreachable_commits
@@ -192,7 +209,7 @@ if gh release view "$TAG" --repo "$PUBLISH_REPO" >/dev/null 2>&1; then
 fi
 
 echo "==> Building DMG"
-"$ROOT/scripts/build-dmg.sh"
+BUILD_DMG_DERIVED_DATA="${BUILD_DMG_DERIVED_DATA:-${DERIVED_DATA}-release}" "$ROOT/scripts/build-dmg.sh"
 
 if [[ ! -f "$DMG" ]]; then
   echo "ERROR: expected DMG not found at $DMG" >&2

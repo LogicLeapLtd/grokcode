@@ -18,9 +18,9 @@ Native macOS SwiftUI app — a front-end for the Grok CLI.
 
 ---
 
-## ⛔️ NON-NEGOTIABLE #0 — EVERY code change ALWAYS cuts a new versioned build
+## ⛔️ NON-NEGOTIABLE #0 — EVERY code change ALWAYS publishes an updater-visible release
 
-**This overrides everything else. Josh should never have to ask for a build.**
+**This overrides everything else. Josh should never have to ask for a build or a publish.**
 
 If your session changed ANY code, config, asset, or project file, you MUST — before
 you end the response — do BOTH of these, every single time:
@@ -29,30 +29,30 @@ you end the response — do BOTH of these, every single time:
    `CURRENT_PROJECT_VERSION` (build number) in **both** the Debug and Release config
    blocks. Bump `MARKETING_VERSION` too for anything user-visible; a bare build-number
    bump is the minimum for internal/cosmetic changes. Add a one-line `CHANGELOG.md` entry.
-2. **Cut the build the running app can pick up.** Run
-   `scripts/finalize-codex-session.sh --handoff` (or `scripts/drop-local-update.sh`),
-   which builds and drops `Codessa.app` into the PendingUpdate folder so the running
-   Dock app shows **"New build ready → Update & Relaunch"**.
+2. **Publish the update the running app can see via Check for Updates.** Run
+   `scripts/finalize-codex-session.sh --publish`, which builds, packages, pushes the
+   release branch/production branch/tag, uploads the DMG to GitHub Releases, and verifies
+   the release asset digest. A local handoff is only acceptable after a hard publish
+   failure (credentials, signing/build failure, GitHub outage), and that blocker must be
+   reported plainly.
 
 **This is required whether or not the change was QA'd, whether or not it "looks trivial",
 whether or not you think it's done, and whether or not Josh asked for a build.** "It's only
 a one-line/cosmetic change", "I didn't get to test it", "I'll build next turn", and
-"waiting for confirmation" are all NOT acceptable reasons to skip the versioned build.
-QA status is reported separately in the status table — it is NEVER a gate on cutting the build.
+"waiting for confirmation" are all NOT acceptable reasons to skip the versioned publish.
+QA status is reported separately in the status table — it is NEVER a gate on publishing the build.
 
 The ONLY exceptions: (a) you changed no code/assets at all (pure diagnosis/answer), or
-(b) a hard tool failure (build refuses, hook blocks) that needs Josh to unblock — in which
+(b) a hard tool failure (build/publish refuses, credentials fail, hook blocks) that needs Josh to unblock — in which
 case state the specific blocker instead of silently skipping. Ending a code-changing response
-without a bumped version + handoff build is a hard failure.
+without a bumped version + published GitHub release is a hard failure.
 
 **This is enforced automatically** by a Claude Code `Stop` hook that runs
-`scripts/auto-handoff-on-change.sh` after every turn. When `HEAD` has moved and the tree is
-clean, the script bumps `CURRENT_PROJECT_VERSION` in both config blocks, commits the bump
-path-scoped, and cuts + drops a versioned build — so a new versioned build is produced on
-every change without anyone asking. It defers (does not skip) only while the tree is dirty,
-so commit your work and it fires. Do NOT rely on this as a reason to hand-wave the rule:
-if the hook isn't active (e.g. it loads next session), do the bump + `scripts/drop-local-update.sh`
-yourself this turn.
+`scripts/auto-handoff-on-change.sh` after every turn. When `HEAD` has moved, the script
+commits the current tree if it is dirty, bumps `CURRENT_PROJECT_VERSION` and
+`MARKETING_VERSION`, commits the bump, and runs `scripts/finalize-codex-session.sh --publish`.
+Dirty trees are not a reason to stop. Do NOT rely on the hook as a reason to hand-wave the
+rule: if the hook is not active, do the commit + bump + publish yourself this turn.
 
 ---
 
@@ -72,9 +72,10 @@ build, so the running Codessa keeps flipping versions and work *appears* to vani
 2. **Build only to check compilation, only when needed, to a PRIVATE derived-data path**
    (`.build-agent…`, git-ignored) — never the shared `build/`. Don't build "just to be safe";
    it contends with other agents' builds.
-3. **Commit small, often, and ONLY your paths.** Never `git add -A` / `git add .`. Stage the
-   exact files you touched, by name. A giant shared uncommitted blob is what makes work look
-   "lost" — frequent path-scoped commits keep each agent's work isolated and recoverable.
+3. **Commit small, often, and ONLY your paths during normal coding.** Do not use broad staging
+   while implementing a scoped change. The closure scripts are the deliberate exception: if
+   publish/finalization finds dirty work, it captures the whole tree so an updater-visible
+   release is still produced instead of silently stopping.
 4. **NEVER run destructive/history git ops on this shared tree:** no `git reset --hard`, no
    `git checkout -- <path>` on files you didn't author, no `git stash`, `git clean`,
    `git rebase`, force-push, or `commit --amend`. They silently wipe another agent's
@@ -96,21 +97,19 @@ build, so the running Codessa keeps flipping versions and work *appears* to vani
    both install to stable `/Applications/Codessa.app` only after Josh clicks a prompt. Background
    release checks show a bottom-right "Update available" prompt that opens the updater dialog;
    local handoffs show "New build ready" directly. Nothing silently replaces the app.
-   Publish real releases only via the runbook below, and only when Josh asks.
+   Josh has asked that every code-changing session publishes an updater-visible release.
+   Publish real releases via the runbook below without asking again.
 9. **Mandatory session closure gate — ALWAYS cut a versioned build (see NON-NEGOTIABLE #0).**
    Any Codex/Claude session that changes code must bump the version (per #0) and end by
-   running `scripts/finalize-codex-session.sh --handoff` or, when Josh explicitly approved a
-   production publish, `scripts/finalize-codex-session.sh --publish`. Do this on EVERY
-   code-changing session regardless of QA status — never leave finished edits without a
-   handoff build for the running app. This gate refuses dirty
-   trees, validates a private build, and either drops a local update for the running app or creates
-   the GitHub release the updater can see. Publish mode must also verify the DMG's embedded
-   version/build, the remote `release/v<version>` branch, the moving `production` branch, the
-   release tag, and the uploaded asset checksum. Do not tell Josh work is "done" if this gate did
-   not run and pass; report the blocker instead.
+   running `scripts/finalize-codex-session.sh --publish`. Do this on EVERY code-changing
+   session regardless of QA status or dirty-tree history — never leave finished edits with
+   only a handoff build. The publish gate must verify the DMG's embedded version/build, the
+   remote `release/v<version>` branch, the moving `production` branch, the release tag, and
+   the uploaded asset checksum. Do not tell Josh work is "done" if this gate did not run and
+   pass; report the blocker instead.
 
-When in doubt: make the edit, do a path-scoped commit, and run the closure gate so the work is
-recoverable and installable.
+When in doubt: make the edit, commit the current tree, bump the version, and publish so the work
+is recoverable and installable through Check for Updates.
 
 ---
 
@@ -211,11 +210,11 @@ Do all of this whenever you cut a new version. The running app only sees a new v
 
 ### Mandatory end-of-session commands
 
-- For ordinary finished local work: commit the exact touched paths, then run
-  `scripts/finalize-codex-session.sh --handoff`.
-- For an approved production release: bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`, add a
-  `CHANGELOG.md` entry, commit the exact touched paths, then run
+- For ordinary finished local work: bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`, add a
+  `CHANGELOG.md` entry, commit the current tree, then run
   `scripts/finalize-codex-session.sh --publish`.
+- If the tree is dirty with other in-flight work, do not use that as a blocker; include it in the
+  publish commit so Check for Updates always sees the newest app.
 - The final answer must say which gate mode ran and whether it passed. If it failed, give the
   smallest concrete blocker; do not describe unpublished local source as shipped.
 - Publish mode pushes both `release/v<version>` and `production`, then verifies both remote refs,

@@ -1,27 +1,39 @@
 #!/usr/bin/env bash
-# Enforced versioned handoff (see CLAUDE.md / AGENTS.md NON-NEGOTIABLE #0):
-# after any change lands in the Codessa repo, ALWAYS cut a NEW versioned build
-# and drop it as a PendingUpdate so the running /Applications/Codessa.app offers
-# "New build ready". Wired to the Claude Code Stop hook so it fires after every
-# turn — but it only acts when HEAD actually moved, so plain conversation turns
-# are a cheap no-op. QA status is irrelevant here: every change gets a build.
+# Enforced versioned publish (see CLAUDE.md / AGENTS.md NON-NEGOTIABLE #0):
+# after any change lands in the Codessa repo, ALWAYS capture the current tree,
+# bump to a NEW version, and publish a GitHub release so /Applications/Codessa.app
+# can install it through Check for Updates. Wired to the Claude Code Stop hook so
+# it fires after every turn — but it only acts when HEAD actually moved, so plain
+# conversation turns are a cheap no-op. QA status and dirty-tree state are
+# irrelevant here: every change gets a published update.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STAMP="$ROOT/.build-agent-local-update/.last-handoff-sha"
+STAMP="$ROOT/.build-agent-local-update/.last-published-sha"
 PBXPROJ="$ROOT/Codessa.xcodeproj/project.pbxproj"
 
 cd "$ROOT"
 
-# No commits yet / not a repo → nothing to hand off.
+# No commits yet / not a repo → nothing to publish.
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 [[ -z "$HEAD_SHA" ]] && exit 0
 
-# Skip while the working tree is dirty — never hand off (or version-bump on top
-# of) a half-finished edit, and never touch another agent's uncommitted work.
+# Dirty trees are not a blocker. Capture the exact current tree first so the
+# versioned build always corresponds to a recoverable commit instead of silently
+# deferring and leaving Josh with no installable update.
 if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-  echo "[auto-handoff] working tree dirty — deferring versioned build until it's committed." >&2
-  exit 0
+  echo "[auto-handoff] working tree dirty — capturing before versioned build." >&2
+  git status --short --branch --untracked-files=all >&2
+  git add -A
+  if ! git diff --cached --quiet; then
+    STAMPED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    git commit -q -m "chore: capture dirty tree before versioned handoff [auto]
+
+Automatically captured by auto-handoff-on-change.sh at ${STAMPED_AT} so every Codessa change gets an installable update even when concurrent work left the tree dirty.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+    HEAD_SHA="$(git rev-parse HEAD)"
+  fi
 fi
 
 # Already built for this exact commit → nothing to do.
@@ -29,30 +41,38 @@ if [[ -f "$STAMP" && "$(cat "$STAMP" 2>/dev/null)" == "$HEAD_SHA" ]]; then
   exit 0
 fi
 
-# 1. Bump the build number (CURRENT_PROJECT_VERSION) in every config block so the
-#    dropped build is a genuinely NEW version the updater/About screen can tell
-#    apart. Commit the bump path-scoped (never `git add -A`) so it's recoverable.
+# 1. Bump the marketing version and build number in every config block so the
+#    GitHub updater sees a genuinely NEW release. Commit the bump path-scoped
+#    so it's recoverable.
 CUR="$(grep -Eo 'CURRENT_PROJECT_VERSION = [0-9]+;' "$PBXPROJ" | grep -Eo '[0-9]+' | sort -n | tail -1)"
 if [[ -z "$CUR" ]]; then
   echo "[auto-handoff] could not read CURRENT_PROJECT_VERSION — aborting." >&2
   exit 1
 fi
 NEXT=$(( CUR + 1 ))
-/usr/bin/sed -i '' -E "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${NEXT};/g" "$PBXPROJ"
 MARKETING="$(grep -m1 -Eo 'MARKETING_VERSION = [^;]+;' "$PBXPROJ" | sed -E 's/MARKETING_VERSION = ([^;]+);/\1/')"
+IFS='.' read -r MAJOR MINOR PATCH_EXTRA <<< "$MARKETING"
+PATCH="${PATCH_EXTRA%%[^0-9]*}"
+if [[ -z "${MAJOR:-}" || -z "${MINOR:-}" || -z "${PATCH:-}" ]]; then
+  echo "[auto-handoff] could not parse MARKETING_VERSION '$MARKETING' — aborting." >&2
+  exit 1
+fi
+NEXT_MARKETING="${MAJOR}.${MINOR}.$(( PATCH + 1 ))"
+/usr/bin/sed -i '' -E "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${NEXT};/g" "$PBXPROJ"
+/usr/bin/sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${NEXT_MARKETING};/g" "$PBXPROJ"
 
 git add "$PBXPROJ"
-git commit -q -m "chore: bump build to ${MARKETING} (${NEXT}) for versioned handoff [auto]
+git commit -q -m "chore: bump version to ${NEXT_MARKETING} (${NEXT}) for updater publish [auto]
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 NEW_HEAD="$(git rev-parse HEAD)"
 
-echo "[auto-handoff] cutting versioned build ${MARKETING} (${NEXT})…" >&2
-if "$ROOT/scripts/drop-local-update.sh" >&2; then
+echo "[auto-handoff] publishing versioned update ${NEXT_MARKETING} (${NEXT})…" >&2
+if DERIVED_DATA="$ROOT/.build-agent-auto-publish" "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
   mkdir -p "$(dirname "$STAMP")"
   printf '%s' "$NEW_HEAD" > "$STAMP"
-  echo "[auto-handoff] versioned build ${MARKETING} (${NEXT}) dropped for $NEW_HEAD." >&2
+  echo "[auto-handoff] versioned update ${NEXT_MARKETING} (${NEXT}) published for $NEW_HEAD." >&2
 else
-  echo "[auto-handoff] drop-local-update.sh failed for build ${NEXT}." >&2
+  echo "[auto-handoff] publish failed for ${NEXT_MARKETING} (${NEXT})." >&2
   exit 1
 fi

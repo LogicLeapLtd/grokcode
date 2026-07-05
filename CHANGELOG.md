@@ -39,11 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.10] - 2026-07-05
+
+### Changed
+
 - Model/provider menus now use bundled real SVG marks for Claude, Cursor, ChatGPT/OpenAI, Gemini, and Grok instead of hand-drawn approximations.
 - Plan mode now inherits the selected composer model by default, migrates the old hidden Claude/Fable route, and preserves provider-specific CLI options when launching runs.
 - Chat header actions now sit in one labelled toolbar group: Export, Split, and Pop out, so the two window controls are no longer mystery icons floating in the corner.
 - Starting a chat now uses a calmer, chat-specific focus transition, and the temporary sidebar "New chat" row uses a small activity sweep instead of pulsing the entire row.
 - Sidebar navigation icons now use stronger, clearer symbols with heavier rendering, so New chat, Search, Plugins, and Automations read less like placeholder outline glyphs.
+- Finalization now captures dirty work before publishing instead of blocking, and the automatic closure hook publishes an updater-visible release after every code change.
 
 ## [1.8.0] - 2026-07-04
 
