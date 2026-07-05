@@ -30,13 +30,10 @@ struct PluginsView: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        // One shared centered container (no full-bleed). The header, search field,
-        // segmented control and the result list all live in the same capped,
-        // centered column so widths/gutters match every other detail surface.
-        PageScaffold(spacing: 16) {
+        PageScaffold(maxWidth: 900, horizontalPadding: 36, topPadding: 44, spacing: 18) {
             header
-            searchField
-            segmentedControl
+            overviewStrip
+            filterBar
             LazyVStack(alignment: .leading, spacing: 24) {
                 content
             }
@@ -92,32 +89,36 @@ struct PluginsView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Title row + actions. Actions are centre-aligned to the title so the
-            // pills sit level with the (taller) heading rather than riding its
-            // baseline, with a generous gap separating them from the title.
-            HStack(alignment: .center, spacing: 8) {
-                Text("Plugins")
-                    .font(CodexTheme.headlineFont)
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Spacer(minLength: 24)
+        HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 13) {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(CodexTheme.accent)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.accent.opacity(0.12)))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(CodexTheme.accent.opacity(0.18), lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Plugins")
+                        .font(CodexTheme.serif(29, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+                    Text("Discover, install, and manage the capabilities Codessa can hand to its agents.")
+                        .font(CodexTheme.captionFont)
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 520, alignment: .leading)
+                }
+            }
+            Spacer(minLength: 18)
+            HStack(spacing: 8) {
                 publishButton
                 rescanButton
             }
-            Text("Browse the marketplace, or manage auto-synced MCP servers, plugins, skills, hooks and commands from Grok, Claude, Codex, Cursor and shared agent folders.")
-                .font(.system(size: 13))
-                .foregroundStyle(CodexTheme.textSecondary)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
         }
     }
 
-    /// Opens the in-app Publish sheet. Prominent (filled) so it reads as the
-    /// page's primary action, sitting just left of the quieter Rescan button.
-    /// Opens the in-app Publish sheet. The page's primary action: filled accent
-    /// so it carries weight, kept compact as a capsule to match Rescan and the
-    /// row controls.
     private var publishButton: some View {
         Button { model.publishSheetOpen = true } label: {
             HStack(spacing: 6) {
@@ -135,8 +136,6 @@ struct PluginsView: View {
         .help("Publish your own plugin to the Codessa marketplace")
     }
 
-    /// Secondary: a quiet bordered capsule so it sits beside Publish without
-    /// competing with it.
     private var rescanButton: some View {
         Button { model.refreshPlugins() } label: {
             HStack(spacing: 6) {
@@ -153,6 +152,99 @@ struct PluginsView: View {
         .buttonStyle(.plain)
         .codexHoverOverlay(cornerRadius: 14)
         .help("Sync local MCP servers, plugins and skills")
+    }
+
+    // MARK: Overview
+
+    private var overviewStrip: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                discoverMetric
+                manageMetric
+                installedMetric
+                disabledMetric
+            }
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    discoverMetric
+                    manageMetric
+                }
+                HStack(spacing: 10) {
+                    installedMetric
+                    disabledMetric
+                }
+            }
+        }
+    }
+
+    private var discoverMetric: some View {
+        metricCard(
+            icon: "square.grid.2x2",
+            title: "Discover",
+            value: "\(MarketplaceCatalog.plugins.count + model.communityPlugins.count)",
+            caption: "Curated and community",
+            tint: CodexTheme.accent
+        )
+    }
+
+    private var manageMetric: some View {
+        metricCard(
+            icon: "slider.horizontal.3",
+            title: "Manage",
+            value: "\(model.importablePlugins.count)",
+            caption: "Synced locally",
+            tint: Color(red: PluginSource.cursor.tint.red, green: PluginSource.cursor.tint.green, blue: PluginSource.cursor.tint.blue)
+        )
+    }
+
+    private var installedMetric: some View {
+        metricCard(
+            icon: "checkmark.seal",
+            title: "Installed",
+            value: "\(model.installedPlugins.count)",
+            caption: "Ready for chats",
+            tint: Color(red: PluginSource.agents.tint.red, green: PluginSource.agents.tint.green, blue: PluginSource.agents.tint.blue)
+        )
+    }
+
+    private var disabledMetric: some View {
+        metricCard(
+            icon: "pause.circle",
+            title: "Disabled",
+            value: "\(disabledManagedCount)",
+            caption: "Paused at source",
+            tint: CodexTheme.textTertiary
+        )
+    }
+
+    private func metricCard(icon: String, title: String, value: String, caption: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(CodexTheme.sans(18, weight: .bold))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                HStack(spacing: 5) {
+                    Text(title)
+                        .font(CodexTheme.smallFont)
+                        .foregroundStyle(CodexTheme.textSecondary)
+                    Text(caption)
+                        .font(CodexTheme.smallFont)
+                        .foregroundStyle(CodexTheme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.composerBackground))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
     }
 
     // MARK: Search
@@ -177,19 +269,37 @@ struct PluginsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.composerBackground))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.composerBorder, lineWidth: 1))
+        .frame(height: 40)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.mainBackground))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(searchFocused ? CodexTheme.focusAccent : CodexTheme.divider, lineWidth: 1))
     }
 
     // MARK: Segmented control
 
+    private var filterBar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                segmentedControl
+                Spacer(minLength: 8)
+                searchField
+                    .frame(maxWidth: 360)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                segmentedControl
+                searchField
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.sidebarBackground))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+    }
+
     private var segmentedControl: some View {
         HStack(spacing: 4) {
             ForEach(Tab.allCases) { segment($0) }
-            Spacer(minLength: 0)
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.pillBackground))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.mainBackground))
         .fixedSize(horizontal: true, vertical: false)
     }
 
@@ -197,7 +307,7 @@ struct PluginsView: View {
         let selected = tab == item
         let count: Int = {
             switch item {
-            case .discover: return marketplaceFiltered.count
+            case .discover: return discoverFiltered.count
             case .importing: return importFiltered.count
             case .installed: return installedFiltered.count
             }
@@ -218,7 +328,7 @@ struct PluginsView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selected ? CodexTheme.mainBackground : .clear)
+                    .fill(selected ? CodexTheme.composerBackground : .clear)
                     .shadow(color: selected ? CodexTheme.shadowColor.opacity(0.25) : .clear, radius: 2, y: 1)
             )
             .contentShape(Rectangle())
@@ -244,6 +354,7 @@ struct PluginsView: View {
     }
 
     private var installedIDs: Set<String> { Set(model.installedPlugins.map(\.id)) }
+    private var disabledManagedCount: Int { model.importablePlugins.filter { !$0.isLocallyEnabled }.count }
 
     /// Curated marketplace, with `isInstalled` reflecting the installed set.
     private var marketplaceFiltered: [Plugin] {
@@ -262,6 +373,7 @@ struct PluginsView: View {
             .map { $0.settingInstalled(installedIDs.contains($0.id)) }
             .filter(matchesQuery)
     }
+    private var discoverFiltered: [Plugin] { marketplaceFiltered + communityFiltered }
 
     // MARK: Content
 
@@ -279,7 +391,7 @@ struct PluginsView: View {
     /// tabs; the segment badges above already reflect the per-tab match counts.
     @ViewBuilder
     private var globalSearchContent: some View {
-        let totalMatches = marketplaceFiltered.count + importFiltered.count + installedFiltered.count
+        let totalMatches = discoverFiltered.count + importFiltered.count + installedFiltered.count
         if totalMatches == 0 {
             emptyState(symbol: "magnifyingglass", title: "No matches",
                        subtitle: "Nothing across Discover, Manage or Installed matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
@@ -288,7 +400,10 @@ struct PluginsView: View {
                 searchSection(icon: "checkmark.seal", title: "Installed", tab: .installed, items: installedFiltered)
             }
             if !marketplaceFiltered.isEmpty {
-                searchSection(icon: "sparkles", title: "Discover", tab: .discover, items: marketplaceFiltered)
+                searchSection(icon: "sparkles", title: "Curated", tab: .discover, items: marketplaceFiltered)
+            }
+            if !communityFiltered.isEmpty {
+                searchSection(icon: "person.2", title: "Community", tab: .discover, items: communityFiltered, authorSource: true)
             }
             if !importFiltered.isEmpty {
                 searchSection(icon: "slider.horizontal.3", title: "Manage", tab: .importing, items: importFiltered)
@@ -298,26 +413,28 @@ struct PluginsView: View {
 
     /// One category block in global-search mode. Tapping the header jumps to that
     /// tab (and the search box keeps filtering it there).
-    private func searchSection(icon: String, title: String, tab destination: Tab, items: [Plugin]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func searchSection(icon: String, title: String, tab destination: Tab, items: [Plugin], authorSource: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(CodexMotion.quickSpring) { tab = destination }
             } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(CodexTheme.textTertiary)
-                    Text(title.uppercased())
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.6)
-                        .foregroundStyle(CodexTheme.textTertiary)
-                    Text("\(items.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(CodexTheme.textTertiary.opacity(0.8))
+                HStack(spacing: 8) {
+                    sectionGlyph(icon)
+                    Text(title)
+                        .font(CodexTheme.controlTitleFont)
+                        .foregroundStyle(CodexTheme.textPrimary)
+                    countBadge(items.count)
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(CodexTheme.textTertiary.opacity(0.7))
                     Spacer(minLength: 0)
                 }
-                .padding(.bottom, 2)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            cardStack(items)
+            if authorSource {
+                communityCardStack(items)
+            } else {
+                cardStack(items)
+            }
         }
     }
 
@@ -344,14 +461,13 @@ struct PluginsView: View {
                             : "No synced integrations match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
                 ForEach(groupedBySource(importFiltered), id: \.0) { source, items in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 9) {
                             sourceBadge(source)
-                            Text(source.displayName).font(.system(size: 13, weight: .semibold)).foregroundStyle(CodexTheme.textPrimary)
-                            Text("\(items.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(CodexTheme.textTertiary)
+                            Text(source.displayName).font(CodexTheme.controlTitleFont).foregroundStyle(CodexTheme.textPrimary)
+                            countBadge(items.count)
                             Spacer(minLength: 0)
                         }
-                        .padding(.bottom, 2)
                         cardStack(items)
                     }
                 }
@@ -420,26 +536,20 @@ struct PluginsView: View {
                 PluginRow(plugin: plugin, authorOverride: plugin.rawConfig["author"])
             }
         }
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.sidebarBackground))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.composerBackground))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func sectionHeaderRow(icon: String, title: String, count: Int) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(CodexTheme.textTertiary)
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(CodexTheme.textTertiary)
-            // A zero count (e.g. an empty Community section) hides the badge
-            // rather than rendering a bare "0".
-            if count > 0 {
-                Text("\(count)").font(.system(size: 11, weight: .medium)).foregroundStyle(CodexTheme.textTertiary.opacity(0.8))
-            }
+        HStack(spacing: 8) {
+            sectionGlyph(icon)
+            Text(title)
+                .font(CodexTheme.controlTitleFont)
+                .foregroundStyle(CodexTheme.textPrimary)
+            if count > 0 { countBadge(count) }
             Spacer(minLength: 0)
         }
-        .padding(.bottom, 2)
     }
 
     private func cardStack(_ plugins: [Plugin]) -> some View {
@@ -454,9 +564,9 @@ struct PluginsView: View {
                 PluginRow(plugin: plugin)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(CodexTheme.sidebarBackground))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CodexTheme.composerBackground))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(CodexTheme.divider, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func sourceBadge(_ source: PluginSource) -> some View {
@@ -466,6 +576,23 @@ struct PluginsView: View {
             .foregroundStyle(tint)
             .frame(width: 22, height: 22)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.opacity(0.14)))
+    }
+
+    private func sectionGlyph(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(CodexTheme.accent)
+            .frame(width: 22, height: 22)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(CodexTheme.accent.opacity(0.12)))
+    }
+
+    private func countBadge(_ count: Int) -> some View {
+        Text("\(count)")
+            .font(CodexTheme.smallFont)
+            .foregroundStyle(CodexTheme.textSecondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(CodexTheme.pillBackground))
     }
 
     private func emptyState(symbol: String, title: String, subtitle: String) -> some View {
@@ -489,9 +616,9 @@ private struct PluginRow: View {
     /// Shared layout constants so the divider inset, icon column and text column
     /// stay on one consistent grid across every row.
     enum Metrics {
-        static let horizontalPadding: CGFloat = 14
-        static let iconSize: CGFloat = 38
-        static let iconGutter: CGFloat = 12
+        static let horizontalPadding: CGFloat = 16
+        static let iconSize: CGFloat = 42
+        static let iconGutter: CGFloat = 13
         /// Where the title/subtitle column starts, measured from the card edge.
         static let textColumnInset: CGFloat = horizontalPadding + iconSize + iconGutter
     }
@@ -514,39 +641,51 @@ private struct PluginRow: View {
         authorOverride == nil && (plugin.supportsLocalDisable || plugin.supportsLocalDelete)
     }
 
-    /// The third caption line. Community rows append a "· by <author>" suffix when
-    /// the entry carried one; everything else keeps the standard source·kind line.
-    private var captionText: String {
-        if let author = authorOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !author.isEmpty {
-            return "\(plugin.kind.label) · by \(author)"
+    private var authorText: String? {
+        guard let author = authorOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !author.isEmpty else { return nil }
+        return author
+    }
+
+    private var transportText: String? {
+        if plugin.isRemoteServer { return "Remote" }
+        if let command = plugin.command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty {
+            return command
         }
-        return plugin.sourceKindCaption
+        if let url = plugin.url?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
+            return "URL"
+        }
+        return nil
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: Metrics.iconGutter) {
             icon
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
                     Text(plugin.displayName)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(CodexTheme.sans(14.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
-                    if plugin.isRemoteServer { tag("Remote") }
-                    if !plugin.isLocallyEnabled { tag("Disabled") }
+                    if !plugin.isLocallyEnabled { statusTag("Disabled") }
                 }
                 if hasMeaningfulSubtitle {
                     Text(plugin.subtitle)
-                        .font(.system(size: 12))
+                        .font(CodexTheme.captionFont)
                         .foregroundStyle(CodexTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Text(captionText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    metaChip(plugin.sourceTool.displayName, systemName: plugin.sourceTool.iconSystemName)
+                    metaChip(plugin.kind.label, systemName: plugin.kind.symbol)
+                    if let transportText {
+                        metaChip(transportText, systemName: plugin.isRemoteServer ? "network" : "terminal")
+                    }
+                    if let authorText {
+                        metaChip("by \(authorText)", systemName: "person")
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
@@ -560,13 +699,10 @@ private struct PluginRow: View {
             .layoutPriority(1)
         }
         .padding(.horizontal, Metrics.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 58)
+        .frame(minHeight: 74)
         .contentShape(Rectangle())
-        // Hover background drawn behind the row content; clears on mouse-exit
-        // (CodexHoverHighlight uses .onHover { hovering = $0 }), so no sticky
-        // highlight lingers after the cursor leaves.
         .codexHover(cornerRadius: 0)
         .sheet(isPresented: $showConfigure) {
             PluginConfigureSheet(plugin: plugin)
@@ -589,7 +725,7 @@ private struct PluginRow: View {
         Button { showConfigure = true } label: {
             HStack(spacing: 5) {
                 Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .medium))
-                Text("Configure").font(.system(size: 12, weight: .medium))
+                Text("Configure").font(CodexTheme.smallFont)
             }
             .foregroundStyle(CodexTheme.textSecondary)
             .padding(.horizontal, 11).padding(.vertical, 6)
@@ -624,19 +760,33 @@ private struct PluginRow: View {
 
     private var icon: some View {
         Image(systemName: plugin.iconSystemName)
-            .font(.system(size: 15, weight: .regular))
+            .font(.system(size: 16, weight: .medium))
             .foregroundStyle(tint)
-            .frame(width: 38, height: 38)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(0.12)))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(tint.opacity(0.18), lineWidth: 1))
+            .frame(width: Metrics.iconSize, height: Metrics.iconSize)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(tint.opacity(0.20), lineWidth: 1))
     }
 
-    private func tag(_ text: String) -> some View {
+    private func statusTag(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 9, weight: .semibold))
+            .font(.system(size: 9, weight: .bold))
             .foregroundStyle(CodexTheme.textSecondary)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(CodexTheme.pillBackground))
+    }
+
+    private func metaChip(_ text: String, systemName: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemName)
+                .font(.system(size: 9, weight: .medium))
+            Text(text)
+                .font(CodexTheme.smallFont)
+                .lineLimit(1)
+        }
+        .foregroundStyle(CodexTheme.textTertiary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(CodexTheme.pillBackground.opacity(0.72)))
     }
 
     private func managementIconButton(
@@ -665,7 +815,7 @@ private struct PluginRow: View {
             Button { model.removePluginViaGrok(plugin) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                    Text("Installed").font(.system(size: 12, weight: .medium))
+                    Text("Installed").font(CodexTheme.smallFont)
                 }
                 .foregroundStyle(CodexTheme.textSecondary)
                 .padding(.horizontal, 11).padding(.vertical, 6)
@@ -678,21 +828,18 @@ private struct PluginRow: View {
         } else if !plugin.isLocallyEnabled {
             HStack(spacing: 5) {
                 Image(systemName: "pause.circle").font(.system(size: 11, weight: .medium))
-                Text("Disabled").font(.system(size: 12, weight: .medium))
+                Text("Disabled").font(CodexTheme.smallFont)
             }
             .foregroundStyle(CodexTheme.textTertiary)
             .padding(.horizontal, 11).padding(.vertical, 6)
             .background(Capsule().fill(CodexTheme.pillBackground))
             .overlay(Capsule().strokeBorder(CodexTheme.divider, lineWidth: 1))
         } else {
-            // Secondary, quiet capsule (not a bright-white pill). The accent
-            // glyph signals it's the actionable affordance without dominating
-            // the dark row.
             Button { model.installPluginViaGrok(plugin) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "plus").font(.system(size: 11, weight: .bold))
                         .foregroundStyle(CodexTheme.accentOrange)
-                    Text(plugin.sourceTool == .builtin ? "Add" : "Import").font(.system(size: 12, weight: .semibold))
+                    Text(plugin.sourceTool == .builtin ? "Add" : "Import").font(CodexTheme.smallFont)
                         .foregroundStyle(CodexTheme.textPrimary)
                 }
                 .padding(.horizontal, 11).padding(.vertical, 6)
