@@ -424,8 +424,8 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         switch self {
         case .newChat: "square.and.pencil"
         case .search: "magnifyingglass"
-        case .plugins: "puzzlepiece.extension.fill"
-        case .automations: "bolt.badge.clock.fill"
+        case .plugins: "puzzlepiece.extension"
+        case .automations: "clock.arrow.circlepath"
         }
     }
 }

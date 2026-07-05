@@ -27,6 +27,48 @@ private enum SidebarMetrics {
     static let accountMenuWidth: CGFloat = 260
 }
 
+private struct SidebarNavigationIcon: View {
+    let symbol: String
+    let foreground: Color
+    let active: Bool
+    let locked: Bool
+    let hovering: Bool
+    let fontSize: CGFloat
+    let width: CGFloat
+    var height: CGFloat?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var engaged: Bool {
+        !locked && (active || hovering)
+    }
+
+    private var animationValue: Int {
+        (active ? 2 : 0) + (hovering ? 1 : 0)
+    }
+
+    var body: some View {
+        let icon = Image(systemName: symbol)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: fontSize, weight: .medium))
+            .foregroundStyle(foreground)
+            .frame(width: width, height: height)
+
+        Group {
+            if reduceMotion {
+                icon
+            } else {
+                icon
+                    .symbolEffect(.bounce, options: .speed(1.8), value: animationValue)
+            }
+        }
+        .scaleEffect(engaged && !reduceMotion ? 1.06 : 1)
+        .offset(y: hovering && !reduceMotion ? -0.5 : 0)
+        .animation(CodexMotion.quickSpring, value: engaged)
+        .animation(CodexMotion.quickSpring, value: hovering)
+    }
+}
+
 /// Named coordinate space (anchored to a non-resizing ancestor in
 /// `ContentView`) that the sidebar resize-handle drag measures against, so the
 /// translation stays stable even as the sidebar frame grows/shrinks under the
@@ -63,6 +105,7 @@ struct SidebarView: View {
     @State private var dragStartWidth: Double?
     /// Collapsed-rail item currently showing its outside-the-sidebar tooltip.
     @State private var hoveredRailItem: String?
+    @State private var hoveredNavSection: SidebarSection?
     @State private var sidebarScrollOffset: CGFloat = 0
     @State private var sidebarScrollContentHeight: CGFloat = 0
     /// Threads (flat list) whose subagent rows are expanded. Subagents start
@@ -215,11 +258,15 @@ struct SidebarView: View {
             handleNav(section)
         } label: {
             HStack(spacing: SidebarMetrics.navSpacing) {
-                Image(systemName: section.symbol)
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: SidebarMetrics.navIconFont, weight: .semibold))
-                    .foregroundStyle(navIconColor(active: active, locked: locked))
-                    .frame(width: SidebarMetrics.navIconBox)
+                SidebarNavigationIcon(
+                    symbol: section.symbol,
+                    foreground: navIconColor(active: active, locked: locked),
+                    active: active,
+                    locked: locked,
+                    hovering: hoveredNavSection == section,
+                    fontSize: SidebarMetrics.navIconFont,
+                    width: SidebarMetrics.navIconBox
+                )
                 Text(section.title)
                     .font(.system(size: SidebarMetrics.bodyFont, weight: .regular))
                     .foregroundStyle(CodexTheme.textPrimary)
@@ -241,6 +288,13 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
+        .onHover { hovering in
+            if hovering {
+                hoveredNavSection = section
+            } else if hoveredNavSection == section {
+                hoveredNavSection = nil
+            }
+        }
         .opacity(locked ? 0.5 : 1)
         .help(locked ? "\(section.title) requires the full app" : section.title)
         .animation(CodexMotion.quickSpring, value: active)
@@ -690,7 +744,7 @@ struct SidebarView: View {
         VStack(spacing: 3) {
             ForEach(SidebarSection.allCases) { section in
                 railButton(
-                    symbol: section.symbol,
+                    section: section,
                     accessibilityLabel: isLimited(section) ? "\(section.title) requires the full app" : section.title,
                     active: isPrimaryNavActive(section),
                     locked: isLimited(section)
@@ -706,18 +760,23 @@ struct SidebarView: View {
         .padding(.bottom, 12)
     }
 
-    private func railButton(symbol: String, accessibilityLabel: String, active: Bool = false, locked: Bool = false,
+    private func railButton(section: SidebarSection, accessibilityLabel: String, active: Bool = false, locked: Bool = false,
                             action: @escaping () -> Void) -> some View {
         Button {
             guard !locked else { return }
             action()
         } label: {
             ZStack(alignment: .bottomTrailing) {
-                Image(systemName: symbol)
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(navIconColor(active: active, locked: locked))
-                    .frame(width: SidebarMetrics.railButtonWidth, height: SidebarMetrics.railButtonHeight)
+                SidebarNavigationIcon(
+                    symbol: section.symbol,
+                    foreground: navIconColor(active: active, locked: locked),
+                    active: active,
+                    locked: locked,
+                    hovering: hoveredRailItem == accessibilityLabel,
+                    fontSize: 15,
+                    width: SidebarMetrics.railButtonWidth,
+                    height: SidebarMetrics.railButtonHeight
+                )
 
                 if locked {
                     Image(systemName: "lock.fill")
