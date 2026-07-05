@@ -32,13 +32,26 @@ insert_release_note() {
 
   local tmp
   tmp="$(mktemp "${TMPDIR:-/tmp}/codessa-changelog.XXXXXX")"
-  {
-    IFS= read -r first_line || true
-    printf '%s\n\n' "$first_line"
-    printf '## [%s] - %s\n\n' "$version" "$date_stamp"
-    printf -- '- Automatic updater-visible release for the latest Codessa code changes.\n\n'
-    cat
-  } < "$CHANGELOG" > "$tmp"
+  awk -v version="$version" -v date_stamp="$date_stamp" '
+    {
+      print
+      if (!inserted && $0 == "## [Unreleased]") {
+        print ""
+        print "## [" version "] - " date_stamp
+        print ""
+        print "- Automatic updater-visible release for the latest Codessa code changes."
+        inserted = 1
+      }
+    }
+    END {
+      if (!inserted) {
+        print ""
+        print "## [" version "] - " date_stamp
+        print ""
+        print "- Automatic updater-visible release for the latest Codessa code changes."
+      }
+    }
+  ' "$CHANGELOG" > "$tmp"
   mv "$tmp" "$CHANGELOG"
 }
 
@@ -96,7 +109,9 @@ git commit -q -m "chore: bump Codessa to ${NEXT_MARKETING} (${NEXT}) for updater
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 echo "[auto-publish] publishing Codessa ${NEXT_MARKETING} (${NEXT})..." >&2
-if DERIVED_DATA="$ROOT/.build-agent-auto-publish" "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
+if DERIVED_DATA="$ROOT/.build-agent-auto-publish" \
+  BUILD_DMG_DERIVED_DATA="$ROOT/.build-agent-auto-publish-release" \
+  "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
   NEW_HEAD="$(git rev-parse HEAD)"
   mkdir -p "$(dirname "$STAMP")"
   printf '%s' "$NEW_HEAD" > "$STAMP"

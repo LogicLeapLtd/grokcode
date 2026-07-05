@@ -1,16 +1,18 @@
 # Changelog
 
-## [1.8.12] - 2026-07-05
-
-- Automatic updater-visible release for the latest Codessa code changes.
-
-
 All notable changes to Codessa are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.8.12] - 2026-07-05
+
+### Changed
+
+- Automatic updater-visible releases now insert changelog notes under `Unreleased` instead of corrupting the changelog preamble.
+- Auto-publish now uses separate Debug and Release derived-data folders so it does not collide with manual publish builds.
 
 ## [1.8.11] - 2026-07-05
 
