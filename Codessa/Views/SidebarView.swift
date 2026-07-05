@@ -30,42 +30,16 @@ private enum SidebarMetrics {
 private struct SidebarNavigationIcon: View {
     let symbol: String
     let foreground: Color
-    let active: Bool
-    let locked: Bool
-    let hovering: Bool
     let fontSize: CGFloat
     let width: CGFloat
     var height: CGFloat?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var engaged: Bool {
-        !locked && (active || hovering)
-    }
-
-    private var animationValue: Int {
-        (active ? 2 : 0) + (hovering ? 1 : 0)
-    }
-
     var body: some View {
-        let icon = Image(systemName: symbol)
+        Image(systemName: symbol)
             .symbolRenderingMode(.monochrome)
             .font(.system(size: fontSize, weight: .medium))
             .foregroundStyle(foreground)
             .frame(width: width, height: height)
-
-        Group {
-            if reduceMotion {
-                icon
-            } else {
-                icon
-                    .symbolEffect(.bounce, options: .speed(1.8), value: animationValue)
-            }
-        }
-        .scaleEffect(engaged && !reduceMotion ? 1.06 : 1)
-        .offset(y: hovering && !reduceMotion ? -0.5 : 0)
-        .animation(CodexMotion.quickSpring, value: engaged)
-        .animation(CodexMotion.quickSpring, value: hovering)
     }
 }
 
@@ -105,7 +79,6 @@ struct SidebarView: View {
     @State private var dragStartWidth: Double?
     /// Collapsed-rail item currently showing its outside-the-sidebar tooltip.
     @State private var hoveredRailItem: String?
-    @State private var hoveredNavSection: SidebarSection?
     @State private var sidebarScrollOffset: CGFloat = 0
     @State private var sidebarScrollContentHeight: CGFloat = 0
     /// Threads (flat list) whose subagent rows are expanded. Subagents start
@@ -261,9 +234,6 @@ struct SidebarView: View {
                 SidebarNavigationIcon(
                     symbol: section.symbol,
                     foreground: navIconColor(active: active, locked: locked),
-                    active: active,
-                    locked: locked,
-                    hovering: hoveredNavSection == section,
                     fontSize: SidebarMetrics.navIconFont,
                     width: SidebarMetrics.navIconBox
                 )
@@ -288,13 +258,6 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
-        .onHover { hovering in
-            if hovering {
-                hoveredNavSection = section
-            } else if hoveredNavSection == section {
-                hoveredNavSection = nil
-            }
-        }
         .opacity(locked ? 0.5 : 1)
         .help(locked ? "\(section.title) requires the full app" : section.title)
         .animation(CodexMotion.quickSpring, value: active)
@@ -770,9 +733,6 @@ struct SidebarView: View {
                 SidebarNavigationIcon(
                     symbol: section.symbol,
                     foreground: navIconColor(active: active, locked: locked),
-                    active: active,
-                    locked: locked,
-                    hovering: hoveredRailItem == accessibilityLabel,
                     fontSize: 15,
                     width: SidebarMetrics.railButtonWidth,
                     height: SidebarMetrics.railButtonHeight
