@@ -565,7 +565,8 @@ private struct AssistantMessageBlock: View {
             if !message.reasoning.isEmpty {
                 ReasoningBlock(
                     reasoning: message.reasoning,
-                    isStreaming: message.isStreaming && message.text.isEmpty
+                    isStreaming: message.isStreaming && message.text.isEmpty,
+                    createdAt: message.createdAt
                 )
             }
 
@@ -577,7 +578,7 @@ private struct AssistantMessageBlock: View {
             }
 
             if message.isAwaitingFirstToken {
-                ThinkingIndicator()
+                ThinkingIndicator(createdAt: message.createdAt)
             }
 
             if !visibleText.isEmpty {
@@ -724,9 +725,9 @@ private struct AssistantActions: View {
 private struct ReasoningBlock: View {
     let reasoning: String
     let isStreaming: Bool
+    let createdAt: Date
 
     @State private var manualExpanded: Bool?
-    @State private var start = Date()
     @State private var elapsed: Int?
     private var isExpanded: Bool { manualExpanded ?? isStreaming }
 
@@ -772,10 +773,14 @@ private struct ReasoningBlock: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .onAppear { start = Date() }
+        .onAppear {
+            if !isStreaming, elapsed == nil {
+                elapsed = max(1, Int(Date().timeIntervalSince(createdAt)))
+            }
+        }
         .onChange(of: isStreaming) { _, streaming in
             if !streaming, elapsed == nil {
-                elapsed = max(1, Int(Date().timeIntervalSince(start)))
+                elapsed = max(1, Int(Date().timeIntervalSince(createdAt)))
             }
         }
     }
@@ -1033,20 +1038,19 @@ private struct ToolCallRow: View {
 // MARK: - Thinking indicator (no output yet)
 
 private struct ThinkingIndicator: View {
-    @State private var start = Date()
+    let createdAt: Date
 
     var body: some View {
         HStack(spacing: 8) {
             ThinkingDots(color: CodexTheme.textSecondary, size: 6)
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let secs = Int(context.date.timeIntervalSince(start))
+                let secs = Int(context.date.timeIntervalSince(createdAt))
                 Text(secs >= 3 ? "Thinking… \(secs)s" : "Thinking…")
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .contentTransition(.numericText())
             }
         }
-        .onAppear { start = Date() }
     }
 }
 

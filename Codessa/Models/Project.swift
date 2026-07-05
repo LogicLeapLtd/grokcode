@@ -347,6 +347,11 @@ nonisolated struct ChatMessage: Identifiable, Hashable {
     }
 
     let id: UUID
+    /// When this turn started. Anchors the "Thinking…" / "Thought for Ns"
+    /// timers so they measure real elapsed time, not a child view's own
+    /// mount time (reasoning text often arrives in one late batch rather
+    /// than incrementally, so a view-local timer undercounts badly).
+    let createdAt: Date
     var role: Role
     /// Final answer body (streamed from `text` events).
     var text: String
@@ -370,6 +375,7 @@ nonisolated struct ChatMessage: Identifiable, Hashable {
 
     init(
         id: UUID = UUID(),
+        createdAt: Date = Date(),
         role: Role,
         text: String,
         reasoning: String = "",
@@ -380,6 +386,7 @@ nonisolated struct ChatMessage: Identifiable, Hashable {
         attachments: [String] = []
     ) {
         self.id = id
+        self.createdAt = createdAt
         self.role = role
         self.text = text
         self.reasoning = reasoning
