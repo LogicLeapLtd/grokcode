@@ -1,5 +1,7 @@
 # Changelog
 
+- Plan mode now collapses to a single composer dropdown in the macOS 26 Liquid Glass toolbar; the redundant "Plan mode" permission pill is hidden there too.
+
 - Claude runs that fail on a hard API error (rate limit / 429 / auth) no longer show a blank "Claude returned an empty response". Claude's stream-json puts the reason only in the terminal `result` field on those errors while leaving the assistant `content` blocks empty; the extractor now falls back to that `result` text, so you see the actual message (e.g. "You've reached your Fable 5 limit. Run /usage-credits…") instead of an empty bubble.
 - Removed the redundant "Plan mode" toggle from the composer "+" menu. Plan was surfacing three times (the + toggle, the mode pill, and the permission menu); the always-visible mode pill and the ⇧⌘M permission menu already cover it.
 
