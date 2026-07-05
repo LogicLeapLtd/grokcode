@@ -33,13 +33,107 @@ private struct SidebarNavigationIcon: View {
     let fontSize: CGFloat
     let width: CGFloat
     var height: CGFloat?
+    var active = false
+    var hovering = false
+    var locked = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isLit: Bool { !locked && (active || hovering) }
+    private var resolvedForeground: Color {
+        if locked { return CodexTheme.textTertiary }
+        return isLit ? CodexTheme.navIconActiveForeground : foreground
+    }
 
     var body: some View {
-        Image(systemName: symbol)
-            .symbolRenderingMode(.monochrome)
-            .font(.system(size: fontSize, weight: .medium))
-            .foregroundStyle(foreground)
-            .frame(width: width, height: height)
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(CodexTheme.accent.opacity(active ? 0.15 : hovering ? 0.10 : 0))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(CodexTheme.accent.opacity(active ? 0.28 : hovering ? 0.18 : 0),
+                                      lineWidth: 0.7)
+                )
+                .scaleEffect(isLit && !reduceMotion ? (hovering ? 1.10 : 1.02) : 0.78)
+                .opacity(isLit ? 1 : 0)
+
+            Image(systemName: symbol)
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: fontSize, weight: isLit ? .semibold : .medium))
+                .foregroundStyle(resolvedForeground)
+                .scaleEffect(!reduceMotion && hovering && !locked ? 1.10 : 1)
+                .offset(y: !reduceMotion && hovering && !locked ? -0.8 : 0)
+                .shadow(color: CodexTheme.accent.opacity(isLit ? 0.18 : 0),
+                        radius: hovering ? 5 : 3,
+                        x: 0,
+                        y: 1)
+        }
+        .frame(width: width, height: height ?? width)
+        .animation(CodexMotion.quickSpring, value: active)
+        .animation(CodexMotion.quickSpring, value: hovering)
+        .animation(CodexMotion.quickSpring, value: locked)
+    }
+}
+
+private struct SidebarNavRowButton: View {
+    let section: SidebarSection
+    let iconForeground: Color
+    let active: Bool
+    let locked: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    private var isInteractiveHover: Bool { hovering && !locked }
+
+    var body: some View {
+        Button {
+            guard !locked else { return }
+            action()
+        } label: {
+            HStack(spacing: SidebarMetrics.navSpacing) {
+                SidebarNavigationIcon(
+                    symbol: section.symbol,
+                    foreground: iconForeground,
+                    fontSize: SidebarMetrics.navIconFont,
+                    width: SidebarMetrics.navIconBox,
+                    active: active,
+                    hovering: isInteractiveHover,
+                    locked: locked
+                )
+                Text(section.title)
+                    .font(.system(size: SidebarMetrics.bodyFont, weight: active ? .medium : .regular))
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Spacer()
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+            }
+            .padding(.horizontal, SidebarMetrics.navHorizontal)
+            .padding(.vertical, SidebarMetrics.navVertical)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
+                    .fill(active ? CodexTheme.navHighlight :
+                            isInteractiveHover ? CodexTheme.hoverBackground : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
+                    .strokeBorder(isInteractiveHover ? CodexTheme.accent.opacity(0.16) : Color.clear,
+                                  lineWidth: 0.7)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(locked ? 0.5 : 1)
+        .help(locked ? "\(section.title) requires the full app" : section.title)
+        .onHover { hovering = $0 }
+        .animation(reduceMotion ? .easeOut(duration: 0.1) : CodexMotion.quickSpring, value: hovering)
+        .animation(CodexMotion.quickSpring, value: active)
+        .animation(CodexMotion.quickSpring, value: locked)
     }
 }
 
@@ -62,6 +156,7 @@ struct SidebarView: View {
     @Environment(AppViewModel.self) private var model
     @EnvironmentObject private var license: LicenseManager
     @EnvironmentObject private var update: UpdateService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var limitedMode = false
     var forceCollapsed = false
 
@@ -226,42 +321,14 @@ struct SidebarView: View {
         let locked = isLimited(section)
         let active = isPrimaryNavActive(section)
 
-        return Button {
-            guard !locked else { return }
+        return SidebarNavRowButton(
+            section: section,
+            iconForeground: navIconColor(active: active, locked: locked),
+            active: active,
+            locked: locked
+        ) {
             handleNav(section)
-        } label: {
-            HStack(spacing: SidebarMetrics.navSpacing) {
-                SidebarNavigationIcon(
-                    symbol: section.symbol,
-                    foreground: navIconColor(active: active, locked: locked),
-                    fontSize: SidebarMetrics.navIconFont,
-                    width: SidebarMetrics.navIconBox
-                )
-                Text(section.title)
-                    .font(.system(size: SidebarMetrics.bodyFont, weight: .regular))
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Spacer()
-                if locked {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(CodexTheme.textTertiary)
-                }
-            }
-            .padding(.horizontal, SidebarMetrics.navHorizontal)
-            .padding(.vertical, SidebarMetrics.navVertical)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
-                    .fill(active ? CodexTheme.navHighlight : Color.clear)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
-        .opacity(locked ? 0.5 : 1)
-        .help(locked ? "\(section.title) requires the full app" : section.title)
-        .animation(CodexMotion.quickSpring, value: active)
-        .animation(CodexMotion.quickSpring, value: locked)
     }
 
     private var projectsSection: some View {
@@ -725,7 +792,10 @@ struct SidebarView: View {
 
     private func railButton(section: SidebarSection, accessibilityLabel: String, active: Bool = false, locked: Bool = false,
                             action: @escaping () -> Void) -> some View {
-        Button {
+        let hovering = hoveredRailItem == accessibilityLabel
+        let isInteractiveHover = hovering && !locked
+
+        return Button {
             guard !locked else { return }
             action()
         } label: {
@@ -735,7 +805,10 @@ struct SidebarView: View {
                     foreground: navIconColor(active: active, locked: locked),
                     fontSize: 15,
                     width: SidebarMetrics.railButtonWidth,
-                    height: SidebarMetrics.railButtonHeight
+                    height: SidebarMetrics.railButtonHeight,
+                    active: active,
+                    hovering: isInteractiveHover,
+                    locked: locked
                 )
 
                 if locked {
@@ -747,10 +820,16 @@ struct SidebarView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
-                    .fill(active ? CodexTheme.navHighlight : Color.clear)
+                    .fill(active ? CodexTheme.navHighlight :
+                            isInteractiveHover ? CodexTheme.hoverBackground : Color.clear)
             )
-            .codexHover(cornerRadius: SidebarMetrics.cornerRadius)
+            .overlay(
+                RoundedRectangle(cornerRadius: SidebarMetrics.cornerRadius, style: .continuous)
+                    .strokeBorder(isInteractiveHover ? CodexTheme.accent.opacity(0.18) : Color.clear,
+                                  lineWidth: 0.7)
+            )
             .contentShape(Rectangle())
+            .scaleEffect(isInteractiveHover && !reduceMotion ? 1.035 : 1)
         }
         .buttonStyle(.plain)
         .opacity(locked ? 0.5 : 1)
@@ -765,6 +844,8 @@ struct SidebarView: View {
         .anchorPreference(key: CollapsedRailTooltipAnchorKey.self, value: .bounds) {
             [accessibilityLabel: $0]
         }
+        .animation(reduceMotion ? .easeOut(duration: 0.1) : CodexMotion.quickSpring, value: hovering)
+        .animation(CodexMotion.quickSpring, value: active)
         .animation(CodexMotion.quickSpring, value: locked)
     }
 
