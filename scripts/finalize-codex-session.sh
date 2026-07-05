@@ -201,7 +201,6 @@ command -v gh >/dev/null 2>&1 || {
 TAG="v${VERSION}"
 SOURCE_BRANCH="release/${TAG}"
 DMG="$ROOT/dist/Codessa-${VERSION}.dmg"
-HEAD_SHA="$(git rev-parse HEAD)"
 
 if gh release view "$TAG" --repo "$PUBLISH_REPO" >/dev/null 2>&1; then
   echo "ERROR: release $TAG already exists on $PUBLISH_REPO. Bump MARKETING_VERSION before publishing." >&2
@@ -237,8 +236,9 @@ echo "==> DMG checksum"
 shasum -a 256 "$DMG"
 verify_dmg_version "$DMG" "$VERSION" "$BUILD"
 
+HEAD_SHA="$(git rev-parse HEAD)"
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  echo "DRY RUN: would push HEAD to $SOURCE_BRANCH + $PRODUCTION_BRANCH and create $TAG on $PUBLISH_REPO with $DMG"
+  echo "DRY RUN: would push $HEAD_SHA to $SOURCE_BRANCH + $PRODUCTION_BRANCH and create $TAG on $PUBLISH_REPO with $DMG"
   [[ -n "$TMP_NOTES" ]] && rm -f "$TMP_NOTES"
   exit 0
 fi
