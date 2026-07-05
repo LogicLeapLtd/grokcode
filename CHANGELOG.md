@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.19] - 2026-07-05
+
+- Fixed Grok CLI path resolution: the warm agent session and one-shot
+  runner each hardcoded a narrow 3-path search that could diverge from
+  the broader detection search backing the "Grok is ready" status,
+  silently failing every send despite the CLI showing as installed.
+
 ## [1.8.18] - 2026-07-05
 
 - Fixed the "Thought for Ns" reasoning-block label showing a bogus short
