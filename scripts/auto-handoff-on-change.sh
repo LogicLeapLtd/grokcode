@@ -96,7 +96,7 @@ git commit -q -m "chore: bump Codessa to ${NEXT_MARKETING} (${NEXT}) for updater
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 echo "[auto-publish] publishing Codessa ${NEXT_MARKETING} (${NEXT})..." >&2
-if "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
+if DERIVED_DATA="$ROOT/.build-agent-auto-publish" "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
   NEW_HEAD="$(git rev-parse HEAD)"
   mkdir -p "$(dirname "$STAMP")"
   printf '%s' "$NEW_HEAD" > "$STAMP"
