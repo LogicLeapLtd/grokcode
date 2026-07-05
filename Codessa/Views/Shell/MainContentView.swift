@@ -31,7 +31,7 @@ struct MainContentView: View {
                         .codexPage("home")
                 case .chat:
                     ChatView()
-                        .codexPage("chat")
+                        .codexChatPage("chat")
                 case .search:
                     SearchPageView()
                         .codexUtilityPage("search")
@@ -53,7 +53,12 @@ struct MainContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) { windowControls }
         .clipped()
-        .animation(model.preferences.reduceMotion ? nil : CodexMotion.pageSpring, value: model.activePage)
+        .animation(pageAnimation, value: model.activePage)
+    }
+
+    private var pageAnimation: Animation? {
+        guard !model.preferences.reduceMotion else { return nil }
+        return model.activePage == .chat ? CodexMotion.chatStartSpring : CodexMotion.pageSpring
     }
 
     private var windowControls: some View {

@@ -1167,15 +1167,14 @@ private struct BranchChip: View {
 // MARK: - Pending chat row
 
 /// The optimistic "New chat" row shown the instant a conversation starts, before
-/// grok persists the session. Softly pulses to read as "in progress", then is
-/// replaced by the real chat row once the session is indexed.
+/// grok persists the session. The title stays steady while a small activity
+/// sweep signals progress, then the row is replaced once the session is indexed.
 private struct PendingChatRow: View {
     /// Leading inset so the row lines up with sibling chat titles (grouped list)
     /// or sits flush (flat list).
     var leadingInset: CGFloat = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1185,19 +1184,39 @@ private struct PendingChatRow: View {
                 .padding(.leading, leadingInset)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            PendingChatActivityIndicator(active: !reduceMotion)
         }
         .padding(.horizontal, SidebarMetrics.rowHorizontal)
         .padding(.vertical, SidebarMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .opacity(reduceMotion ? 0.6 : (pulse ? 0.35 : 1.0))
+        .opacity(reduceMotion ? 0.72 : 1)
+        .help("Starting a new chat…")
+    }
+}
+
+private struct PendingChatActivityIndicator: View {
+    let active: Bool
+    @State private var sweep = false
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(CodexTheme.accent.opacity(0.16))
+                .frame(width: 24, height: 3)
+
+            Capsule(style: .continuous)
+                .fill(CodexTheme.accent.opacity(active ? 0.72 : 0.42))
+                .frame(width: 8, height: 3)
+                .offset(x: active && sweep ? 16 : 0)
+        }
+        .frame(width: 24, height: 10)
         .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
-                pulse = true
+            guard active else { return }
+            withAnimation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true)) {
+                sweep = true
             }
         }
-        .help("Starting a new chat…")
     }
 }
 

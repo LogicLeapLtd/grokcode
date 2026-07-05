@@ -6,6 +6,7 @@ enum CodexMotion {
     static let modalSpring = Animation.spring(response: 0.44, dampingFraction: 0.84)
     static let expandSpring = Animation.spring(response: 0.38, dampingFraction: 0.8)
     static let quickSpring = Animation.spring(response: 0.28, dampingFraction: 0.78)
+    static let chatStartSpring = Animation.spring(response: 0.34, dampingFraction: 0.94)
     /// Sidebar collapse/expand. Critically-damped (no overshoot) so the rail edge
     /// never bounces against the main pane while the width animates.
     static let sidebarCollapse = Animation.spring(response: 0.34, dampingFraction: 1.0)
@@ -37,6 +38,16 @@ enum CodexMotion {
                 active: UtilityPageTransitionModifier(progress: 0, xOffset: -14),
                 identity: UtilityPageTransitionModifier(progress: 1, xOffset: 0)
             )
+        )
+    }
+
+    static var chatPageTransition: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: ChatPageTransitionModifier(progress: 0, yOffset: 8),
+                identity: ChatPageTransitionModifier(progress: 1, yOffset: 0)
+            ),
+            removal: .opacity
         )
     }
 
@@ -75,6 +86,42 @@ private struct UtilityPageTransitionModifier: AnimatableModifier {
     }
 }
 
+private struct ChatPageTransitionModifier: AnimatableModifier {
+    var progress: Double
+    var yOffset: CGFloat
+
+    var animatableData: AnimatablePair<Double, CGFloat> {
+        get { AnimatablePair(progress, yOffset) }
+        set {
+            progress = newValue.first
+            yOffset = newValue.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        let hidden = 1 - progress
+
+        content
+            .opacity(0.18 + (0.82 * progress))
+            .blur(radius: hidden * 3.5)
+            .offset(y: yOffset)
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        CodexTheme.accent.opacity(hidden * 0.10),
+                        .clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 140)
+                .blendMode(.plusLighter)
+                .allowsHitTesting(false)
+            }
+    }
+}
+
 struct CodexPageTransition: ViewModifier {
     let identity: String
 
@@ -92,6 +139,16 @@ struct CodexUtilityPageTransition: ViewModifier {
         content
             .id(identity)
             .transition(CodexMotion.utilityPageTransition)
+    }
+}
+
+struct CodexChatPageTransition: ViewModifier {
+    let identity: String
+
+    func body(content: Content) -> some View {
+        content
+            .id(identity)
+            .transition(CodexMotion.chatPageTransition)
     }
 }
 
@@ -235,6 +292,10 @@ extension View {
 
     func codexUtilityPage(_ identity: String) -> some View {
         modifier(CodexUtilityPageTransition(identity: identity))
+    }
+
+    func codexChatPage(_ identity: String) -> some View {
+        modifier(CodexChatPageTransition(identity: identity))
     }
 
     func codexStaggeredAppear(index: Int = 0) -> some View {

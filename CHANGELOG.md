@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Starting a chat now uses a calmer, chat-specific focus transition, and the temporary sidebar "New chat" row uses a small activity sweep instead of pulsing the entire row.
 - Sidebar navigation icons now use stronger, clearer symbols with heavier rendering, so New chat, Search, Plugins, and Automations read less like placeholder outline glyphs.
 
 ## [1.8.0] - 2026-07-04
