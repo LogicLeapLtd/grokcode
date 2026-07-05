@@ -91,6 +91,28 @@ extension AppViewModel {
         }
     }
 
+    // MARK: - Local source management
+
+    /// Enable or disable the real local definition, then refresh the synced
+    /// inventory so the Manage tab reflects the new source state.
+    func setLocalPlugin(_ plugin: Plugin, enabled: Bool) {
+        let ok = PluginImportService().setEnabled(plugin, enabled: enabled)
+        refreshPlugins()
+        pluginToast = ok
+            ? "\(plugin.displayName) \(enabled ? "enabled" : "disabled")"
+            : "Couldn't \(enabled ? "enable" : "disable") \(plugin.displayName)"
+    }
+
+    /// Delete the real local definition (or remove it from its config), then
+    /// refresh the synced inventory and installed set.
+    func deleteLocalPlugin(_ plugin: Plugin) {
+        let ok = PluginImportService().deleteDefinition(plugin)
+        refreshPlugins()
+        pluginToast = ok
+            ? "Deleted \(plugin.displayName)"
+            : "Couldn't delete \(plugin.displayName)"
+    }
+
     // MARK: - Reconcile installed set with grok
 
     /// Reconcile the persisted installed set against grok's live MCP registry.

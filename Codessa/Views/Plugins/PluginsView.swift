@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Plugins page. Three tabs:
 ///  - Discover: Codessa's own curated marketplace.
-///  - Import: plugins found in your other coding agents (grok/Claude/Codex/Cursor).
+///  - Manage: auto-synced local integrations from other coding agents.
 ///  - Installed: what you've added.
 struct PluginsView: View {
     @Environment(AppViewModel.self) private var model
@@ -13,14 +13,14 @@ struct PluginsView: View {
         var title: String {
             switch self {
             case .discover: "Discover"
-            case .importing: "Import"
+            case .importing: "Manage"
             case .installed: "Installed"
             }
         }
         var symbol: String {
             switch self {
             case .discover: "square.grid.2x2"
-            case .importing: "square.and.arrow.down"
+            case .importing: "slider.horizontal.3"
             case .installed: "checkmark.seal"
             }
         }
@@ -104,7 +104,7 @@ struct PluginsView: View {
                 publishButton
                 rescanButton
             }
-            Text("Browse the Codessa marketplace, or import MCP servers, skills and commands you already use in other tools.")
+            Text("Browse the marketplace, or manage auto-synced MCP servers, plugins, skills, hooks and commands from Grok, Claude, Codex, Cursor and shared agent folders.")
                 .font(.system(size: 13))
                 .foregroundStyle(CodexTheme.textSecondary)
                 .lineSpacing(2)
@@ -141,7 +141,7 @@ struct PluginsView: View {
         Button { model.refreshPlugins() } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium))
-                Text("Rescan").font(.system(size: 12, weight: .medium))
+                Text("Sync").font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(CodexTheme.textSecondary)
             .padding(.horizontal, 13).padding(.vertical, 6)
@@ -152,7 +152,7 @@ struct PluginsView: View {
         }
         .buttonStyle(.plain)
         .codexHoverOverlay(cornerRadius: 14)
-        .help("Rescan local tool configs for plugins")
+        .help("Sync local MCP servers, plugins and skills")
     }
 
     // MARK: Search
@@ -282,7 +282,7 @@ struct PluginsView: View {
         let totalMatches = marketplaceFiltered.count + importFiltered.count + installedFiltered.count
         if totalMatches == 0 {
             emptyState(symbol: "magnifyingglass", title: "No matches",
-                       subtitle: "Nothing across Discover, Import or Installed matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
+                       subtitle: "Nothing across Discover, Manage or Installed matches \u{201C}\(model.pluginSearchQuery)\u{201D}.")
         } else {
             if !installedFiltered.isEmpty {
                 searchSection(icon: "checkmark.seal", title: "Installed", tab: .installed, items: installedFiltered)
@@ -291,7 +291,7 @@ struct PluginsView: View {
                 searchSection(icon: "sparkles", title: "Discover", tab: .discover, items: marketplaceFiltered)
             }
             if !importFiltered.isEmpty {
-                searchSection(icon: "square.and.arrow.down", title: "Import", tab: .importing, items: importFiltered)
+                searchSection(icon: "slider.horizontal.3", title: "Manage", tab: .importing, items: importFiltered)
             }
         }
     }
@@ -337,11 +337,11 @@ struct PluginsView: View {
             }
         case .importing:
             if importFiltered.isEmpty {
-                emptyState(symbol: "square.and.arrow.down",
-                           title: model.pluginSearchQuery.isEmpty ? "Nothing to import" : "No matches",
+                emptyState(symbol: "slider.horizontal.3",
+                           title: model.pluginSearchQuery.isEmpty ? "Nothing synced yet" : "No matches",
                            subtitle: model.pluginSearchQuery.isEmpty
-                            ? "No MCP servers, skills or commands were found in your grok, Claude, Codex or Cursor setups. Add one to those tools, then Rescan."
-                            : "No imported plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
+                            ? "No MCP servers, plugins, skills, hooks or commands were found in your Grok, Claude, Codex, Cursor or shared agent setups. Add one to those tools, then Sync."
+                            : "No synced integrations match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
                 ForEach(groupedBySource(importFiltered), id: \.0) { source, items in
                     VStack(alignment: .leading, spacing: 8) {
@@ -361,7 +361,7 @@ struct PluginsView: View {
                 emptyState(symbol: "tray",
                            title: model.pluginSearchQuery.isEmpty ? "No plugins installed yet" : "No matches",
                            subtitle: model.pluginSearchQuery.isEmpty
-                            ? "Add plugins from the Discover marketplace or import them from your other tools."
+                            ? "Add plugins from the Discover marketplace or the synced Manage inventory."
                             : "No installed plugins match \u{201C}\(model.pluginSearchQuery)\u{201D}.")
             } else {
                 cardStack(installedFiltered)
@@ -470,7 +470,7 @@ struct PluginsView: View {
 
     private func emptyState(symbol: String, title: String, subtitle: String) -> some View {
         // Shared centered empty-state from the page-scaffold contract, so "No
-        // matches" / "Nothing to import" sit centered in the column rather than
+        // matches" / "Nothing synced yet" sit centered in the column rather than
         // pinned to a corner.
         PageEmptyState(systemImage: symbol, title: title, message: subtitle, minHeight: 320)
     }
@@ -484,6 +484,7 @@ private struct PluginRow: View {
     /// When set (community rows), shows a "by <author>" caption under the title.
     var authorOverride: String? = nil
     @State private var showConfigure = false
+    @State private var confirmingDelete = false
 
     /// Shared layout constants so the divider inset, icon column and text column
     /// stay on one consistent grid across every row.
@@ -509,6 +510,10 @@ private struct PluginRow: View {
         plugin.isInstalled && plugin.kind == .mcpServer
     }
 
+    private var canShowManagementControls: Bool {
+        authorOverride == nil && (plugin.supportsLocalDisable || plugin.supportsLocalDelete)
+    }
+
     /// The third caption line. Community rows append a "· by <author>" suffix when
     /// the entry carried one; everything else keeps the standard source·kind line.
     private var captionText: String {
@@ -529,6 +534,7 @@ private struct PluginRow: View {
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
                     if plugin.isRemoteServer { tag("Remote") }
+                    if !plugin.isLocallyEnabled { tag("Disabled") }
                 }
                 if hasMeaningfulSubtitle {
                     Text(plugin.subtitle)
@@ -545,6 +551,10 @@ private struct PluginRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 if canConfigure { configureButton }
+                if canShowManagementControls {
+                    if plugin.supportsLocalDisable { enableToggleButton }
+                    if plugin.supportsLocalDelete { deleteButton }
+                }
                 actionControl
             }
             .layoutPriority(1)
@@ -560,6 +570,18 @@ private struct PluginRow: View {
         .codexHover(cornerRadius: 0)
         .sheet(isPresented: $showConfigure) {
             PluginConfigureSheet(plugin: plugin)
+        }
+        .confirmationDialog(
+            "Delete \(plugin.displayName)?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                model.deleteLocalPlugin(plugin)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the local definition from \(plugin.sourceTool.displayName). Config-backed MCP servers are removed from their source file; file-backed items are moved to Trash when possible.")
         }
     }
 
@@ -579,6 +601,27 @@ private struct PluginRow: View {
         .help("Edit environment variables / API keys for \(plugin.displayName)")
     }
 
+    private var enableToggleButton: some View {
+        let nextEnabled = !plugin.isLocallyEnabled
+        return managementIconButton(
+            systemName: plugin.isLocallyEnabled ? "power" : "power.circle.fill",
+            tint: plugin.isLocallyEnabled ? CodexTheme.textSecondary : CodexTheme.accentOrange,
+            help: "\(nextEnabled ? "Enable" : "Disable") \(plugin.displayName)"
+        ) {
+            model.setLocalPlugin(plugin, enabled: nextEnabled)
+        }
+    }
+
+    private var deleteButton: some View {
+        managementIconButton(
+            systemName: "trash",
+            tint: CodexTheme.textTertiary,
+            help: "Delete \(plugin.displayName)"
+        ) {
+            confirmingDelete = true
+        }
+    }
+
     private var icon: some View {
         Image(systemName: plugin.iconSystemName)
             .font(.system(size: 15, weight: .regular))
@@ -594,6 +637,26 @@ private struct PluginRow: View {
             .foregroundStyle(CodexTheme.textSecondary)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(CodexTheme.pillBackground))
+    }
+
+    private func managementIconButton(
+        systemName: String,
+        tint: Color,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(CodexTheme.pillBackground))
+                .overlay(Circle().strokeBorder(CodexTheme.divider, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .codexHoverOverlay(Circle())
+        .help(help)
     }
 
     @ViewBuilder
@@ -612,6 +675,15 @@ private struct PluginRow: View {
             }
             .buttonStyle(.plain)
             .help("Remove \(plugin.displayName)")
+        } else if !plugin.isLocallyEnabled {
+            HStack(spacing: 5) {
+                Image(systemName: "pause.circle").font(.system(size: 11, weight: .medium))
+                Text("Disabled").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(CodexTheme.textTertiary)
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .background(Capsule().fill(CodexTheme.pillBackground))
+            .overlay(Capsule().strokeBorder(CodexTheme.divider, lineWidth: 1))
         } else {
             // Secondary, quiet capsule (not a bright-white pill). The accent
             // glyph signals it's the actionable affordance without dominating

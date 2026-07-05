@@ -35,8 +35,9 @@ final class PluginImportService {
 
         var byID: [String: Plugin] = [:]
         // Merge every source; first writer wins on id collision so per-source
-        // order is deterministic. Discovery order: claude, grok, codex, cursor.
-        for plugin in discoverClaude() + discoverGrok() + discoverCodex() + discoverCursor() {
+        // order is deterministic. Discovery order: claude, grok, codex,
+        // cursor, then shared `.agents` surfaces.
+        for plugin in discoverClaude() + discoverGrok() + discoverCodex() + discoverCursor() + discoverAgents() {
             if byID[plugin.id] == nil {
                 byID[plugin.id] = plugin
             }
@@ -48,7 +49,7 @@ final class PluginImportService {
     }
 
     /// Stable display ordering: by kind sortOrder, then source, then name.
-    private static func sortPlugins(_ a: Plugin, _ b: Plugin) -> Bool {
+    private nonisolated static func sortPlugins(_ a: Plugin, _ b: Plugin) -> Bool {
         if a.kind.sortOrder != b.kind.sortOrder {
             return a.kind.sortOrder < b.kind.sortOrder
         }
@@ -70,18 +71,30 @@ final class PluginImportService {
             if let servers = root["mcpServers"] as? [String: Any] {
                 out += mcpPlugins(from: servers, source: .claude, sourcePath: configPath)
             }
+            if let servers = root["disabledMcpServers"] as? [String: Any] {
+                out += mcpPlugins(from: servers, source: .claude, sourcePath: configPath, enabled: false)
+            }
             // Per-project MCP servers: projects["<path>"].mcpServers
             if let projects = root["projects"] as? [String: Any] {
                 for (projectPath, value) in projects {
-                    guard let proj = value as? [String: Any],
-                          let servers = proj["mcpServers"] as? [String: Any],
-                          !servers.isEmpty else { continue }
-                    out += mcpPlugins(
-                        from: servers,
-                        source: .claude,
-                        sourcePath: configPath,
-                        projectPath: projectPath
-                    )
+                    guard let proj = value as? [String: Any] else { continue }
+                    if let servers = proj["mcpServers"] as? [String: Any], !servers.isEmpty {
+                        out += mcpPlugins(
+                            from: servers,
+                            source: .claude,
+                            sourcePath: configPath,
+                            projectPath: projectPath
+                        )
+                    }
+                    if let servers = proj["disabledMcpServers"] as? [String: Any], !servers.isEmpty {
+                        out += mcpPlugins(
+                            from: servers,
+                            source: .claude,
+                            sourcePath: configPath,
+                            projectPath: projectPath,
+                            enabled: false
+                        )
+                    }
                 }
             }
         }
@@ -93,6 +106,15 @@ final class PluginImportService {
                 from: servers,
                 source: .claude,
                 sourcePath: home.appendingPathComponent(".mcp.json").path
+            )
+        }
+        if let root = readJSONObject(at: home.appendingPathComponent(".mcp.json")),
+           let servers = root["disabledMcpServers"] as? [String: Any] {
+            out += mcpPlugins(
+                from: servers,
+                source: .claude,
+                sourcePath: home.appendingPathComponent(".mcp.json").path,
+                enabled: false
             )
         }
 
@@ -152,12 +174,19 @@ final class PluginImportService {
            let servers = root["mcpServers"] as? [String: Any] {
             out += mcpPlugins(from: servers, source: .codex, sourcePath: mcpConfig.path)
         }
+        if let root = readJSONObject(at: mcpConfig),
+           let servers = root["disabledMcpServers"] as? [String: Any] {
+            out += mcpPlugins(from: servers, source: .codex, sourcePath: mcpConfig.path, enabled: false)
+        }
 
         // MCP servers (active): [mcp_servers.<name>] tables in config.toml
         out += tomlMCPServers(at: codexDir.appendingPathComponent("config.toml"), source: .codex)
 
         // Skills: ~/.codex/skills/<name>/SKILL.md
         out += skillPlugins(in: codexDir.appendingPathComponent("skills"), source: .codex)
+
+        // Installed Codex plugins: ~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/.codex-plugin/plugin.json
+        out += extensionPlugins(in: codexDir.appendingPathComponent("plugins/cache"), source: .codex)
 
         // Automations (display-only import items): ~/.codex/automations/<id>/automation.toml
         out += codexAutomations(in: codexDir.appendingPathComponent("automations"))
@@ -180,9 +209,25 @@ final class PluginImportService {
            let servers = root["mcpServers"] as? [String: Any] {
             out += mcpPlugins(from: servers, source: .cursor, sourcePath: mcpURL.path)
         }
+        if let root = readJSONObject(at: mcpURL),
+           let servers = root["disabledMcpServers"] as? [String: Any] {
+            out += mcpPlugins(from: servers, source: .cursor, sourcePath: mcpURL.path, enabled: false)
+        }
 
         // Skills: ~/.cursor/skills-cursor/<name>/SKILL.md
         out += skillPlugins(in: cursorDir.appendingPathComponent("skills-cursor"), source: .cursor)
+
+        return out
+    }
+
+    // MARK: Shared agents — ~/.agents/{skills,plugins}
+
+    func discoverAgents() -> [Plugin] {
+        var out: [Plugin] = []
+        let agentsDir = home.appendingPathComponent(".agents")
+
+        out += skillPlugins(in: agentsDir.appendingPathComponent("skills"), source: .agents)
+        out += extensionPlugins(in: agentsDir.appendingPathComponent("plugins"), source: .agents)
 
         return out
     }
@@ -225,6 +270,49 @@ final class PluginImportService {
         defaults.set(data, forKey: installedKey)
     }
 
+    // MARK: - Local management
+
+    /// Enable/disable a source definition in-place. Config-backed MCP servers
+    /// stay in their config file; file-backed skills/hooks/plugins are renamed
+    /// to/from a `.disabled` suffix. Returns false if this plugin is not backed
+    /// by a manageable local definition.
+    @discardableResult
+    func setEnabled(_ plugin: Plugin, enabled: Bool) -> Bool {
+        guard plugin.supportsLocalDisable else { return false }
+        switch plugin.rawConfig["disableMode"] {
+        case "toml-enabled":
+            return writeTOMLMCPEnabled(plugin, enabled: enabled)
+        case "json-mcp-bucket":
+            return moveJSONMCP(plugin, enabled: enabled)
+        case "directory-rename", "file-rename":
+            return renameDefinition(plugin, enabled: enabled)
+        default:
+            return false
+        }
+    }
+
+    /// Delete a source definition. File-backed definitions are moved to Trash
+    /// when possible; config-backed MCP servers are removed from their config.
+    @discardableResult
+    func deleteDefinition(_ plugin: Plugin) -> Bool {
+        guard plugin.supportsLocalDelete else { return false }
+
+        let ok: Bool
+        switch plugin.rawConfig["deleteMode"] {
+        case "toml-mcp-entry":
+            ok = deleteTOMLMCP(plugin)
+        case "json-mcp-entry":
+            ok = deleteJSONMCP(plugin)
+        case "trash":
+            ok = trashDefinition(plugin)
+        default:
+            ok = false
+        }
+
+        if ok { remove(plugin) }
+        return ok
+    }
+
     // MARK: - MCP parsing (JSON `mcpServers` map)
 
     /// Build MCP `Plugin`s from a `mcpServers` dictionary (Claude/Cursor/Codex
@@ -234,7 +322,8 @@ final class PluginImportService {
         from servers: [String: Any],
         source: PluginSource,
         sourcePath: String,
-        projectPath: String? = nil
+        projectPath: String? = nil,
+        enabled: Bool = true
     ) -> [Plugin] {
         servers.compactMap { name, raw -> Plugin? in
             guard let cfg = raw as? [String: Any] else { return nil }
@@ -265,6 +354,10 @@ final class PluginImportService {
             if let type { rawConfig["type"] = type }
             else { rawConfig["type"] = (url != nil) ? "http" : "stdio" }
             if let projectPath { rawConfig["projectPath"] = projectPath }
+            rawConfig["enabled"] = enabled ? "true" : "false"
+            rawConfig["source"] = "json"
+            rawConfig["disableMode"] = "json-mcp-bucket"
+            rawConfig["deleteMode"] = "json-mcp-entry"
 
             // Project-scoped servers get a qualified id so global + per-project
             // entries of the same name don't collide.
@@ -425,6 +518,8 @@ final class PluginImportService {
             var rawConfig: [String: String] = [
                 "type": serverURL != nil ? "http" : "stdio",
                 "enabled": draft.enabled ? "true" : "false",
+                "disableMode": "toml-enabled",
+                "deleteMode": "toml-mcp-entry",
             ]
             rawConfig["source"] = "toml"
 
@@ -462,7 +557,8 @@ final class PluginImportService {
             else { continue }
 
             guard let skillFile = skillManifestURL(in: entry) else { continue }
-            let name = entry.lastPathComponent
+            let disabled = isDisabledURL(entry)
+            let name = enabledName(for: entry.lastPathComponent)
             let detail = frontmatterDescription(at: skillFile)
 
             out.append(Plugin(
@@ -472,7 +568,13 @@ final class PluginImportService {
                 sourceTool: source,
                 detail: detail,
                 sourcePath: skillFile.path,
-                rawConfig: ["scope": "user"]
+                rawConfig: [
+                    "scope": "user",
+                    "enabled": disabled ? "false" : "true",
+                    "disableMode": "directory-rename",
+                    "deleteMode": "trash",
+                    "definitionPath": entry.path,
+                ]
             ))
         }
         return out
@@ -484,6 +586,38 @@ final class PluginImportService {
             if fileManager.fileExists(atPath: url.path) { return url }
         }
         return nil
+    }
+
+    private func isDisabledURL(_ url: URL) -> Bool {
+        url.lastPathComponent.hasSuffix(".disabled")
+    }
+
+    private func enabledName(for component: String) -> String {
+        component.hasSuffix(".disabled")
+            ? String(component.dropLast(".disabled".count))
+            : component
+    }
+
+    private func logicalPathExtension(_ url: URL) -> String {
+        let enabledComponent = enabledName(for: url.lastPathComponent)
+        return (enabledComponent as NSString).pathExtension.lowercased()
+    }
+
+    private func markdownDefinitionName(_ url: URL) -> String? {
+        guard logicalPathExtension(url) == "md" else { return nil }
+        let enabledComponent = enabledName(for: url.lastPathComponent)
+        return (enabledComponent as NSString).deletingPathExtension
+    }
+
+    private func jsonDefinitionName(_ url: URL) -> String {
+        let enabledComponent = enabledName(for: url.lastPathComponent)
+        return (enabledComponent as NSString).deletingPathExtension
+    }
+
+    private func scriptDefinitionName(_ url: URL) -> String {
+        let enabledComponent = enabledName(for: url.lastPathComponent)
+        let name = (enabledComponent as NSString).deletingPathExtension
+        return name.isEmpty ? enabledComponent : name
     }
 
     // MARK: - Commands (~/.<tool>/commands/*.md)
@@ -507,8 +641,9 @@ final class PluginImportService {
         ) else { return [] }
 
         var out: [Plugin] = []
-        for entry in entries where entry.pathExtension.lowercased() == "md" {
-            let name = entry.deletingPathExtension().lastPathComponent
+        for entry in entries {
+            guard let name = markdownDefinitionName(entry) else { continue }
+            let disabled = isDisabledURL(entry)
             var detail = frontmatterDescription(at: entry)
             if detail.isEmpty, let detailPrefix { detail = detailPrefix }
 
@@ -519,7 +654,13 @@ final class PluginImportService {
                 sourceTool: source,
                 detail: detail,
                 sourcePath: entry.path,
-                rawConfig: ["scope": "user"]
+                rawConfig: [
+                    "scope": "user",
+                    "enabled": disabled ? "false" : "true",
+                    "disableMode": "file-rename",
+                    "deleteMode": "trash",
+                    "definitionPath": entry.path,
+                ]
             ))
         }
         return out
@@ -541,10 +682,11 @@ final class PluginImportService {
             guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory != true
             else { continue }
             // JSON hook configs are handled by jsonHookPlugins; here we take scripts.
-            let ext = entry.pathExtension.lowercased()
-            if ext == "json" { continue }
-            let name = entry.deletingPathExtension().lastPathComponent
-            let detail = ext.isEmpty ? "Hook script" : "\(ext) hook"
+            let logicalExt = logicalPathExtension(entry)
+            if logicalExt == "json" { continue }
+            let name = scriptDefinitionName(entry)
+            let detail = logicalExt.isEmpty ? "Hook script" : "\(logicalExt) hook"
+            let disabled = isDisabledURL(entry)
 
             out.append(Plugin(
                 id: "\(source.rawValue):\(name)",
@@ -553,7 +695,13 @@ final class PluginImportService {
                 sourceTool: source,
                 detail: detail,
                 sourcePath: entry.path,
-                rawConfig: ["format": "script"]
+                rawConfig: [
+                    "format": "script",
+                    "enabled": disabled ? "false" : "true",
+                    "disableMode": "file-rename",
+                    "deleteMode": "trash",
+                    "definitionPath": entry.path,
+                ]
             ))
         }
         return out
@@ -569,8 +717,8 @@ final class PluginImportService {
         ) else { return [] }
 
         var out: [Plugin] = []
-        for entry in entries where entry.pathExtension.lowercased() == "json" {
-            let name = entry.deletingPathExtension().lastPathComponent
+        for entry in entries where logicalPathExtension(entry) == "json" {
+            let name = jsonDefinitionName(entry)
             out += jsonHookFile(at: entry, source: source, name: name)
         }
         return out
@@ -589,6 +737,7 @@ final class PluginImportService {
         guard !events.isEmpty else { return [] }
 
         let detail = events.joined(separator: ", ")
+        let disabled = isDisabledURL(url)
         return [Plugin(
             id: "\(source.rawValue):\(name)",
             name: name,
@@ -596,7 +745,14 @@ final class PluginImportService {
             sourceTool: source,
             detail: detail,
             sourcePath: url.path,
-            rawConfig: ["events": detail, "format": "json"]
+            rawConfig: [
+                "events": detail,
+                "format": "json",
+                "enabled": disabled ? "false" : "true",
+                "disableMode": "file-rename",
+                "deleteMode": "trash",
+                "definitionPath": url.path,
+            ]
         )]
     }
 
@@ -647,6 +803,81 @@ final class PluginImportService {
         return out
     }
 
+    // MARK: - Plugin manifests (Codex/shared agent plugin folders)
+
+    /// Recursively scans a plugin/cache root for Codex/agent plugin manifests.
+    /// We cap traversal depth so a plugin's own dependency tree never becomes
+    /// part of discovery.
+    private func extensionPlugins(in dir: URL, source: PluginSource) -> [Plugin] {
+        guard let enumerator = fileManager.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+
+        let rootDepth = dir.pathComponents.count
+        var seenDefinitionPaths = Set<String>()
+        var out: [Plugin] = []
+
+        for case let manifest as URL in enumerator {
+            let depth = manifest.pathComponents.count - rootDepth
+            if depth > 6 {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard manifest.lastPathComponent == "plugin.json" else { continue }
+            guard let plugin = extensionPlugin(at: manifest, source: source) else { continue }
+            let definitionPath = plugin.rawConfig["definitionPath"] ?? plugin.sourcePath
+            guard seenDefinitionPaths.insert(definitionPath).inserted else { continue }
+            out.append(plugin)
+        }
+
+        return out
+    }
+
+    private func extensionPlugin(at manifest: URL, source: PluginSource) -> Plugin? {
+        guard let root = readJSONObject(at: manifest) else { return nil }
+        let interface = root["interface"] as? [String: Any] ?? [:]
+
+        let manifestParent = manifest.deletingLastPathComponent()
+        let definitionURL: URL
+        if manifestParent.lastPathComponent.hasPrefix(".") {
+            definitionURL = manifestParent.deletingLastPathComponent()
+        } else {
+            definitionURL = manifestParent
+        }
+
+        let disabled = isDisabledURL(definitionURL)
+        let rawName = (root["name"] as? String)
+            ?? (interface["displayName"] as? String)
+            ?? definitionURL.lastPathComponent
+        let name = enabledName(for: rawName)
+        let displayName = (interface["displayName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name
+        let detail = (interface["shortDescription"] as? String)
+            ?? (root["description"] as? String)
+            ?? "Plugin"
+        let version = (root["version"] as? String) ?? ""
+
+        var rawConfig: [String: String] = [
+            "format": "plugin-manifest",
+            "enabled": disabled ? "false" : "true",
+            "disableMode": "directory-rename",
+            "deleteMode": "trash",
+            "definitionPath": definitionURL.path,
+        ]
+        if !version.isEmpty { rawConfig["version"] = version }
+
+        return Plugin(
+            id: "\(source.rawValue):plugin:\(name)",
+            name: displayName,
+            kind: .extension_,
+            sourceTool: source,
+            detail: firstSentence(detail),
+            sourcePath: manifest.path,
+            rawConfig: rawConfig
+        )
+    }
+
     // MARK: - Codex automations (display-only import items)
 
     /// `~/.codex/automations/<id>/automation.toml` → a `kind = .automation`
@@ -665,6 +896,7 @@ final class PluginImportService {
             else { continue }
             let tomlURL = entry.appendingPathComponent("automation.toml")
             guard let text = try? String(contentsOf: tomlURL, encoding: .utf8) else { continue }
+            let disabled = isDisabledURL(entry)
 
             let fields = parseFlatTOML(text)
             let id = fields["id"] ?? entry.lastPathComponent
@@ -683,6 +915,10 @@ final class PluginImportService {
             if !status.isEmpty { rawConfig["status"] = status }
             if !model.isEmpty { rawConfig["model"] = model }
             if let rrule = fields["rrule"] { rawConfig["rrule"] = rrule }
+            rawConfig["enabled"] = disabled ? "false" : "true"
+            rawConfig["disableMode"] = "directory-rename"
+            rawConfig["deleteMode"] = "trash"
+            rawConfig["definitionPath"] = entry.path
 
             out.append(Plugin(
                 id: "\(PluginSource.codex.rawValue):\(id)",
@@ -695,6 +931,238 @@ final class PluginImportService {
             ))
         }
         return out
+    }
+
+    // MARK: - Local management helpers
+
+    private func writeTOMLMCPEnabled(_ plugin: Plugin, enabled: Bool) -> Bool {
+        guard let url = sourceFileURL(for: plugin),
+              var text = try? String(contentsOf: url, encoding: .utf8) else { return false }
+
+        var lines = text.components(separatedBy: "\n")
+        guard let headerIndex = lines.firstIndex(where: { line in
+            guard let section = mcpSection(from: line) else { return false }
+            return section.name == plugin.name && section.nested == nil
+        }) else { return false }
+
+        let desired = "enabled = \(enabled)"
+        var didReplace = false
+        var index = headerIndex + 1
+        while index < lines.count {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") { break }
+            if trimmed.hasPrefix("enabled") && trimmed.contains("=") {
+                lines[index] = desired
+                didReplace = true
+                break
+            }
+            index += 1
+        }
+
+        if !didReplace {
+            lines.insert(desired, at: headerIndex + 1)
+        }
+
+        text = lines.joined(separator: "\n")
+        return writeString(text, to: url)
+    }
+
+    private func deleteTOMLMCP(_ plugin: Plugin) -> Bool {
+        guard let url = sourceFileURL(for: plugin),
+              let original = try? String(contentsOf: url, encoding: .utf8) else { return false }
+
+        var keep: [String] = []
+        var skipping = false
+
+        for line in original.components(separatedBy: "\n") {
+            if let section = mcpSection(from: line) {
+                skipping = section.name == plugin.name
+                if skipping { continue }
+            } else if line.trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+                skipping = false
+            }
+
+            if !skipping { keep.append(line) }
+        }
+
+        let updated = keep.joined(separator: "\n")
+        guard updated != original else { return false }
+        return writeString(updated, to: url)
+    }
+
+    private func moveJSONMCP(_ plugin: Plugin, enabled: Bool) -> Bool {
+        guard let url = sourceFileURL(for: plugin),
+              var root = readJSONObject(at: url) else { return false }
+
+        let changed: Bool
+        if let projectPath = plugin.rawConfig["projectPath"] {
+            var projects = root["projects"] as? [String: Any] ?? [:]
+            var project = projects[projectPath] as? [String: Any] ?? [:]
+            changed = moveJSONMCPEntry(named: plugin.name, in: &project, enabled: enabled)
+            projects[projectPath] = project
+            root["projects"] = projects
+        } else {
+            changed = moveJSONMCPEntry(named: plugin.name, in: &root, enabled: enabled)
+        }
+
+        guard changed else { return false }
+        return writeJSONObject(root, to: url)
+    }
+
+    private func deleteJSONMCP(_ plugin: Plugin) -> Bool {
+        guard let url = sourceFileURL(for: plugin),
+              var root = readJSONObject(at: url) else { return false }
+
+        let changed: Bool
+        if let projectPath = plugin.rawConfig["projectPath"] {
+            var projects = root["projects"] as? [String: Any] ?? [:]
+            var project = projects[projectPath] as? [String: Any] ?? [:]
+            changed = deleteJSONMCPEntry(named: plugin.name, in: &project)
+            projects[projectPath] = project
+            root["projects"] = projects
+        } else {
+            changed = deleteJSONMCPEntry(named: plugin.name, in: &root)
+        }
+
+        guard changed else { return false }
+        return writeJSONObject(root, to: url)
+    }
+
+    private func moveJSONMCPEntry(named name: String, in container: inout [String: Any], enabled: Bool) -> Bool {
+        let sourceKey = enabled ? "disabledMcpServers" : "mcpServers"
+        let destinationKey = enabled ? "mcpServers" : "disabledMcpServers"
+
+        var source = container[sourceKey] as? [String: Any] ?? [:]
+        var destination = container[destinationKey] as? [String: Any] ?? [:]
+
+        if destination[name] != nil, source[name] == nil { return true }
+        guard let config = source.removeValue(forKey: name) else { return false }
+
+        destination[name] = config
+        if source.isEmpty {
+            container.removeValue(forKey: sourceKey)
+        } else {
+            container[sourceKey] = source
+        }
+        container[destinationKey] = destination
+        return true
+    }
+
+    private func deleteJSONMCPEntry(named name: String, in container: inout [String: Any]) -> Bool {
+        var changed = false
+        for key in ["mcpServers", "disabledMcpServers"] {
+            var servers = container[key] as? [String: Any] ?? [:]
+            if servers.removeValue(forKey: name) != nil {
+                changed = true
+                if servers.isEmpty {
+                    container.removeValue(forKey: key)
+                } else {
+                    container[key] = servers
+                }
+            }
+        }
+        return changed
+    }
+
+    private func renameDefinition(_ plugin: Plugin, enabled: Bool) -> Bool {
+        guard let current = definitionURL(for: plugin) else { return false }
+        let target = enabled ? enabledURL(for: current) : disabledURL(for: current)
+        guard current.path != target.path else { return true }
+        guard fileManager.fileExists(atPath: current.path),
+              !fileManager.fileExists(atPath: target.path) else { return false }
+
+        do {
+            try fileManager.moveItem(at: current, to: target)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func trashDefinition(_ plugin: Plugin) -> Bool {
+        guard let url = definitionURL(for: plugin),
+              fileManager.fileExists(atPath: url.path) else { return false }
+
+        do {
+            var resultingURL: NSURL?
+            try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
+            return true
+        } catch {
+            do {
+                try fileManager.removeItem(at: url)
+                return true
+            } catch {
+                return false
+            }
+        }
+    }
+
+    private func definitionURL(for plugin: Plugin) -> URL? {
+        let path = plugin.rawConfig["definitionPath"] ?? plugin.sourcePath
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    private func sourceFileURL(for plugin: Plugin) -> URL? {
+        guard !plugin.sourcePath.isEmpty else { return nil }
+        return URL(fileURLWithPath: plugin.sourcePath)
+    }
+
+    private func disabledURL(for url: URL) -> URL {
+        if isDisabledURL(url) { return url }
+        return url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".disabled")
+    }
+
+    private func enabledURL(for url: URL) -> URL {
+        guard isDisabledURL(url) else { return url }
+        let enabledComponent = enabledName(for: url.lastPathComponent)
+        return url.deletingLastPathComponent().appendingPathComponent(enabledComponent)
+    }
+
+    private func mcpSection(from line: String) -> (name: String, nested: String?)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[") else { return nil }
+        let header = sectionHeaderName(trimmed)
+        guard header.hasPrefix("mcp_servers.") else { return nil }
+
+        let remainder = String(header.dropFirst("mcp_servers.".count))
+        if remainder.hasPrefix("\"") || remainder.hasPrefix("'") {
+            let quote = remainder.first!
+            let body = remainder.dropFirst()
+            guard let end = body.firstIndex(of: quote) else { return nil }
+            let name = String(body[..<end])
+            let after = body[body.index(after: end)...]
+            let nested = after.hasPrefix(".") ? String(after.dropFirst()) : nil
+            return (name, nested)
+        }
+
+        let parts = remainder.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = parts.first, !first.isEmpty else { return nil }
+        let nested = parts.count > 1 ? String(parts[1]) : nil
+        return (unquoteTOMLKey(String(first)), nested)
+    }
+
+    private func writeJSONObject(_ object: [String: Any], to url: URL) -> Bool {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) else {
+            return false
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func writeString(_ text: String, to url: URL) -> Bool {
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - JSON helpers

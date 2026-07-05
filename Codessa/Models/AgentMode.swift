@@ -130,8 +130,16 @@ nonisolated struct AgentModeProfile: Identifiable, Hashable, Codable {
             name: "Plan",
             kind: .plan,
             permissionMode: .plan,
-            planningRoute: ModeModelRoute(selection: .inheritParent),
-            executionRoute: ModeModelRoute(selection: .inheritParent),
+            planningRoute: ModeModelRoute(
+                selection: .explicit,
+                providerID: AgentProvider.claude.id,
+                modelID: "claude-fable-5"
+            ),
+            executionRoute: ModeModelRoute(
+                selection: .inheritParent,
+                providerID: AgentProvider.codex.id,
+                modelID: "gpt-5.5"
+            ),
             isBuiltIn: true
         ),
     ]

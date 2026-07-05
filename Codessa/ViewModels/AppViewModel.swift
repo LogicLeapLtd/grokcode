@@ -525,7 +525,6 @@ final class AppViewModel {
         var byID = Dictionary(uniqueKeysWithValues: modes.map { ($0.id, $0) })
         for builtIn in AgentModeProfile.defaults {
             if var existing = byID[builtIn.id] {
-                existing = migratedBuiltInAgentMode(existing, defaultMode: builtIn)
                 existing.kind = builtIn.kind
                 existing.isBuiltIn = true
                 byID[builtIn.id] = existing
@@ -537,17 +536,6 @@ final class AppViewModel {
         let builtIns = AgentModeProfile.defaults.compactMap { byID.removeValue(forKey: $0.id) }
         let custom = byID.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return builtIns + custom
-    }
-
-    private func migratedBuiltInAgentMode(_ mode: AgentModeProfile, defaultMode: AgentModeProfile) -> AgentModeProfile {
-        var migrated = mode
-        if migrated.id == AgentModeProfile.planID,
-           migrated.planningRoute.selection == .explicit,
-           migrated.planningRoute.providerID == AgentProvider.claude.id,
-           migrated.planningRoute.modelID.trimmingCharacters(in: .whitespacesAndNewlines) == "claude-fable-5" {
-            migrated.planningRoute = defaultMode.planningRoute
-        }
-        return migrated
     }
 
     func bootstrap() async {
@@ -1118,14 +1106,14 @@ final class AppViewModel {
         return providerStatuses.first { $0.provider.id == providerID }
     }
 
-    private func modeInstructionPrefix(routeOverride: ModeModelRoute? = nil, permissionMode: PermissionMode) -> String {
+    private func modeInstructionPrefix(routeOverride: ModeModelRoute? = nil) -> String {
         let mode = activeAgentMode
         let route = routeOverride ?? mode.activeRoute
         var lines: [String] = []
 
         lines.append("[Codessa active mode]")
         lines.append("- Mode: \(mode.name) (\(mode.kind.label)).")
-        lines.append("- Permission mode: \(permissionMode.label).")
+        lines.append("- Permission mode: \(mode.permissionMode.label).")
         if routeOverride != nil {
             lines.append("- Approved plan execution: use the plan profile's after-approval route for this turn.")
         }
@@ -1271,8 +1259,7 @@ final class AppViewModel {
         }
         syncActiveSplitPaneFromCurrentState()
 
-        let runPermissionMode = permissionMode
-        let effectiveUserText = modeInstructionPrefix(routeOverride: routeOverride, permissionMode: runPermissionMode) + userText
+        let effectiveUserText = modeInstructionPrefix(routeOverride: routeOverride) + userText
 
         do {
             let request = ProviderRunRequest(
@@ -1281,7 +1268,7 @@ final class AppViewModel {
                 prompt: effectiveUserText,
                 cwd: cwd,
                 model: runModel,
-                permissionMode: runPermissionMode,
+                permissionMode: permissionMode,
                 options: runOptions(for: runModel),
                 check: pursueGoal,
                 sessionId: providerStatus.provider.id == AgentProvider.grok.id ? activeSessionId : nil

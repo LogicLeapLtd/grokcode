@@ -53,7 +53,7 @@ enum PluginKind: String, CaseIterable, Identifiable, Hashable, Codable {
     }
 
     /// Stable ordering for grouped lists (MCP servers first, automations last).
-    var sortOrder: Int {
+    nonisolated var sortOrder: Int {
         switch self {
         case .mcpServer: 0
         case .skill: 1
@@ -73,6 +73,7 @@ enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
     case claude
     case codex
     case cursor
+    case agents
     case builtin
 
     var id: String { rawValue }
@@ -84,6 +85,7 @@ enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .cursor: "Cursor"
+        case .agents: "Shared Agents"
         case .builtin: "Built-in"
         }
     }
@@ -95,6 +97,7 @@ enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
         case .claude: "ant"
         case .codex: "chevron.left.forwardslash.chevron.right"
         case .cursor: "cursorarrow.rays"
+        case .agents: "person.2.badge.gearshape"
         case .builtin: "shippingbox"
         }
     }
@@ -108,6 +111,7 @@ enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
         case .claude: (0.92, 0.45, 0.18)    // Codex accent orange
         case .codex: (0.09, 0.09, 0.09)     // near-black
         case .cursor: (0.18, 0.55, 0.92)    // blue
+        case .agents: (0.25, 0.65, 0.46)    // green
         case .builtin: (0.42, 0.42, 0.42)   // grey
         }
     }
@@ -226,6 +230,40 @@ struct Plugin: Identifiable, Hashable, Codable {
     /// True for http/sse style remote MCP servers (has a URL but no command).
     var isRemoteServer: Bool {
         kind == .mcpServer && (url?.isEmpty == false) && (command?.isEmpty != false)
+    }
+
+    /// Whether the underlying local definition is active in its source tool.
+    /// Missing metadata defaults to enabled so older persisted plugins decode as
+    /// active and marketplace rows are not accidentally labelled disabled.
+    var isLocallyEnabled: Bool {
+        let enabled = rawConfig["enabled"]?.lowercased()
+        let disabled = rawConfig["disabled"]?.lowercased()
+        return enabled != "false" && disabled != "true"
+    }
+
+    /// True when Codessa knows how to toggle this definition without deleting
+    /// it. Config-backed MCPs use config edits; file-backed items use a
+    /// reversible `.disabled` rename.
+    var supportsLocalDisable: Bool {
+        guard sourceTool != .builtin else { return false }
+        switch rawConfig["disableMode"] {
+        case "toml-enabled", "json-mcp-bucket", "directory-rename", "file-rename":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// True when Codessa knows how to remove the local definition from disk or
+    /// from its source config.
+    var supportsLocalDelete: Bool {
+        guard sourceTool != .builtin else { return false }
+        switch rawConfig["deleteMode"] {
+        case "toml-mcp-entry", "json-mcp-entry", "trash":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Convenience: a copy flipped to installed/uninstalled. Used by the import
