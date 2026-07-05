@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.14] - 2026-07-05
+
+- Redesigned the Plugins page with a stronger header, responsive metrics strip,
+  combined search/tab toolbar, richer section headers, and clearer plugin rows.
+- Discover tab counts and search now include community marketplace plugins.
+- Captured the latest Search page polish in the updater-visible build.
+
 ## [1.8.13] - 2026-07-05
 
 - Automatic updater-visible release for the latest Codessa code changes.
