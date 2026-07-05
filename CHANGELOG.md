@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.18] - 2026-07-05
+
 - Fixed the "Thought for Ns" reasoning-block label showing a bogus short
-  duration (e.g. "1s") instead of the real thinking time (build 52).
+  duration (e.g. "1s") instead of the real thinking time.
 
 ## [1.8.17] - 2026-07-05
 
