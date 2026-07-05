@@ -15,16 +15,11 @@ struct ProviderLogo: View {
     @ViewBuilder
     private var mark: some View {
         switch ProviderLogoKind(providerId: providerId) {
-        case .anthropic:
-            AnthropicLogoMark()
-        case .cursor:
-            CursorLogoMark()
-        case .openAI:
-            OpenAILogoMark()
-        case .gemini:
-            GeminiLogoMark()
-        case .grok:
-            GrokLogoMark()
+        case .bundledAsset(let name):
+            Image(name)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
         case .zai:
             ZAILogoMark()
         case .custom:
@@ -111,134 +106,26 @@ struct ModelMenuItem: View {
 }
 
 private enum ProviderLogoKind {
-    case anthropic
-    case cursor
-    case openAI
-    case gemini
-    case grok
+    case bundledAsset(String)
     case zai
     case custom
 
     init(providerId: String) {
         switch providerId {
         case AgentProvider.claude.id:
-            self = .anthropic
+            self = .bundledAsset("ProviderLogoClaude")
         case AgentProvider.cursor.id:
-            self = .cursor
+            self = .bundledAsset("ProviderLogoCursor")
         case AgentProvider.codex.id:
-            self = .openAI
+            self = .bundledAsset("ProviderLogoChatGPT")
         case AgentProvider.gemini.id:
-            self = .gemini
+            self = .bundledAsset("ProviderLogoGemini")
         case AgentProvider.grok.id:
-            self = .grok
+            self = .bundledAsset("ProviderLogoGrok")
         case AgentProvider.zai.id:
             self = .zai
         default:
             self = .custom
-        }
-    }
-}
-
-private struct OpenAILogoMark: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            ZStack {
-                ForEach(0..<6, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .frame(width: side * 0.42, height: max(1.8, side * 0.16))
-                        .offset(x: side * 0.19)
-                        .rotationEffect(.degrees(Double(index) * 60))
-                }
-                Circle()
-                    .stroke(.foreground, lineWidth: max(1.2, side * 0.08))
-                    .frame(width: side * 0.28, height: side * 0.28)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-    }
-}
-
-private struct AnthropicLogoMark: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            ZStack {
-                Path { path in
-                    path.move(to: CGPoint(x: width * 0.50, y: height * 0.08))
-                    path.addLine(to: CGPoint(x: width * 0.12, y: height * 0.90))
-                    path.addLine(to: CGPoint(x: width * 0.30, y: height * 0.90))
-                    path.addLine(to: CGPoint(x: width * 0.40, y: height * 0.66))
-                    path.addLine(to: CGPoint(x: width * 0.60, y: height * 0.66))
-                    path.addLine(to: CGPoint(x: width * 0.70, y: height * 0.90))
-                    path.addLine(to: CGPoint(x: width * 0.88, y: height * 0.90))
-                    path.closeSubpath()
-                }
-                .fill(.foreground)
-                RoundedRectangle(cornerRadius: width * 0.04, style: .continuous)
-                    .frame(width: width * 0.24, height: max(1.2, height * 0.10))
-                    .offset(y: height * 0.14)
-            }
-        }
-    }
-}
-
-private struct CursorLogoMark: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            Path { path in
-                path.move(to: CGPoint(x: width * 0.18, y: height * 0.08))
-                path.addLine(to: CGPoint(x: width * 0.84, y: height * 0.48))
-                path.addLine(to: CGPoint(x: width * 0.58, y: height * 0.58))
-                path.addLine(to: CGPoint(x: width * 0.71, y: height * 0.88))
-                path.addLine(to: CGPoint(x: width * 0.55, y: height * 0.94))
-                path.addLine(to: CGPoint(x: width * 0.42, y: height * 0.64))
-                path.addLine(to: CGPoint(x: width * 0.20, y: height * 0.80))
-                path.closeSubpath()
-            }
-            .fill(.foreground)
-        }
-    }
-}
-
-private struct GeminiLogoMark: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            Path { path in
-                path.move(to: CGPoint(x: width * 0.50, y: height * 0.02))
-                path.addQuadCurve(to: CGPoint(x: width * 0.98, y: height * 0.50),
-                                  control: CGPoint(x: width * 0.66, y: height * 0.34))
-                path.addQuadCurve(to: CGPoint(x: width * 0.50, y: height * 0.98),
-                                  control: CGPoint(x: width * 0.66, y: height * 0.66))
-                path.addQuadCurve(to: CGPoint(x: width * 0.02, y: height * 0.50),
-                                  control: CGPoint(x: width * 0.34, y: height * 0.66))
-                path.addQuadCurve(to: CGPoint(x: width * 0.50, y: height * 0.02),
-                                  control: CGPoint(x: width * 0.34, y: height * 0.34))
-                path.closeSubpath()
-            }
-            .fill(.foreground)
-        }
-    }
-}
-
-private struct GrokLogoMark: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            ZStack {
-                RoundedRectangle(cornerRadius: side * 0.08, style: .continuous)
-                    .frame(width: side * 0.82, height: max(2, side * 0.16))
-                    .rotationEffect(.degrees(45))
-                RoundedRectangle(cornerRadius: side * 0.08, style: .continuous)
-                    .frame(width: side * 0.82, height: max(2, side * 0.16))
-                    .rotationEffect(.degrees(-45))
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 }
