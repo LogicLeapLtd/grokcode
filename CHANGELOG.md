@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.17] - 2026-07-05
+
+- Restored and improved sidebar navigation icon hover motion with lift, accent
+  glow, active-state weight, and collapsed-rail hover feedback.
+
 ## [1.8.16] - 2026-07-05
 
 - Fixed the titlebar sidebar, back, and forward controls so their full hover
