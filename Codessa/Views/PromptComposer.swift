@@ -482,9 +482,6 @@ struct PromptComposer: View {
                     HStack(spacing: 7) {
                         addMenu
                         modeMenu
-                        if showsSeparatePermissionMenu {
-                            permissionMenu
-                        }
                         Spacer(minLength: 10)
                         modelEffortMenu
                         if model.selectedModel?.reasoningDescriptor != nil {
@@ -499,11 +496,6 @@ struct PromptComposer: View {
                 HStack(spacing: 7) {
                     addMenu
                     modeMenu
-                    // Plan agent-mode already locks permissions to read-only, so
-                    // showing a second "Plan mode" permission pill is redundant.
-                    if showsSeparatePermissionMenu {
-                        permissionMenu
-                    }
                     Spacer(minLength: 10)
                     modelEffortMenu
                     if model.selectedModel?.reasoningDescriptor != nil {
@@ -513,10 +505,6 @@ struct PromptComposer: View {
                 }
             )
         }
-    }
-
-    private var showsSeparatePermissionMenu: Bool {
-        model.activeAgentMode.kind != .plan
     }
 
     private var addMenu: some View {
@@ -534,9 +522,8 @@ struct PromptComposer: View {
 
                 CodexMenuDivider()
 
-                // Plan is a first-class control via the always-visible mode pill
-                // (and the ⇧⌘M permission menu), so a third "Plan mode" toggle here
-                // was redundant — removed to stop Plan showing up three times.
+                // Plan is a first-class control via the combined mode/approval
+                // pill, so a third "Plan mode" toggle here would be redundant.
                 CodexMenuToggle(
                     title: "Pursue goal",
                     systemImage: "scope",
@@ -551,8 +538,9 @@ struct PromptComposer: View {
     }
 
     private var modeMenu: some View {
-        CodexMenuTrigger(minWidth: 300, edge: .top, highlightOnHover: false,
-                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "mode") { _ in
+        let smokeMenu = ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"]
+        return CodexMenuTrigger(minWidth: 340, edge: .top, highlightOnHover: false,
+                         autoOpen: smokeMenu == "mode" || smokeMenu == "permission") { _ in
             HStack(spacing: 7) {
                 Image(systemName: model.activeAgentMode.kind.symbol)
                     .font(.system(size: 10.5, weight: .semibold))
@@ -561,12 +549,32 @@ struct PromptComposer: View {
                     .font(CodexTheme.composerLabelFont)
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
+
+                Capsule()
+                    .fill(CodexTheme.composerBorder)
+                    .frame(width: 1, height: 14)
+                    .padding(.horizontal, 2)
+
+                if model.permissionMode == .fullAccess {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CodexTheme.accentOrange)
+                } else {
+                    Image(systemName: model.permissionMode.symbol)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                }
+                Text(toolbarPermissionLabel)
+                    .font(CodexTheme.composerLabelFont)
+                    .foregroundStyle(model.permissionMode == .fullAccess ? CodexTheme.accentOrange : CodexTheme.textPrimary)
+                    .lineLimit(1)
+
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(CodexTheme.textTertiary)
             }
             .fixedSize(horizontal: true, vertical: false)
-            .composerControlCapsule(accented: model.activeAgentMode.kind == .plan)
+            .composerControlCapsule(accented: model.activeAgentMode.kind == .plan || model.permissionMode == .fullAccess)
         } menu: { close in
             CodexMenuContainer {
                 CodexMenuSectionHeader(title: "Mode")
@@ -594,12 +602,32 @@ struct PromptComposer: View {
 
                 CodexMenuDivider()
 
+                CodexMenuSectionHeader(title: "Approval", keys: ["⇧", "⌘", "M"])
+                ForEach(Array(PermissionMode.allCases.enumerated()), id: \.element) { idx, mode in
+                    CodexMenuItem(
+                        title: mode.label,
+                        subtitle: mode.detail,
+                        systemImage: mode.symbol,
+                        isSelected: model.permissionMode == mode,
+                        shortcut: "\(idx + 1)"
+                    ) {
+                        model.applyPermissionMode(mode)
+                        close()
+                    }
+                }
+
+                CodexMenuDivider()
+
                 CodexMenuItem(title: "Configure modes…", systemImage: "slider.horizontal.3") {
                     close()
                     showingModeConfiguration = true
                 }
             }
         }
+    }
+
+    private var toolbarPermissionLabel: String {
+        model.permissionMode == .plan ? "Read-only" : model.permissionMode.label
     }
 
     /// The "+ → Plugins" flyout: lists installed plugins (icon + name), or a
@@ -657,40 +685,6 @@ struct PromptComposer: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private var permissionMenu: some View {
-        CodexMenuTrigger(minWidth: 260, edge: .top, highlightOnHover: false,
-                         autoOpen: ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENMENU"] == "permission") { _ in
-            HStack(spacing: 6) {
-                if model.permissionMode == .fullAccess {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(CodexTheme.accentOrange)
-                }
-                Text(model.permissionMode.label)
-                    .font(CodexTheme.composerLabelFont)
-                    .foregroundStyle(model.permissionMode == .fullAccess ? CodexTheme.accentOrange : CodexTheme.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(CodexTheme.textTertiary)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            .composerControlCapsule(accented: model.permissionMode == .fullAccess)
-        } menu: { close in
-            CodexMenuContainer {
-                CodexMenuSectionHeader(title: "Mode", keys: ["⇧", "⌘", "M"])
-                ForEach(Array(PermissionMode.allCases.enumerated()), id: \.element) { idx, mode in
-                    CodexMenuItem(
-                        title: mode.label,
-                        subtitle: mode.detail,
-                        systemImage: mode.symbol,
-                        isSelected: model.permissionMode == mode,
-                        shortcut: "\(idx + 1)"
-                    ) { model.applyPermissionMode(mode); close() }
-                }
-            }
-        }
     }
 
     // Codex-style combined control: "<Provider · Model> <Option> ⌄".
