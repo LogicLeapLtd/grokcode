@@ -169,7 +169,18 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
         UserDefaults.standard.object(forKey: "grokcode.useWarmSession") as? Bool ?? true
     }
 
-    private let grokPath: String
+    /// Resolved fresh on every use through `ProviderRegistry`'s full `$PATH` +
+    /// per-tool-install-dir search (npm-global, nvm, bun, Homebrew, …) — the
+    /// same search that drives the "Grok is ready" status in the UI. A
+    /// hardcoded 3-path guess here previously fell out of sync with that
+    /// search, so the UI could show Grok as installed while every actual
+    /// send failed with "binary not found".
+    private var grokPath: String {
+        ProviderRegistry.shared.resolveBinary(for: .grok) ?? Self.fallbackGrokPath
+    }
+    private static var fallbackGrokPath: String {
+        "\(FileManager.default.homeDirectoryForCurrentUser.path)/.grok/bin/grok"
+    }
     private let singletonPath: String
     private let processLock = NSLock()
     private var runningProcess: Process?
@@ -179,12 +190,6 @@ nonisolated final class GrokCLIService: @unchecked Sendable {
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let candidates = [
-            "\(home)/.grok/bin/grok",
-            "/usr/local/bin/grok",
-            "/opt/homebrew/bin/grok",
-        ]
-        grokPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? candidates[0]
         singletonPath = "\(home)/.local/bin/mcp-singleton"
     }
 

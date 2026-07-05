@@ -22,7 +22,15 @@ import Foundation
 nonisolated final class GrokAgentSession: @unchecked Sendable {
     static let shared = GrokAgentSession()
 
-    private let grokPath: String
+    /// Resolved fresh on every use through `ProviderRegistry`'s full `$PATH` +
+    /// per-tool-install-dir search — see `GrokCLIService.grokPath` for why a
+    /// hardcoded candidate list here caused "installed but every send fails".
+    private var grokPath: String {
+        ProviderRegistry.shared.resolveBinary(for: .grok) ?? Self.fallbackGrokPath
+    }
+    private static var fallbackGrokPath: String {
+        "\(FileManager.default.homeDirectoryForCurrentUser.path)/.grok/bin/grok"
+    }
     private let singletonPath: String
     private let lock = NSLock()
     private let startCondition = NSCondition()
@@ -65,12 +73,6 @@ nonisolated final class GrokAgentSession: @unchecked Sendable {
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let candidates = [
-            "\(home)/.grok/bin/grok",
-            "/usr/local/bin/grok",
-            "/opt/homebrew/bin/grok",
-        ]
-        grokPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? candidates[0]
         singletonPath = "\(home)/.local/bin/mcp-singleton"
     }
 
