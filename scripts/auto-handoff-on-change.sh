@@ -51,7 +51,7 @@ HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 # Dirty trees are not a blocker. Capture the exact current tree first so the
 # published release always corresponds to a recoverable commit.
 if [[ -n "$(git status --porcelain --untracked-files=all 2>/dev/null)" ]]; then
-  echo "[auto-handoff] working tree dirty - capturing before updater publish." >&2
+  echo "[auto-publish] working tree dirty - capturing before updater publish." >&2
   git status --short --branch --untracked-files=all >&2
   git add -A
   if ! git diff --cached --quiet; then
@@ -72,13 +72,13 @@ fi
 
 CUR="$(grep -Eo 'CURRENT_PROJECT_VERSION = [0-9]+;' "$PBXPROJ" | grep -Eo '[0-9]+' | sort -n | tail -1)"
 if [[ -z "$CUR" ]]; then
-  echo "[auto-handoff] could not read CURRENT_PROJECT_VERSION - aborting." >&2
+  echo "[auto-publish] could not read CURRENT_PROJECT_VERSION - aborting." >&2
   exit 1
 fi
 
 MARKETING="$(grep -m1 -Eo 'MARKETING_VERSION = [^;]+;' "$PBXPROJ" | sed -E 's/MARKETING_VERSION = ([^;]+);/\1/')"
 if [[ -z "$MARKETING" ]]; then
-  echo "[auto-handoff] could not read MARKETING_VERSION - aborting." >&2
+  echo "[auto-publish] could not read MARKETING_VERSION - aborting." >&2
   exit 1
 fi
 
@@ -95,13 +95,13 @@ git commit -q -m "chore: bump Codessa to ${NEXT_MARKETING} (${NEXT}) for updater
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
-echo "[auto-handoff] publishing Codessa ${NEXT_MARKETING} (${NEXT})..." >&2
+echo "[auto-publish] publishing Codessa ${NEXT_MARKETING} (${NEXT})..." >&2
 if "$ROOT/scripts/finalize-codex-session.sh" --publish >&2; then
   NEW_HEAD="$(git rev-parse HEAD)"
   mkdir -p "$(dirname "$STAMP")"
   printf '%s' "$NEW_HEAD" > "$STAMP"
-  echo "[auto-handoff] Codessa ${NEXT_MARKETING} (${NEXT}) published for $NEW_HEAD." >&2
+  echo "[auto-publish] Codessa ${NEXT_MARKETING} (${NEXT}) published for $NEW_HEAD." >&2
 else
-  echo "[auto-handoff] publish failed for Codessa ${NEXT_MARKETING} (${NEXT})." >&2
+  echo "[auto-publish] publish failed for Codessa ${NEXT_MARKETING} (${NEXT})." >&2
   exit 1
 fi
