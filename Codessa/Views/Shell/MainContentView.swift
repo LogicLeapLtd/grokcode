@@ -78,6 +78,7 @@ struct MainContentView: View {
                 openWindow(id: "chat-popout")
             }
         }
+        .background(NonDraggableRegion())
         // Sit clear of the window's rounded top-right corner (radius ~16) so the
         // trailing icon isn't clipped by the curve.
         .padding(.trailing, 16)
