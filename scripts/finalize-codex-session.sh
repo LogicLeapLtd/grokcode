@@ -219,7 +219,7 @@ TMP_NOTES=""
 if [[ -n "$NOTES_FILE" ]]; then
   RELEASE_NOTES="$NOTES_FILE"
 else
-  TMP_NOTES="$(mktemp "${TMPDIR:-/tmp}/codessa-release-notes.XXXXXX.md")"
+  TMP_NOTES="$(mktemp "${TMPDIR:-/tmp}/codessa-release-notes.XXXXXX")"
   RELEASE_NOTES="$TMP_NOTES"
   awk -v version="$VERSION" '
     BEGIN { capture = 0 }
