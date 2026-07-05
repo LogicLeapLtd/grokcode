@@ -4,7 +4,7 @@ struct ContentView: View {
     @Environment(AppViewModel.self) private var model
     @EnvironmentObject private var update: UpdateService
 
-    private let titlebarControlsTopInset: CGFloat = 6
+    private let titlebarControlsTopInset: CGFloat = 2
 
     /// License/trial gate. Owned here as a `@StateObject` so its lifetime matches
     /// the primary window and its published state drives the paywall/banner.
@@ -301,47 +301,29 @@ struct ContentView: View {
     private var windowTitlebarControls: some View {
         // A compact trio (collapse · back · forward) that sits immediately to the
         // right of the macOS traffic-light buttons, top-left over the sidebar
-        // glass, vertically aligned with the native stoplights. `spacing: 2`
-        // matches the app's other icon clusters (MainContentView window controls,
-        // the Projects header bar); `leading: 74` clears the green stoplight
+        // glass, vertically aligned with the native stoplights. `spacing: 4`
+        // gives each 28pt target room to show its hover surface without merging
+        // into the next control; `leading: 74` clears the green stoplight
         // (~x20–68) with a hair of breathing room.
-        HStack(spacing: 2) {
-            titlebarButton(
+        HStack(spacing: 4) {
+            TitlebarIconButton(
                 "sidebar.left",
-                help: model.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+                help: "Toggle sidebar"
             ) {
                 model.toggleSidebarCollapsed()
             }
 
-            titlebarButton("arrow.left", help: "Back", isEnabled: model.canNavigateBack) {
+            TitlebarIconButton("arrow.left", help: "Back", isEnabled: model.canNavigateBack) {
                 model.navigateBack()
             }
 
-            titlebarButton("arrow.right", help: "Forward", isEnabled: model.canNavigateForward) {
+            TitlebarIconButton("arrow.right", help: "Forward", isEnabled: model.canNavigateForward) {
                 model.navigateForward()
             }
         }
         .background(NonDraggableRegion())
         .padding(.leading, 74)
         .padding(.top, titlebarControlsTopInset)
-    }
-
-    private func titlebarButton(_ symbol: String,
-                                help: String,
-                                isEnabled: Bool = true,
-                                action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(CodexTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .codexHover(cornerRadius: 7)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.42)
-        .help(help)
     }
 
     private func sidebarTitlebarBackdrop(width: Double) -> some View {
@@ -362,6 +344,51 @@ struct ContentView: View {
         case .home, .chat, .search:
             windowWidth < 880
         }
+    }
+}
+
+private struct TitlebarIconButton: View {
+    let symbol: String
+    let help: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    init(_ symbol: String, help: String, isEnabled: Bool = true, action: @escaping () -> Void) {
+        self.symbol = symbol
+        self.help = help
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    private var isHoveringActive: Bool {
+        hovering && isEnabled
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(isEnabled ? CodexTheme.textSecondary : CodexTheme.textTertiary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isHoveringActive ? CodexTheme.controlHoverBackground : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isHoveringActive ? CodexTheme.controlHoverBorder : Color.clear, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
+        .onHover { hovering = $0 }
+        .animation(CodexMotion.quickSpring, value: isHoveringActive)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 

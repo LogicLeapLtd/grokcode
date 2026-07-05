@@ -40,6 +40,9 @@ struct CodessaApp: App {
 
             // Navigation shortcuts: ⌘F search, ⌘1..4 for the primary pages.
             CommandGroup(after: .sidebar) {
+                Button("Toggle Sidebar") { appModel.toggleSidebarCollapsed() }
+                    .keyboardShortcut("b", modifiers: .command)
+                Divider()
                 Button("Search") { appModel.navigateTo(.search) }
                     .keyboardShortcut("f", modifiers: .command)
                 Divider()

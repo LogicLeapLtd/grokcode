@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.16] - 2026-07-05
+
+- Fixed the titlebar sidebar, back, and forward controls so their full hover
+  surfaces are clickable and aligned with the native window controls.
+
 ## [1.8.15] - 2026-07-05
 
 - Redesigned the Automations page as a command-center surface with live metrics,
