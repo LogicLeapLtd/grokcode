@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.15] - 2026-07-05
+
+- Redesigned the Automations page as a command-center surface with live metrics,
+  a cinematic empty launchpad, quick-start draft presets, and richer operation cards.
+
 ## [1.8.14] - 2026-07-05
 
 - Redesigned the Plugins page with a stronger header, responsive metrics strip,

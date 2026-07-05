@@ -1,64 +1,75 @@
 import SwiftUI
 
-/// Codex-style Automations page. Big title + subtitle, a "New automation"
-/// primary button, an empty state, and a list of automation cards. An inline
-/// create/edit form (sheet) lets the user define name, prompt, target project,
-/// model, and a manual / interval / daily schedule.
-///
-/// Reads `AppViewModel` per the contract: `automations`, `addAutomation`,
-/// `updateAutomation`, `deleteAutomation`, `runAutomation`, `toggleAutomation`,
-/// `projects`, `models`, and `loadAutomations()`.
+/// Native command-center surface for creating, scheduling, and running saved
+/// agent prompts. The page is intentionally presentational: persistence,
+/// scheduling, and run execution stay in `AutomationService` / `AppViewModel`.
 struct AutomationsView: View {
     @Environment(AppViewModel.self) private var model
 
-    /// When non-nil, the editor sheet is shown. `.create` builds a fresh
-    /// automation; `.edit` seeds the form from an existing one.
+    /// When non-nil, the editor sheet is shown. Create mode can carry a private
+    /// draft preset used only to seed the form; persisted data is unchanged.
     @State private var editorMode: EditorMode?
 
     private enum EditorMode: Identifiable {
-        case create
+        case create(AutomationDraftPreset?)
         case edit(Automation)
 
         var id: String {
             switch self {
-            case .create: return "create"
+            case .create(let preset): return "create-\(preset?.id ?? "blank")"
             case .edit(let automation): return automation.id.uuidString
             }
         }
+
+        var seed: Automation? {
+            if case .edit(let automation) = self { return automation }
+            return nil
+        }
+
+        var draftPreset: AutomationDraftPreset? {
+            if case .create(let preset) = self { return preset }
+            return nil
+        }
+
+        var isEditing: Bool {
+            if case .edit = self { return true }
+            return false
+        }
+    }
+
+    private var metrics: AutomationCommandMetrics {
+        AutomationCommandMetrics(automations: model.automations)
     }
 
     var body: some View {
-        PageScaffold(spacing: 28) {
-            header
+        PageScaffold(maxWidth: 1080, horizontalPadding: 42, topPadding: 42, bottomPadding: 44, spacing: 22) {
+            AutomationCommandHeader(metrics: metrics) {
+                editorMode = .create(nil)
+            }
+            .codexStaggeredAppear(index: 0)
 
             if model.automations.isEmpty {
-                emptyState
+                AutomationLaunchpad(
+                    onCreate: { editorMode = .create(nil) },
+                    onPreset: { editorMode = .create($0) }
+                )
+                .codexStaggeredAppear(index: 1)
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(Array(model.automations.enumerated()), id: \.element.id) { index, automation in
-                        AutomationCard(
-                            automation: automation,
-                            onToggle: { model.toggleAutomation(automation) },
-                            onRun: { await model.runAutomationNow(automation) },
-                            onEdit: { editorMode = .edit(automation) },
-                            onDelete: { model.deleteAutomation(automation) }
-                        )
-                        .codexStaggeredAppear(index: index)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                automationBoard
+                    .codexStaggeredAppear(index: 1)
             }
         }
         .onAppear {
             model.loadAutomations()
             // QA: auto-open the editor so the modal can be captured.
             if ProcessInfo.processInfo.environment["GROKCODE_SMOKE_OPENEDITOR"] == "1" {
-                editorMode = .create
+                editorMode = .create(nil)
             }
         }
         .sheet(item: $editorMode) { mode in
             AutomationEditorSheet(
-                seed: { if case .edit(let automation) = mode { return automation } else { return nil } }(),
+                seed: mode.seed,
+                draft: mode.draftPreset,
                 projects: model.projects,
                 providerStatuses: model.providerStatuses,
                 models: model.models,
@@ -66,7 +77,7 @@ struct AutomationsView: View {
                 defaultModelId: model.selectedModel?.id ?? model.models.first?.id ?? "",
                 defaultOptionSelections: model.selectedModel.map { model.runOptions(for: $0) } ?? [:],
                 onSave: { automation in
-                    if case .edit = mode {
+                    if mode.isEditing {
                         model.updateAutomation(automation)
                     } else {
                         model.addAutomation(automation)
@@ -79,74 +90,471 @@ struct AutomationsView: View {
         }
     }
 
-    // MARK: Header
-
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Automations")
-                    .font(CodexTheme.headlineFont)
-                    .foregroundStyle(CodexTheme.textPrimary)
-                Text("Schedule recurring Grok tasks, or save prompts to run on demand.")
-                    .font(CodexTheme.bodyFont)
-                    .foregroundStyle(CodexTheme.textSecondary)
+    private var automationBoard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            AutomationBoardHeader(count: model.automations.count) {
+                editorMode = .create(nil)
             }
 
-            Spacer(minLength: 16)
-
-            Button {
-                editorMode = .create
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("New automation")
-                        .font(.system(size: 13, weight: .medium))
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 330, maximum: 520), spacing: 16, alignment: .top)
+                ],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(Array(model.automations.enumerated()), id: \.element.id) { index, automation in
+                    AutomationCard(
+                        automation: automation,
+                        onToggle: { model.toggleAutomation(automation) },
+                        onRun: { await model.runAutomationNow(automation) },
+                        onEdit: { editorMode = .edit(automation) },
+                        onDelete: { model.deleteAutomation(automation) }
+                    )
+                    .codexStaggeredAppear(index: index)
                 }
-                .foregroundStyle(CodexTheme.sendButtonActiveForeground)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(CodexTheme.sendButtonActiveBackground)
-                )
-                .contentShape(Rectangle())
             }
-            .buttonStyle(CodexPressableStyle())
-        .codexHoverOverlay(cornerRadius: 9)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    // MARK: Empty state
+// MARK: - Command center header
 
-    private var emptyState: some View {
-        PageEmptyState(
-            systemImage: "gearshape.2",
-            title: "No automations yet",
-            message: "Create an automation to run a saved Grok prompt on demand, every few minutes, or once a day."
-        ) {
-            Button {
-                editorMode = .create
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("New automation")
-                        .font(.system(size: 13, weight: .medium))
+private struct AutomationCommandHeader: View {
+    let metrics: AutomationCommandMetrics
+    let onCreate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.badge.checkmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(CodexTheme.accent)
+                        Text("Automation command center")
+                            .font(CodexTheme.captionFont)
+                            .foregroundStyle(CodexTheme.textSecondary)
+                    }
+
+                    Text("Automations")
+                        .font(CodexTheme.serif(32, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+
+                    Text("Build dependable background agents for the work you repeat: checks, digests, release notes, inbox scans, and project rituals.")
+                        .font(CodexTheme.sans(14.5))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 560, alignment: .leading)
                 }
-                .foregroundStyle(CodexTheme.sendButtonActiveForeground)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(CodexTheme.sendButtonActiveBackground)
+
+                Spacer(minLength: 16)
+
+                AutomationPrimaryButton(title: "New automation", systemImage: "plus", action: onCreate)
+            }
+
+            HStack(spacing: 0) {
+                AutomationMetricColumn(
+                    title: "Total",
+                    value: "\(metrics.total)",
+                    detail: metrics.total == 1 ? "saved routine" : "saved routines",
+                    systemImage: "square.stack.3d.up"
                 )
-                .contentShape(Rectangle())
+
+                AutomationMetricDivider()
+
+                AutomationMetricColumn(
+                    title: "Armed",
+                    value: "\(metrics.armed)",
+                    detail: metrics.armed == 1 ? "scheduled run" : "scheduled runs",
+                    systemImage: "bolt.horizontal.circle"
+                )
+
+                AutomationMetricDivider()
+
+                AutomationMetricColumn(
+                    title: "Next run",
+                    value: metrics.nextRun.map(AutomationTimeFormatter.relative) ?? "None",
+                    detail: metrics.nextRunName ?? "No schedule armed",
+                    systemImage: "calendar.badge.clock"
+                )
+
+                AutomationMetricDivider()
+
+                AutomationMetricColumn(
+                    title: "Last result",
+                    value: metrics.latestRunLabel,
+                    detail: metrics.latestRunDetail,
+                    systemImage: metrics.latestRunSystemImage,
+                    accent: metrics.latestRunAccent
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 2)
+        }
+        .padding(24)
+        .liquidGlass(
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+            interactive: true,
+            tint: CodexTheme.accent.opacity(0.055),
+            fallback: CodexTheme.composerBackground.opacity(0.84)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(CodexTheme.composerShellHighlight.opacity(0.72), lineWidth: 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            AutomationHeaderCircuit()
+                .padding(.top, 70)
+                .padding(.trailing, 28)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: CodexTheme.accentDeep.opacity(0.12), radius: 26, y: 16)
+    }
+}
+
+private struct AutomationMetricColumn: View {
+    let title: String
+    let value: String
+    let detail: String
+    let systemImage: String
+    var accent: Color = CodexTheme.accent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(accent)
+                Text(title)
+                    .font(CodexTheme.smallFont)
+                    .foregroundStyle(CodexTheme.textTertiary)
+            }
+
+            Text(value)
+                .font(CodexTheme.sans(21, weight: .semibold))
+                .foregroundStyle(CodexTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text(detail)
+                .font(CodexTheme.smallFont)
+                .foregroundStyle(CodexTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AutomationMetricDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(CodexTheme.divider)
+            .frame(width: 1, height: 62)
+            .padding(.horizontal, 18)
+    }
+}
+
+private struct AutomationHeaderCircuit: View {
+    private let steps = ["doc.text", "clock", "play.fill", "checkmark"]
+
+    var body: some View {
+        HStack(spacing: 9) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, symbol in
+                ZStack {
+                    Circle()
+                        .fill(index == 2 ? CodexTheme.accent.opacity(0.18) : CodexTheme.pillBackground.opacity(0.7))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: symbol)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(index == 2 ? CodexTheme.accent : CodexTheme.textSecondary)
+                }
+
+                if index < steps.count - 1 {
+                    Rectangle()
+                        .fill(CodexTheme.accent.opacity(index == 1 ? 0.36 : 0.16))
+                        .frame(width: 22, height: 1)
+                }
+            }
+        }
+        .padding(9)
+        .background(
+            Capsule(style: .continuous)
+                .fill(CodexTheme.mainBackground.opacity(0.42))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(CodexTheme.composerShellHighlight.opacity(0.52), lineWidth: 1)
+        )
+    }
+}
+
+private struct AutomationPrimaryButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .bold))
+                Text(title)
+                    .font(CodexTheme.controlTitleFont)
+            }
+            .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(CodexTheme.sendButtonActiveBackground)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 10)
+    }
+}
+
+// MARK: - Empty launchpad
+
+private struct AutomationLaunchpad: View {
+    let onCreate: () -> Void
+    let onPreset: (AutomationDraftPreset) -> Void
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 230, maximum: 340), spacing: 14, alignment: .top)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 26) {
+                AutomationPipelineScene()
+                    .frame(width: 318, height: 188)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("No automations yet")
+                        .font(CodexTheme.serif(25, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textPrimary)
+
+                    Text("Turn the work you repeat into calm, scheduled runs. Start blank, or open a template and tune the prompt before saving.")
+                        .font(CodexTheme.sans(14))
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 500, alignment: .leading)
+
+                    AutomationPrimaryButton(title: "Start blank", systemImage: "plus", action: onCreate)
+                        .padding(.top, 2)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(24)
+            .liquidGlass(
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                tint: CodexTheme.accent.opacity(0.04),
+                fallback: CodexTheme.composerBackground.opacity(0.78)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(CodexTheme.divider.opacity(0.86), lineWidth: 1)
+            }
+
+            Text("Quick starts")
+                .font(CodexTheme.sectionLabelFont)
+                .foregroundStyle(CodexTheme.textTertiary)
+                .padding(.top, 2)
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                ForEach(AutomationDraftPreset.presets) { preset in
+                    AutomationPresetTile(preset: preset) {
+                        onPreset(preset)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct AutomationPipelineScene: View {
+    private let steps: [AutomationPipelineStep] = [
+        .init(title: "Prompt", symbol: "text.alignleft"),
+        .init(title: "Schedule", symbol: "calendar.badge.clock"),
+        .init(title: "Run", symbol: "play.fill"),
+        .init(title: "Result", symbol: "checkmark.seal")
+    ]
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            CodexTheme.accent.opacity(0.18),
+                            CodexTheme.accentDeep.opacity(0.08),
+                            CodexTheme.mainBackground.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(CodexTheme.accent)
+                    Text("agent run loop")
+                        .font(CodexTheme.smallFont)
+                        .foregroundStyle(CodexTheme.textSecondary)
+                }
+
+                HStack(spacing: 0) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        AutomationPipelineNode(step: step, highlighted: index == 1)
+
+                        if index < steps.count - 1 {
+                            Rectangle()
+                                .fill(CodexTheme.accent.opacity(index == 1 ? 0.36 : 0.18))
+                                .frame(height: 1)
+                                .frame(maxWidth: .infinity)
+                                .padding(.bottom, 20)
+                        }
+                    }
+                }
+            }
+            .padding(22)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(CodexTheme.composerShellHighlight.opacity(0.5), lineWidth: 1)
+        }
+    }
+}
+
+private struct AutomationPipelineStep: Identifiable {
+    var id: String { title }
+    let title: String
+    let symbol: String
+}
+
+private struct AutomationPipelineNode: View {
+    let step: AutomationPipelineStep
+    let highlighted: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(highlighted ? CodexTheme.sendButtonActiveBackground : CodexTheme.composerBackground.opacity(0.86))
+                    .frame(width: 42, height: 42)
+                    .shadow(color: highlighted ? CodexTheme.accent.opacity(0.22) : .clear, radius: 12, y: 6)
+
+                Image(systemName: step.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(highlighted ? CodexTheme.sendButtonActiveForeground : CodexTheme.textSecondary)
+            }
+
+            Text(step.title)
+                .font(CodexTheme.smallFont)
+                .foregroundStyle(highlighted ? CodexTheme.textPrimary : CodexTheme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct AutomationPresetTile: View {
+    let preset: AutomationDraftPreset
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: preset.symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(CodexTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(CodexTheme.accent.opacity(0.12))
+                        )
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(preset.title)
+                        .font(CodexTheme.controlTitleFont)
+                        .foregroundStyle(CodexTheme.textPrimary)
+                        .lineLimit(1)
+
+                    Text(preset.subtitle)
+                        .font(CodexTheme.captionFont)
+                        .foregroundStyle(CodexTheme.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(CodexTheme.composerBackground.opacity(hovering ? 0.98 : 0.78))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(hovering ? CodexTheme.controlHoverBorder : CodexTheme.divider, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(CodexPressableStyle(scale: 0.975))
+        .onHover { hovering = $0 }
+        .animation(CodexMotion.quickSpring, value: hovering)
+    }
+}
+
+// MARK: - Automation board
+
+private struct AutomationBoardHeader: View {
+    let count: Int
+    let onCreate: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Operations board")
+                    .font(CodexTheme.sectionLabelFont)
+                    .foregroundStyle(CodexTheme.textPrimary)
+                Text("\(count) \(count == 1 ? "routine" : "routines") ready to run or schedule.")
+                    .font(CodexTheme.captionFont)
+                    .foregroundStyle(CodexTheme.textSecondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(action: onCreate) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(CodexTheme.sendButtonActiveForeground)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(CodexTheme.sendButtonActiveBackground))
+                    .contentShape(Circle())
             }
             .buttonStyle(CodexPressableStyle())
-            .codexHoverOverlay(cornerRadius: 9)
+            .codexHoverOverlay(Circle())
+            .help("New automation")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -170,42 +578,45 @@ private struct AutomationCard: View {
 
     @State private var runState: RunState = .idle
     @State private var confirmingDelete = false
+    @State private var hovering = false
 
     private var lastRunLabel: String {
         guard let lastRun = automation.lastRun else { return "Never run" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return "Ran " + formatter.localizedString(for: lastRun, relativeTo: Date())
+        return "Ran " + AutomationTimeFormatter.relative(lastRun)
     }
 
     private var nextRunLabel: String? {
         guard let next = automation.nextRun() else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return "Next " + formatter.localizedString(for: next, relativeTo: Date())
+        return "Next " + AutomationTimeFormatter.relative(next)
+    }
+
+    private var status: AutomationCardStatus {
+        if !automation.enabled { return .paused }
+        if automation.lastRunSucceeded == false { return .attention }
+        if automation.isScheduled { return .armed }
+        return .manual
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: automation.iconSystemName)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(CodexTheme.textSecondary)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(CodexTheme.pillBackground)
-                    )
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(status.accent.opacity(automation.enabled ? 0.14 : 0.08))
+                        .frame(width: 42, height: 42)
 
-                VStack(alignment: .leading, spacing: 3) {
+                    Image(systemName: automation.iconSystemName)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(status.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(automation.displayName)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(CodexTheme.sans(15.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
                         .lineLimit(1)
-                    Text(automation.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(CodexTheme.textSecondary)
-                        .lineLimit(1)
+
+                    AutomationStatusBadge(status: status)
                 }
 
                 Spacer(minLength: 12)
@@ -218,56 +629,54 @@ private struct AutomationCard: View {
                 .help(automation.enabled ? "Disable" : "Enable")
             }
 
-            if !automation.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(automation.prompt)
-                    .font(.system(size: 12))
-                    .foregroundStyle(CodexTheme.textTertiary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            promptPreview
 
-            HStack(spacing: 10) {
-                metaChip(systemImage: automation.scheduleKind.symbol, text: automation.scheduleSummary)
-                metaChip(systemImage: "folder", text: automation.projectLabel)
-                metaChip(systemImage: "cpu", text: modelLabel)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    metaChip(systemImage: automation.scheduleKind.symbol, text: automation.scheduleSummary)
+                    metaChip(systemImage: "folder", text: automation.projectLabel)
+                }
 
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(lastRunLabel)
-                        .font(.system(size: 11))
-                        .foregroundStyle(CodexTheme.textTertiary)
+                HStack(spacing: 8) {
+                    metaChip(systemImage: "cpu", text: modelLabel)
                     if let nextRunLabel {
-                        Text(nextRunLabel)
-                            .font(.system(size: 11))
-                            .foregroundStyle(CodexTheme.textTertiary)
+                        metaChip(systemImage: "arrow.triangle.2.circlepath", text: nextRunLabel)
                     }
                 }
             }
 
-            if !automation.runHistory.isEmpty {
-                runHistoryTrail
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lastRunLabel)
+                        .font(CodexTheme.smallFont)
+                        .foregroundStyle(CodexTheme.textTertiary)
+                }
+
+                if !automation.runHistory.isEmpty {
+                    runHistoryTrail
+                }
+
+                Spacer(minLength: 0)
             }
 
-            HStack(spacing: 8) {
-                runButton
-                actionButton("Edit", systemImage: "pencil") { onEdit() }
-                Spacer(minLength: 0)
-                actionButton("Delete", systemImage: "trash", destructive: true) {
-                    confirmingDelete = true
-                }
-            }
+            actionRow
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(CodexTheme.mainBackground)
+        .padding(17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .liquidGlass(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            interactive: true,
+            tint: status.accent.opacity(automation.enabled ? 0.045 : 0.02),
+            fallback: CodexTheme.composerBackground.opacity(automation.enabled ? 0.84 : 0.58)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(CodexTheme.divider, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(hovering ? CodexTheme.controlHoverBorder.opacity(0.7) : CodexTheme.divider, lineWidth: 1)
         )
-        .opacity(automation.enabled ? 1 : 0.6)
+        .shadow(color: status.accent.opacity(hovering ? 0.16 : 0.06), radius: hovering ? 22 : 10, y: hovering ? 14 : 6)
+        .opacity(automation.enabled ? 1 : 0.74)
+        .onHover { hovering = $0 }
+        .animation(CodexMotion.quickSpring, value: hovering)
         .confirmationDialog(
             "Delete “\(automation.displayName)”?",
             isPresented: $confirmingDelete,
@@ -277,6 +686,35 @@ private struct AutomationCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the saved prompt and its schedule. This can’t be undone.")
+        }
+    }
+
+    private var promptPreview: some View {
+        Text(automation.prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+            .font(CodexTheme.captionFont)
+            .foregroundStyle(CodexTheme.textSecondary)
+            .lineSpacing(2)
+            .lineLimit(3)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .topLeading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(CodexTheme.toolPanelBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(CodexTheme.toolPanelBorder, lineWidth: 1)
+            )
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            runButton
+            Spacer(minLength: 0)
+            iconAction("pencil", help: "Edit automation") { onEdit() }
+            iconAction("trash", help: "Delete automation", destructive: true) {
+                confirmingDelete = true
+            }
         }
     }
 
@@ -292,7 +730,7 @@ private struct AutomationCard: View {
                     .scaleEffect(0.7)
                     .frame(width: 12, height: 12)
                 Text("Running…")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(CodexTheme.captionFont)
                     .foregroundStyle(CodexTheme.textSecondary)
             }
         case .succeeded:
@@ -301,7 +739,7 @@ private struct AutomationCard: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.green)
                 Text("Done")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(CodexTheme.captionFont)
                     .foregroundStyle(CodexTheme.textPrimary)
             }
         case .failed:
@@ -310,7 +748,7 @@ private struct AutomationCard: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(CodexTheme.errorForeground)
                 Text("Failed")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(CodexTheme.captionFont)
                     .foregroundStyle(CodexTheme.errorForeground)
             }
         case .idle:
@@ -327,13 +765,13 @@ private struct AutomationCard: View {
             content()
         }
         .padding(.horizontal, 11)
-        .padding(.vertical, 6)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(CodexTheme.pillBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(CodexTheme.divider, lineWidth: 1)
         )
         .transition(.opacity)
@@ -357,16 +795,12 @@ private struct AutomationCard: View {
 
     private var runHistoryTrail: some View {
         HStack(spacing: 6) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(CodexTheme.textTertiary)
-            ForEach(automation.runHistory) { run in
+            ForEach(Array(automation.runHistory.prefix(5))) { run in
                 Image(systemName: run.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(run.ok ? Color.green : CodexTheme.errorForeground)
                     .help(runTooltip(run))
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -388,14 +822,15 @@ private struct AutomationCard: View {
             Image(systemName: systemImage)
                 .font(.system(size: 10, weight: .regular))
             Text(text)
-                .font(.system(size: 11, weight: .regular))
+                .font(CodexTheme.smallFont)
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
         }
         .foregroundStyle(CodexTheme.textSecondary)
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .background(
-            Capsule(style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(CodexTheme.pillBackground)
         )
     }
@@ -412,17 +847,17 @@ private struct AutomationCard: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 11, weight: .regular))
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(CodexTheme.captionFont)
             }
             .foregroundStyle(foreground(prominent: prominent, destructive: destructive))
             .padding(.horizontal, 11)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(background(prominent: prominent))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(prominent ? Color.clear : CodexTheme.divider, lineWidth: 1)
             )
             .contentShape(Rectangle())
@@ -440,6 +875,193 @@ private struct AutomationCard: View {
     private func background(prominent: Bool) -> Color {
         prominent ? CodexTheme.sendButtonActiveBackground : CodexTheme.mainBackground
     }
+
+    private func iconAction(
+        _ systemImage: String,
+        help: String,
+        destructive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(destructive ? CodexTheme.errorForeground : CodexTheme.textSecondary)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(CodexTheme.mainBackground.opacity(0.72))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(CodexTheme.divider, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(CodexPressableStyle())
+        .codexHoverOverlay(cornerRadius: 9)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct AutomationStatusBadge: View {
+    let status: AutomationCardStatus
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(status.accent)
+                .frame(width: 6, height: 6)
+            Text(status.label)
+                .font(CodexTheme.smallFont)
+                .foregroundStyle(CodexTheme.textSecondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(status.accent.opacity(0.10))
+        )
+    }
+}
+
+private enum AutomationCardStatus {
+    case armed, manual, paused, attention
+
+    var label: String {
+        switch self {
+        case .armed: "Armed"
+        case .manual: "Manual"
+        case .paused: "Paused"
+        case .attention: "Needs review"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .armed: CodexTheme.accent
+        case .manual: CodexTheme.textTertiary
+        case .paused: CodexTheme.textTertiary
+        case .attention: CodexTheme.errorForeground
+        }
+    }
+}
+
+// MARK: - Metrics + presets
+
+private struct AutomationCommandMetrics {
+    let total: Int
+    let armed: Int
+    let nextRun: Date?
+    let nextRunName: String?
+    let latestRun: AutomationRun?
+    let latestRunName: String?
+
+    init(automations: [Automation]) {
+        total = automations.count
+        armed = automations.filter(\.isScheduled).count
+
+        let upcoming = automations.compactMap { automation -> (Automation, Date)? in
+            guard let next = automation.nextRun() else { return nil }
+            return (automation, next)
+        }
+        .sorted { $0.1 < $1.1 }
+        .first
+
+        nextRun = upcoming?.1
+        nextRunName = upcoming?.0.displayName
+
+        let latest = automations.compactMap { automation -> (Automation, AutomationRun)? in
+            if let run = automation.runHistory.first {
+                return (automation, run)
+            }
+            if let lastRun = automation.lastRun {
+                return (automation, AutomationRun(date: lastRun, ok: true))
+            }
+            return nil
+        }
+        .sorted { $0.1.date > $1.1.date }
+        .first
+
+        latestRun = latest?.1
+        latestRunName = latest?.0.displayName
+    }
+
+    var latestRunLabel: String {
+        guard let latestRun else { return "None" }
+        return latestRun.ok ? "Clean" : "Failed"
+    }
+
+    var latestRunDetail: String {
+        guard let latestRun else { return "No runs yet" }
+        return "\(latestRunName ?? "Automation") · \(AutomationTimeFormatter.relative(latestRun.date))"
+    }
+
+    var latestRunSystemImage: String {
+        guard let latestRun else { return "circle.dashed" }
+        return latestRun.ok ? "checkmark.seal" : "exclamationmark.triangle"
+    }
+
+    var latestRunAccent: Color {
+        guard let latestRun else { return CodexTheme.textTertiary }
+        return latestRun.ok ? Color.green : CodexTheme.errorForeground
+    }
+}
+
+private struct AutomationDraftPreset: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let symbol: String
+    let name: String
+    let prompt: String
+    let scheduleKind: AutomationScheduleKind
+    let intervalMinutes: Int?
+    let timeOfDay: String?
+
+    static let presets: [AutomationDraftPreset] = [
+        AutomationDraftPreset(
+            id: "manual-release",
+            title: "Release note draft",
+            subtitle: "Manual run for turning recent work into a clean changelog.",
+            symbol: "doc.text.magnifyingglass",
+            name: "Release note draft",
+            prompt: "Review the latest git changes in this project and draft a concise release note with the important user-facing changes, verification performed, and any remaining risks.",
+            scheduleKind: .manual,
+            intervalMinutes: nil,
+            timeOfDay: nil
+        ),
+        AutomationDraftPreset(
+            id: "interval-health",
+            title: "Project health check",
+            subtitle: "Runs every 30 minutes while Codessa is open.",
+            symbol: "waveform.path.ecg",
+            name: "Project health check",
+            prompt: "Check the current project for failing tests, dirty git state, build errors, and obvious handoff blockers. Report only concrete issues and the safest next action.",
+            scheduleKind: .interval,
+            intervalMinutes: 30,
+            timeOfDay: nil
+        ),
+        AutomationDraftPreset(
+            id: "daily-brief",
+            title: "Morning brief",
+            subtitle: "Daily 09:00 scan for priorities and loose ends.",
+            symbol: "sunrise",
+            name: "Morning project brief",
+            prompt: "Prepare a short morning brief for this project: what changed recently, what is unfinished, what deserves attention today, and any risky local or release state.",
+            scheduleKind: .daily,
+            intervalMinutes: nil,
+            timeOfDay: "09:00"
+        )
+    ]
+}
+
+private enum AutomationTimeFormatter {
+    nonisolated static func relative(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
 }
 
 // MARK: - Editor sheet
@@ -447,6 +1069,8 @@ private struct AutomationCard: View {
 private struct AutomationEditorSheet: View {
     /// `nil` ⇒ creating a new automation; otherwise editing this one.
     let seed: Automation?
+    /// Optional private create-mode draft from the empty-state quick starts.
+    let draft: AutomationDraftPreset?
     let projects: [Project]
     let providerStatuses: [ProviderStatus]
     let models: [GrokModelOption]
@@ -898,6 +1522,14 @@ private struct AutomationEditorSheet: View {
             providerId = defaultProviderId
             modelId = defaultModelId
             optionSelections = defaultOptionSelections
+            if let draft {
+                name = draft.name
+                prompt = draft.prompt
+                scheduleKind = draft.scheduleKind
+                intervalMinutes = draft.intervalMinutes ?? 30
+                timeOfDay = draft.timeOfDay ?? "09:00"
+                enabled = true
+            }
             DispatchQueue.main.async { nameFocused = true }
         }
     }
