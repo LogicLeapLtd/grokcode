@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.13] - 2026-07-05
 
 - Automatic updater-visible release for the latest Codessa code changes.
+- Successful manual publishes now update the auto-publish stamp, preventing the
+  hook from immediately bumping to another unpublished version after release.
+- DMG version verification now retries image attachment so freshly-created
+  release artifacts are checked more reliably.
 
 ## [1.8.12] - 2026-07-05
 

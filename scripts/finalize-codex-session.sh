@@ -8,6 +8,7 @@ PUBLISH_REPO="${PUBLISH_REPO:-LogicLeapLtd/grokcode}"
 DERIVED_DATA="${DERIVED_DATA:-$ROOT/.build-agent-finalize}"
 PRODUCTION_BRANCH="${PRODUCTION_BRANCH:-production}"
 RECOVERY_AUDIT_SINCE="${RECOVERY_AUDIT_SINCE:-24 hours ago}"
+AUTO_PUBLISH_STAMP="${AUTO_PUBLISH_STAMP:-$ROOT/.build-agent-local-update/.last-publish-sha}"
 MODE=""
 DRY_RUN=0
 NOTES_FILE=""
@@ -57,7 +58,18 @@ verify_dmg_version() {
   local mount
   mount="$(mktemp -d "${TMPDIR:-/tmp}/codessa-dmg-mount.XXXXXX")"
 
-  hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly -quiet
+  local attached=0
+  for attempt in {1..5}; do
+    if hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly -quiet; then
+      attached=1
+      break
+    fi
+    sleep "$attempt"
+  done
+  if [[ "$attached" -ne 1 ]]; then
+    echo "ERROR: could not attach DMG for version verification: $dmg" >&2
+    exit 1
+  fi
   trap 'hdiutil detach "$mount" -quiet >/dev/null 2>&1 || true; rm -rf "$mount"; [[ -n "${TMP_NOTES:-}" ]] && rm -f "$TMP_NOTES"' EXIT
 
   local app="$mount/Codessa.app"
@@ -277,6 +289,9 @@ if [[ "$REMOTE_DIGEST" != "sha256:$LOCAL_SHA" ]]; then
   exit 1
 fi
 echo "==> Verified release asset digest sha256:$LOCAL_SHA"
+mkdir -p "$(dirname "$AUTO_PUBLISH_STAMP")"
+printf '%s' "$HEAD_SHA" > "$AUTO_PUBLISH_STAMP"
+echo "==> Updated auto-publish stamp for $HEAD_SHA"
 
 INSTALLED_VERSION=""
 if [[ -f "/Applications/Codessa.app/Contents/Info.plist" ]]; then
