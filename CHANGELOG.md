@@ -1,44 +1,5 @@
 # Changelog
 
-## [1.8.11] - 2026-07-05
-
-- Automatic updater-visible release for the latest Codessa code changes.
-
-
-- Local integration management is now centralized on the Plugins page, where installed MCP servers/plugins/skills are synced into one list with disable, enable, and delete controls; Codessa session finalization now publishes updater-visible GitHub releases by default and captures dirty trees instead of silently skipping publish.
-
-- Claude/Codex/Gemini one-shot provider replies are now flushed into chat before the UI checks for an empty response, fixing the false "Claude returned an empty response" banner. Claude stream-json parsing is also narrowed to assistant/result records so hook output never pollutes the answer.
-
-- Plan mode now collapses to a single composer dropdown in the macOS 26 Liquid Glass toolbar; the redundant "Plan mode" permission pill is hidden there too.
-
-- Claude runs that fail on a hard API error (rate limit / 429 / auth) no longer show a blank "Claude returned an empty response". Claude's stream-json puts the reason only in the terminal `result` field on those errors while leaving the assistant `content` blocks empty; the extractor now falls back to that `result` text, so you see the actual message (e.g. "You've reached your Fable 5 limit. Run /usage-credits…") instead of an empty bubble.
-- Removed the redundant "Plan mode" toggle from the composer "+" menu. Plan was surfacing three times (the + toggle, the mode pill, and the permission menu); the always-visible mode pill and the ⇧⌘M permission menu already cover it.
-
-- Stopped loading the grok CLI session list on launch. The app used to shell out to `grok sessions list` during startup to "restore previous sessions", but that list only feeds the Search page (the sidebar renders from the on-disk session index). It's now loaded lazily the first time you open Search — opening the app no longer spawns a grok process to pull old sessions.
-
-- Stopped prewarming the warm `grok agent stdio` session on launch. Previously the app booted the entire MCP server fleet (dozens of subprocesses) the moment Codessa opened — even while the user was still on the home screen and might never send anything — pinning a large amount of idle memory and spawning a storm of processes on startup. The warm session now boots lazily on the first real send, so MCP starts on demand instead of on every launch.
-
-- Fixed the model pill (e.g. "Opus 4.8") reserving a fixed 150pt of width and pushing the chevron to the far right, leaving a large empty gap — it now hugs the model name like the other composer pills.
-- Fixed the top-right window controls (split view + open-in-new-window) getting clipped by the window's rounded corner. They now sit clear of the curve, and the chat header reserves matching space so the "Export" button never tucks underneath them.
-
-- Grok error messages are now specific instead of the generic "hit a temporary failure" banner. The warm agent session used to discard the agent process's stderr and report a bland "the process exited" — it now keeps a rolling tail of stderr and surfaces the actual crash / auth / rate-limit reason (with the exit code) when the process dies. The one-shot streaming path also falls back to whatever Grok wrote to stdout (a plain-text or undecodable error line) when stderr is empty, so the real diagnostic is shown rather than boilerplate.
-
-- Tightened the composer toolbar so long model names (e.g. "Grok Composer 2.5 Fast") no longer overflow the row. The mode dropdown no longer echoes the selected model beside the mode name — it just shows the mode (Execute, Plan, …) — and the model pill now truncates gracefully instead of expanding to the model's full intrinsic width.
-
-- Starting a chat no longer empties the sidebar. Previously the "With chats" filter would collapse the whole project list down to just the active project the instant a chat began (the optimistic "New chat" placeholder made it the only project "with chats"). Pending placeholders are now ignored when deciding which projects to show, so every project stays visible and the sort simply floats the active one to the top. The owning project also auto-expands when a chat starts, so the new chat is immediately visible instead of hidden under a collapsed project row.
-
-- Cleaned up the composer's mode/model labels. Agent modes no longer leak raw model IDs (e.g. `claude-fable-5`) or a redundant "Provider ·" prefix — they now show the friendly product name (Fable 5, Opus 4.8, GPT-5.5, …), consistently with the model picker. The duplicate "Plan mode" permission pill is hidden while Plan mode is active, since the mode already locks permissions to read-only.
-
-- Transient Grok failures (rate limiting or a brief network/backend hiccup — the "Grok hit a temporary failure" case) now retry automatically with backoff before any error is shown, so a momentary blip self-heals instead of interrupting you. If it still fails, the home-screen error banner now offers a one-click **Retry**, and the banner reflows cleanly on every window size (baseline-aligned icon, text that always wraps instead of clipping, and actions that wrap to a new line on narrow viewports).
-
-- Fixed rapid flickering/jitter when dragging to resize the sidebar. The resize handle now measures the drag against a stable window-anchored coordinate space instead of its own (moving) one, so the edge tracks the cursor 1:1 without the feedback loop.
-
-- Errors are now human and actionable instead of cryptic exit codes. "Grok exited with code 75" (a transient rate-limit/network failure) now reads "Grok hit a temporary failure — usually rate limiting or a brief network/backend hiccup. Wait a few seconds and try again."; auth, rate-limit, timeout and other common failures get tailored guidance.
-- Errors on the home screen are now shown in the same styled card (icon, container, dismiss/retry) as in-chat errors, instead of as bare red text.
-- Composer "+" (add attachment) button is now circular instead of a rounded square.
-- Home quick-action cards: removed the redundant "New chat" card (the Home page is already the new-chat surface) and made all remaining labels render at the same font size ("Browse plugins" no longer auto-shrinks to fit).
-- Composer toolbar: pills now size to their content (no more truncated mode/permission labels or "Full access" wrapping); model pill drops the "(default)" suffix.
-
 All notable changes to Codessa are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -46,15 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.8.10] - 2026-07-05
+## [1.8.11] - 2026-07-05
 
 ### Changed
 
+- Local integration management is now centralized on the Plugins page, where installed MCP servers/plugins/skills are synced into one list with disable, enable, and delete controls.
+- Claude/Codex/Gemini one-shot provider replies are now flushed into chat before the UI checks for an empty response, fixing the false "Claude returned an empty response" banner.
+- Plan mode now collapses to a single composer dropdown in the macOS 26 Liquid Glass toolbar, and the redundant Plan controls are removed or hidden.
+- Claude hard API errors now surface the actual terminal result text instead of a blank empty-response banner.
+- Grok CLI session listing and warm agent startup now happen lazily instead of on app launch.
+- Composer toolbar pills now size and truncate correctly for long model, mode, and permission labels.
+- Chat header, window controls, and chat-start motion now use the cleaner toolbar/focus treatment.
+- Starting a chat no longer empties the sidebar project list, and sidebar navigation icons now use stronger symbols.
+- Grok errors are more specific, transient failures retry automatically, and the home-screen error UI uses the styled retry/dismiss card.
+- Sidebar resizing now tracks the pointer against a stable coordinate space instead of flickering during drag.
 - Model/provider menus now use bundled real SVG marks for Claude, Cursor, ChatGPT/OpenAI, Gemini, and Grok instead of hand-drawn approximations.
 - Plan mode now inherits the selected composer model by default, migrates the old hidden Claude/Fable route, and preserves provider-specific CLI options when launching runs.
-- Chat header actions now sit in one labelled toolbar group: Export, Split, and Pop out, so the two window controls are no longer mystery icons floating in the corner.
-- Starting a chat now uses a calmer, chat-specific focus transition, and the temporary sidebar "New chat" row uses a small activity sweep instead of pulsing the entire row.
-- Sidebar navigation icons now use stronger, clearer symbols with heavier rendering, so New chat, Search, Plugins, and Automations read less like placeholder outline glyphs.
 - Finalization now captures dirty work before publishing instead of blocking, and the automatic closure hook publishes an updater-visible release after every code change.
 
 ## [1.8.0] - 2026-07-04
