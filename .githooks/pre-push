@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+  cat >&2 <<'MSG'
+ERROR: Josh's commit-before-handoff rule is blocking this push.
+
+There are uncommitted changes in this worktree. The required order is:
+  1. make the change
+  2. commit the change
+  3. ask Josh to test
+
+Commit the remaining changes first, then push again.
+MSG
+  git status --short --branch --untracked-files=all >&2
+  exit 1
+fi
+

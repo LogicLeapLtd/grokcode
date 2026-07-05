@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat >&2 <<'MSG'
+
+Josh rule reminder:
+  1. change made
+  2. commit made
+  3. now ask Josh to test
+
+Do not hand off code changes without a commit.
+MSG
+

@@ -2,6 +2,16 @@
 
 Release engineering helpers for Codessa.
 
+## `install-agent-git-hooks.sh`
+
+Installs the tracked `.githooks/` path for this checkout. The hooks enforce
+Josh's agent handoff rule: do not push with uncommitted changes, and after each
+commit remind the agent to ask Josh to test.
+
+```bash
+./scripts/install-agent-git-hooks.sh
+```
+
 ## `build-dmg.sh`
 
 Builds the app in **Release** configuration and packages it into a compressed

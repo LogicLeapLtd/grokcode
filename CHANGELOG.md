@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.20] - 2026-07-05
+
+- Added tracked Git hooks that block pushes with uncommitted work and remind
+  agents to ask Josh to test immediately after committing code changes.
+
 ## [1.8.19] - 2026-07-05
 
 - Fixed Grok CLI path resolution: the warm agent session and one-shot
