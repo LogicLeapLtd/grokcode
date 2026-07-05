@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.12] - 2026-07-05
+
+- Automatic updater-visible release for the latest Codessa code changes.
+
+
 All notable changes to Codessa are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
