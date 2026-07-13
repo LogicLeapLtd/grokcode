@@ -2,7 +2,7 @@ You are building **GrokCodeGUI**, a native macOS SwiftUI app that is a faithful 
 
 ## 0. Ground truth & environment
 
-- **Repo:** `/Users/joshmatthews/Development/GrokCodeGUI/GrokCode` (this is the git root; `.git` lives here).
+- **Repo:** `/Users/joshmatthews/Development/20-products/codessa/grok-code-gui/GrokCode` (this is the git root; `.git` lives here).
 - **Xcode project:** `GrokCode.xcodeproj` · **scheme:** `GrokCode` · source under `GrokCode/GrokCode/`.
 - **Reference app (source of truth):** `/Applications/Codex.app` — the real ChatGPT Codex. OPEN IT, USE IT, SCREENSHOT IT. Do not guess what Codex looks like; observe it.
 - **The CLI you are driving:** `grok` at `~/.grok/bin/grok`. Inspect it: `grok --help`, `grok models`, `grok sessions list`. It supports `-p <prompt> -m <model> --cwd <path> --output-format streaming-json --permission-mode <mode> --effort <level>` and resume via `-r <sessionId>`.
@@ -11,7 +11,7 @@ You are building **GrokCodeGUI**, a native macOS SwiftUI app that is a faithful 
   - Models: `grok-build`, `grok-composer-2.5-fast` (default), `grok-4`.
 - **Build (must pass with no new errors):**
   ```
-  cd /Users/joshmatthews/Development/GrokCodeGUI/GrokCode
+  cd /Users/joshmatthews/Development/20-products/codessa/grok-code-gui/GrokCode
   xcodebuild -project GrokCode.xcodeproj -scheme GrokCode -configuration Debug -derivedDataPath build 2>&1 | tail -5
   ```
   Expect `** BUILD SUCCEEDED **`.
