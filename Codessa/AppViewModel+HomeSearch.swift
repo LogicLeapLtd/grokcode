@@ -89,8 +89,31 @@ extension AppViewModel {
         navigateTo(action.page)
     }
 
-    // MARK: Home — Grok install guidance (#31)
+    // MARK: Home — ChatGPT Codex setup guidance
 
+    var codexSetupCommand: String {
+        codexProviderStatus?.installed == true ? "codex login" : AgentProvider.codex.installCommand
+    }
+
+    var codexSetupTitle: String {
+        codexProviderStatus?.installed == true ? "Sign in to ChatGPT Codex" : "Install ChatGPT Codex"
+    }
+
+    var codexSetupMessage: String {
+        codexProviderStatus?.installed == true
+            ? "Codessa uses your local Codex CLI and ChatGPT account. Run `codex login` to connect it."
+            : "Codessa is built around the local Codex CLI. Install it, then sign in with `codex login`."
+    }
+
+    func copyCodexSetupCommand() {
+        copyToClipboard(codexSetupCommand)
+    }
+
+    func openCodexDocs() {
+        openProviderDocs(.codex)
+    }
+
+    // Legacy Grok helpers remain for the optional Grok provider.
     /// One-line shell command that installs the Grok CLI. Surfaced (copyable) in
     /// the Home banner when `grokAvailable` is false.
     var grokInstallCommand: String {

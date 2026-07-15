@@ -12,6 +12,8 @@ nonisolated final class ProviderRegistry: @unchecked Sendable {
 
     private let selectedKey = "grokcode.selectedProvider"
     private let customKey = "grokcode.customProviders"
+    private let codexFocusMigrationKey = "grokcode.codexFocusMigrationV1"
+    private let defaultProviderKey = "grokcode.defaultProviderInstanceId"
 
     // MARK: - Catalog
 
@@ -47,8 +49,26 @@ nonisolated final class ProviderRegistry: @unchecked Sendable {
 
     // MARK: - Selection
 
-    /// The user's chosen provider id. Defaults to the wired engine (Grok) so the
-    /// shipping run path is unchanged until the user picks another.
+    /// Move installs that were still on the old Grok default to Codex. Explicit
+    /// choices for any other provider are preserved.
+    func migrateLegacyDefaultIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: codexFocusMigrationKey) else { return }
+
+        let selected = defaults.string(forKey: selectedKey)
+        if selected == nil || selected == AgentProvider.grok.id {
+            defaults.set(AgentProvider.codex.id, forKey: selectedKey)
+        }
+
+        let appDefault = defaults.string(forKey: defaultProviderKey)
+        if appDefault == nil || appDefault == AgentProvider.grok.id {
+            defaults.set(AgentProvider.codex.id, forKey: defaultProviderKey)
+        }
+
+        defaults.set(true, forKey: codexFocusMigrationKey)
+    }
+
+    /// The user's chosen provider id. New installs default to ChatGPT Codex.
     var selectedProviderId: String {
         get { UserDefaults.standard.string(forKey: selectedKey) ?? AgentProvider.wiredDefault.id }
         set { UserDefaults.standard.set(newValue, forKey: selectedKey) }

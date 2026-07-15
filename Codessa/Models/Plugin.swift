@@ -6,7 +6,7 @@ import Foundation
 ///
 /// `extension` is a reserved word in Swift, hence the trailing underscore on
 /// the case (`extension_`); the raw value stays `"extension"`.
-enum PluginKind: String, CaseIterable, Identifiable, Hashable, Codable {
+nonisolated enum PluginKind: String, CaseIterable, Identifiable, Hashable, Codable {
     case mcpServer = "mcpServer"
     case skill = "skill"
     case hook = "hook"
@@ -68,7 +68,7 @@ enum PluginKind: String, CaseIterable, Identifiable, Hashable, Codable {
 /// The tool a plugin was discovered from. Raw values are stable identifiers and
 /// also form the prefix of a plugin's `id` (e.g. `"claude:cloudflare"`); do not
 /// rename them.
-enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
+nonisolated enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
     case grok
     case claude
     case codex
@@ -123,7 +123,7 @@ enum PluginSource: String, CaseIterable, Identifiable, Hashable, Codable {
 /// Value type only. All configuration is captured in plain strings / a
 /// `[String: String]` blob so the whole model is `Codable` and `Hashable` and
 /// can be round-tripped through UserDefaults as JSON.
-struct Plugin: Identifiable, Hashable, Codable {
+nonisolated struct Plugin: Identifiable, Hashable, Codable, Sendable {
     /// Stable, deterministic identifier, e.g. `"claude:cloudflare"` —
     /// `"<source>:<name>"`, optionally further qualified by kind/scope. Two
     /// discoveries of the same logical plugin MUST produce the same `id` so the

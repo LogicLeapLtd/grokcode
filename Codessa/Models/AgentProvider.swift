@@ -1,8 +1,8 @@
 import Foundation
 
-/// A coding-agent CLI that Codessa can drive. Codessa is a *provider-agnostic*
-/// shell — Grok is one option among Claude Code, Codex, Cursor, Gemini, Z.AI,
-/// and any custom CLI the user points it at. A provider is pure configuration:
+/// A coding-agent CLI that Codessa can drive. Codessa is a Codex-first workspace
+/// with optional support for Claude Code, Cursor, Gemini, Grok, Z.AI, and any
+/// custom CLI the user points it at. A provider is pure configuration:
 /// which executables to look for, how to install it, where its docs live, and
 /// whether Codessa currently has a wired streaming adapter for its protocol.
 ///
@@ -44,10 +44,10 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
         monogram: "Cl", streamingWired: true)
 
     static let codex = AgentProvider(
-        id: "codex", name: "Codex", shortName: "Codex",
+        id: "codex", name: "ChatGPT Codex", shortName: "Codex",
         binaryNames: ["codex"], explicitBinaryPath: nil,
         installCommand: "npm install -g @openai/codex",
-        docsURL: "https://github.com/openai/codex",
+        docsURL: "https://learn.chatgpt.com/docs/codex/cli",
         monogram: "Cx", streamingWired: true)
 
     static let cursor = AgentProvider(
@@ -78,13 +78,12 @@ nonisolated struct AgentProvider: Identifiable, Hashable, Codable {
         docsURL: "https://z.ai",
         monogram: "Z", streamingWired: false)
 
-    /// The known providers, in dock order. Grok sits mid-list, not first — no
-    /// single provider is the focus.
-    static let known: [AgentProvider] = [claude, cursor, codex, gemini, grok, zai]
+    /// The known providers, in dock order. ChatGPT Codex leads the experience;
+    /// the other local agents remain available as optional alternatives.
+    static let known: [AgentProvider] = [codex, claude, cursor, gemini, grok, zai]
 
-    /// The historical default provider. Kept for migrations and Grok-specific
-    /// session imports, not as a universal execution fallback.
-    static let wiredDefault: AgentProvider = grok
+    /// The primary provider used for new installs and execution fallbacks.
+    static let wiredDefault: AgentProvider = codex
 
     /// Build a custom provider from a user-picked executable.
     static func custom(name: String, binaryPath: String) -> AgentProvider {

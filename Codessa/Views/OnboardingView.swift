@@ -4,12 +4,10 @@ import AppKit
 /// First-run onboarding overlay (shared contract). Presented from `ContentView`
 /// over a dimmed backdrop whenever `model.onboardingOpen` is true. A single
 /// centred glass card — not a long wizard — that gets the user from a cold
-/// install to a working, provider-agnostic setup in one view:
+/// install to a working, Codex-first setup in one view:
 ///   1. Warm welcome with the Codessa identity (chevron prompt + violet
 ///      block-cursor motif recreated in SwiftUI, in Fraunces).
-///   2. AI providers — a dock of every supported agent CLI (Claude Code, Codex,
-///      Cursor, Gemini, Grok, Z.AI) with per-provider detected/not-detected
-///      status rings, plus a "+ Custom" slot. No single provider is the focus.
+///   2. ChatGPT Codex first, with an optional dock of other supported agent CLIs.
 ///   3. "Add a project folder" (NSOpenPanel → `model.addProjectRoot`).
 ///   4. A default-provider + model picker (`CodexMenuTrigger` over `model.models`).
 /// A prominent "Get started" button calls `model.completeOnboarding()`.
@@ -122,7 +120,7 @@ struct OnboardingView: View {
                     .font(CodexTheme.serif(28, weight: .semibold))
                     .foregroundStyle(CodexTheme.textPrimary)
 
-                Text("One native macOS home for your AI coding agents — bring Claude Code, Codex, Cursor, Gemini, Grok, Z.AI, or any custom CLI, and ship across every project from one clean surface.")
+                Text("A native macOS workspace for ChatGPT Codex — your projects, models, plugins, and automations in one focused surface. Other local agents remain available when you need them.")
                     .font(CodexTheme.sans(14))
                     .foregroundStyle(CodexTheme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -166,10 +164,10 @@ struct OnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Choose your starting agent")
+                        Text("Start with ChatGPT Codex")
                             .font(CodexTheme.sans(13.5, weight: .semibold))
                             .foregroundStyle(CodexTheme.textPrimary)
-                        Text("Pick any detected provider now. You can still switch per chat later.")
+                        Text("Codex is the default. You can still switch to another local coding agent per chat.")
                             .font(CodexTheme.sans(12.5))
                             .foregroundStyle(CodexTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -213,19 +211,19 @@ struct OnboardingView: View {
     }
 
     private var providerHeadline: String {
-        "Providers — \(model.installedProviderCount) of \(model.totalProviderCount) ready"
+        "ChatGPT Codex + optional providers"
     }
 
     private var providerSubtitle: String {
         let installed = model.installedProviderNames
         switch installed.count {
         case 0:
-            return "None detected on your PATH yet — sign in to any, or bring your own custom CLI."
+            return "Codex is not detected yet. Install the CLI, sign in with ChatGPT, or configure an optional provider."
         case 1:
-            return "\(installed[0]) detected on your PATH — connect more, or bring your own CLI."
+            return "\(installed[0]) detected on your PATH. ChatGPT Codex remains the primary workspace."
         default:
             let head = installed.prefix(2).joined(separator: " and ")
-            return "\(head) detected on your PATH — connect more, or bring your own CLI."
+            return "\(head) detected on your PATH. ChatGPT Codex remains the primary workspace."
         }
     }
 
@@ -285,10 +283,10 @@ struct OnboardingView: View {
             HStack(spacing: 13) {
                 StatusGlyph(systemImage: "cpu", tint: CodexTheme.textSecondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Pick a provider and model to start with")
+                    Text("Choose your Codex model")
                         .font(CodexTheme.sans(13.5, weight: .semibold))
                         .foregroundStyle(CodexTheme.textPrimary)
-                    Text("You can switch providers or models any time from the composer.")
+                    Text("Codex models lead the menu; optional providers remain available in the composer.")
                         .font(CodexTheme.sans(12.5))
                         .foregroundStyle(CodexTheme.textSecondary)
                 }

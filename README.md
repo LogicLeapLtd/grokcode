@@ -2,7 +2,7 @@
 
 # Codessa
 
-**A native macOS home for the Grok CLI. The ChatGPT‑Codex desktop experience, reimagined for Grok.**
+**A focused, native macOS workspace for ChatGPT Codex.**
 
 [![macOS](https://img.shields.io/badge/macOS-15%2B-000000?style=flat&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=flat&logo=swift&logoColor=white)](https://swift.org)
@@ -18,17 +18,18 @@
 
 ## Why Codessa
 
-The `grok` CLI is fast — until every prompt pays a fresh **~30‑second cold start** while MCP servers boot from scratch. Codessa kills that tax. It opens **one warm `grok agent stdio` session** when the app launches, keeps it alive, and streams every prompt down the same live ACP connection. MCP boots **once**; from then on reasoning and answers start arriving the instant you hit return.
+Codessa gives the local Codex CLI a purpose-built desktop workspace: ChatGPT sign-in, project-aware conversations, model and reasoning controls, plugins, scheduled automations, and git-branch organisation in one native macOS app. It drives Codex through the supported non-interactive CLI flow and streams structured events into the conversation UI.
 
-On top of that warm core, Codessa wraps the CLI in a real, native macOS app: markdown chat with copyable code blocks, a ⌘K command palette, slash‑commands and `@file` mentions, a plugin marketplace, scheduled automations, and project + git‑branch organisation — all keyboard‑driven, in full light and dark mode.
+Codex is the first provider shown, the default for new and existing installs that never chose another agent, and the primary setup path throughout onboarding, Home, and Settings. Claude Code, Cursor, Gemini, Grok, Z.AI, and custom local CLIs remain available as optional alternatives.
 
-It is, deliberately, the ChatGPT‑Codex desktop feel — rebuilt from the ground up for Grok.
+The interface is fully native SwiftUI: markdown chat with copyable code blocks, a ⌘K command palette, slash commands and `@file` mentions, a plugin marketplace, scheduled automations, and project + git-branch organisation — all keyboard-driven, in full light and dark mode.
 
 ---
 
 ## Features
 
-- **Warm streaming, no cold starts** — a persistent `grok agent stdio` session keeps MCP servers loaded between prompts, so reasoning and answers stream instantly instead of waiting on a fresh boot.
+- **ChatGPT Codex first** — Codex is the default provider, with first-class model, reasoning, permission, structured-event, and sign-in handling through the local `codex` CLI.
+- **Optional local agents** — switch a chat to Claude Code, Gemini, Grok, or another configured CLI without losing the focused Codex workflow.
 - **Rich markdown chat** — headings, lists, tables, inline code, and fenced **code blocks with one‑click copy**, plus a live "Thinking…" reasoning trace as the model works.
 
   ![Home / new chat](docs/home.png)
@@ -75,11 +76,12 @@ Download the latest **`.dmg`** from GitHub Releases, drag Codessa to
 ## Requirements
 
 - **macOS 15 or later** (Apple silicon or Intel).
-- The **`grok` CLI** installed at `~/.grok/bin/grok`, and an **xAI API key**. Codessa is a desktop interface for the `grok` CLI — you bring your own `grok` install and xAI account; Codessa does not provide them.
-- A signed‑in CLI — run **`grok login`** once in your terminal before first launch.
+- The **Codex CLI** installed with `npm install -g @openai/codex`.
+- A signed-in Codex CLI — run **`codex login`** and use your ChatGPT account before your first chat.
+- Optional providers require their own local CLI and account only when you choose to use them.
 
-Codessa talks to your local `grok` install; it stores nothing in the cloud for
-normal chat runs. The update checker reads GitHub Releases when enabled.
+Codessa talks to your local agent CLI; provider requests follow that provider's
+own account and data policies. The update checker reads GitHub Releases when enabled.
 
 ---
 
@@ -123,15 +125,16 @@ Codessa is a focused, native stack:
 
 - **SwiftUI** for the entire interface — windows, sidebar, chat, modals, and theming.
 - **A custom menu / motion engine** (`CodexTheme` + `CodexMotion`) providing the named springs and design tokens that give the app its consistent, Codex‑like feel across light and dark.
-- **An ACP JSON‑RPC client** (`GrokAgentSession`) that drives a long‑lived **`grok agent stdio`** process — the warm session that keeps MCP loaded and streams every prompt with no cold start.
+- **A first-class Codex runtime adapter** that drives `codex exec --json`, translates structured events into native chat state, and preserves model, reasoning, permission, and working-directory choices.
+- **Optional provider adapters**, including the existing ACP JSON-RPC warm-session path for Grok when Grok is explicitly selected.
 
-State lives in a single `@Observable @MainActor` view model; the CLI layer spawns and parses `grok`, and a handful of small services index sessions, hooks, and the marketplace.
+State lives in a single `@Observable @MainActor` view model; provider runtime adapters spawn and parse the selected local CLI, and small services index sessions, hooks, plugins, and the marketplace.
 
 ---
 
 ## Disclaimer
 
-**Unofficial.** Codessa is an independent, community project. It is **not affiliated with, sponsored by, or endorsed by xAI.** "Grok" is a trademark of xAI. Codessa simply provides a desktop interface for the `grok` CLI that you install and run yourself.
+**Unofficial.** Codessa is an independent LogicLeap project. It is **not affiliated with, sponsored by, or endorsed by OpenAI.** ChatGPT, Codex, and OpenAI are trademarks of OpenAI. Optional third-party provider names and trademarks belong to their respective owners.
 
 ---
 

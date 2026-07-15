@@ -35,7 +35,7 @@ struct SettingsView: View {
         case shortcuts = "Keyboard shortcuts"
         case mcp = "MCP servers"
         case hooks = "Hooks"
-        case cli = "Grok CLI"
+        case cli = "Coding agents"
         case data = "Data"
         case archived = "Archived chats"
         case about = "About"
@@ -533,12 +533,19 @@ struct SettingsView: View {
     private var cliPage: some View {
         VStack(alignment: .leading, spacing: 16) {
             metricGrid([
-                ("CLI", model.grokAvailable ? "Detected" : "Missing", "terminal"),
+                ("Codex", model.codexProviderStatus?.installed == true ? "Detected" : "Missing", "terminal"),
                 ("Models", "\(model.models.count)", "cpu"),
                 ("Provider", model.selectedProvider.shortName, "switch.2"),
-                ("Warm", model.warmSessionEnabled ? "On" : "Off", "flame"),
+                ("Account", model.codexProviderStatus?.authStatus.label ?? "Unknown", "person.crop.circle"),
             ])
-            settingsCard("Grok Binary", "Path, auth, and runtime execution controls.") {
+            settingsCard("ChatGPT Codex", "Primary local CLI and account setup.") {
+                infoRow("Status", model.codexProviderStatus?.message ?? "Codex status is unavailable.")
+                infoRow("Resolved path", model.codexProviderStatus?.binaryPath ?? "Not found")
+                actionRow("Copy setup command", model.codexSetupCommand, "doc.on.doc") { model.copyCodexSetupCommand(); showToast("Copied Codex setup command") }
+                actionRow("Open Codex CLI docs", "Install, sign in, and learn the Codex CLI.", "book") { model.openCodexDocs() }
+                actionRow("Refresh CLI status", "Re-check Codex and optional providers.", "arrow.clockwise") { model.refreshCLIStatus(); showToast("CLI status refreshed") }
+            }
+            settingsCard("Optional Grok runtime", "Legacy warm-session controls for chats that explicitly select Grok.") {
                 infoRow("Resolved path", model.grokBinaryPath)
                 textFieldRow("Binary override", text: pref(\.grokBinaryOverride))
                 toggle("Warm Grok session", "Keep a long-lived agent process ready.", Binding(get: { model.warmSessionEnabled }, set: { model.warmSessionEnabled = $0 }))
@@ -659,7 +666,7 @@ struct SettingsView: View {
                     Text("Version \(AppViewModel.appVersionString)")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(CodexTheme.textSecondary)
-                    Text("A native macOS front-end for the Grok CLI.")
+                    Text("A native macOS workspace for ChatGPT Codex.")
                         .font(.system(size: 12))
                         .foregroundStyle(CodexTheme.textTertiary)
                 }
@@ -681,12 +688,12 @@ struct SettingsView: View {
             }
 
             settingsCard("Links and Support", "Every button opens or copies a real resource.") {
-                linkRow("GitHub repository", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/joshmatthews/GrokCodeGUI")
-                linkRow("Grok CLI docs", icon: "book", url: "https://docs.x.ai/docs/grok-cli")
-                linkRow("Report an issue", icon: "exclamationmark.bubble", url: "https://github.com/joshmatthews/GrokCodeGUI/issues/new")
+                linkRow("GitHub repository", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/LogicLeapLtd/grokcode")
+                linkRow("Codex CLI docs", icon: "book", url: AgentProvider.codex.docsURL)
+                linkRow("Report an issue", icon: "exclamationmark.bubble", url: "https://github.com/LogicLeapLtd/grokcode/issues/new")
                 linkRow("Release notes", icon: "doc.text", url: "https://github.com/LogicLeapLtd/grokcode/releases")
-                linkRow("Privacy", icon: "hand.raised", url: "https://github.com/joshmatthews/GrokCodeGUI")
-                linkRow("Terms", icon: "checkmark.seal", url: "https://github.com/joshmatthews/GrokCodeGUI")
+                linkRow("Privacy", icon: "hand.raised", url: "https://github.com/LogicLeapLtd/grokcode")
+                linkRow("Terms", icon: "checkmark.seal", url: "https://github.com/LogicLeapLtd/grokcode")
                 actionRow("Copy diagnostics", "Copy support diagnostics.", "stethoscope") { model.copyDiagnostics(); showToast("Copied diagnostics") }
                 actionRow("Open config folder", "Open ~/.grok.", "folder") { model.openFileOrFolder(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok")) }
             }
