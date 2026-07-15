@@ -7,11 +7,11 @@ import Foundation
 /// configuration, and persists the user's installed set as JSON in
 /// `UserDefaults` under `"grokcode.installedPlugins"`.
 ///
-/// Plain class — no `@MainActor`, mirroring `ProjectDiscovery`. It is
-/// constructed and called from the `@MainActor` `AppViewModel`, so all public
-/// methods are synchronous. Every scan is defensive: missing or malformed files
-/// are skipped silently and never throw.
-final class PluginImportService {
+/// Nonisolated service, mirroring `ProjectDiscovery`. Its read-only discovery
+/// scan may run on a utility task while explicit user mutations remain
+/// synchronous. Every scan is defensive: missing or malformed files are skipped
+/// silently and never throw.
+nonisolated final class PluginImportService: @unchecked Sendable {
 
     // MARK: Stored
 

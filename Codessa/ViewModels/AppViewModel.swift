@@ -86,9 +86,8 @@ final class AppViewModel {
     /// Z.AI + any custom), each with install status. Populated by
     /// `refreshProviders()` at bootstrap and after adding a custom provider.
     var providerStatuses: [ProviderStatus] = []
-    /// The user's selected provider id (mirrors `ProviderRegistry`). Defaults to
-    /// the wired engine (Grok) so the shipping run path is unchanged until the
-    /// user picks another provider.
+    /// The user's selected provider id (mirrors `ProviderRegistry`). ChatGPT
+    /// Codex is the default; other local agents remain explicitly selectable.
     var selectedProviderId: String = AgentProvider.wiredDefault.id
     /// User-configurable agent modes. Built-ins provide the durable Plan and
     /// Execute lanes; users can add more profiles with their own provider/model
@@ -588,15 +587,10 @@ final class AppViewModel {
         // user never asked for. It's now loaded lazily the first time the Search
         // page is opened — see `loadCLISessionsIfNeeded()`.
 
-        // Plugins/automations aren't needed for first paint (home/sidebar) — load
-        // them concurrently instead of blocking bootstrap (and so the window)
-        // on a marketplace network fetch (`loadCommunityPlugins`).
-        refreshPlugins()
+        // Plugins aren't needed for first paint. Their local scan can traverse
+        // large extension caches, so keep it off the main actor at launch.
+        refreshPluginsInBackground()
         refreshPublishedPlugins()
-        Task { [weak self] in
-            guard let self else { return }
-            await self.loadCommunityPlugins()
-        }
         loadAutomations()
         automationService.startScheduler { [weak self] dueIDs in
             self?.runDueAutomations(dueIDs)
@@ -1953,6 +1947,22 @@ final class AppViewModel {
         importablePlugins = pluginImport.discoverImportable()
     }
 
+    /// Startup-only plugin refresh. The scan is intentionally detached because
+    /// it performs directory enumeration and frontmatter/JSON parsing across
+    /// every supported agent's local plugin cache.
+    private func refreshPluginsInBackground() {
+        let importer = pluginImport
+        Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                (importer.installedPlugins(), importer.discoverImportable())
+            }.value
+            guard let self else { return }
+            self.installedPlugins = snapshot.0
+            self.importablePlugins = snapshot.1
+            await self.loadCommunityPlugins()
+        }
+    }
+
     /// Add a plugin to the installed set, then refresh both lists.
     func installPlugin(_ plugin: Plugin) {
         pluginImport.install(plugin)
@@ -2154,36 +2164,80 @@ final class AppViewModel {
     /// `git -C <folder>` by walking up to a containing repo, but never scans
     /// child folders, so container directories don't borrow a child repo branch.
     nonisolated static func gitBranch(for path: URL) -> String? {
-        let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: path.path, isDirectory: &isDir) else { return nil }
+        gitBranches(for: [path]).first ?? nil
+    }
 
-        var current = (isDir.boolValue ? path : path.deletingLastPathComponent()).standardizedFileURL
-        while true {
-            if let branch = branch(atGit: current.appendingPathComponent(".git")) { return branch }
-            let parent = current.deletingLastPathComponent()
-            if parent.path == current.path { return nil }
-            current = parent
+    private nonisolated enum GitBranchLookup {
+        case found(String)
+        case missing
+
+        var branch: String? {
+            switch self {
+            case .found(let branch): branch
+            case .missing: nil
+            }
         }
     }
 
-    private nonisolated static func branch(atGit gitPath: URL) -> String? {
+    /// Resolve a batch of project branches while caching every visited parent.
+    /// Project discovery commonly returns many siblings; without this cache each
+    /// one repeats the same filesystem walk all the way to `/`.
+    nonisolated static func gitBranches(for paths: [URL]) -> [String?] {
+        let fm = FileManager.default
+        var cache: [String: GitBranchLookup] = [:]
+
+        return paths.map { path in
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: path.path, isDirectory: &isDir) else { return nil }
+
+            var current = ((isDir.boolValue ? path.path : (path.path as NSString).deletingLastPathComponent) as NSString)
+                .standardizingPath
+            var visited: [String] = []
+
+            while true {
+                if let cached = cache[current] {
+                    for directory in visited { cache[directory] = cached }
+                    return cached.branch
+                }
+
+                visited.append(current)
+                let gitPath = (current as NSString).appendingPathComponent(".git")
+                if let branch = branch(atGitPath: gitPath) {
+                    let result = GitBranchLookup.found(branch)
+                    for directory in visited { cache[directory] = result }
+                    return branch
+                }
+
+                let parent = (current as NSString).deletingLastPathComponent
+                if parent == current || parent.isEmpty {
+                    for directory in visited { cache[directory] = .missing }
+                    return nil
+                }
+                current = parent
+            }
+        }
+    }
+
+    private nonisolated static func branch(atGitPath gitPath: String) -> String? {
         let fm = FileManager.default
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: gitPath.path, isDirectory: &isDir) else { return nil }
-        let headURL: URL
+        guard fm.fileExists(atPath: gitPath, isDirectory: &isDir) else { return nil }
+        let headPath: String
         if isDir.boolValue {
-            headURL = gitPath.appendingPathComponent("HEAD")
+            headPath = (gitPath as NSString).appendingPathComponent("HEAD")
         } else {
             // `.git` is a pointer file: "gitdir: <path>"
-            guard let content = try? String(contentsOf: gitPath, encoding: .utf8),
+            guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8),
                   let line = content.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("gitdir:") })
             else { return nil }
             let dir = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
-            headURL = URL(fileURLWithPath: dir, relativeTo: gitPath.deletingLastPathComponent())
-                .appendingPathComponent("HEAD")
+            let base = (gitPath as NSString).deletingLastPathComponent
+            let resolved = (dir as NSString).isAbsolutePath
+                ? dir
+                : (base as NSString).appendingPathComponent(dir)
+            headPath = (resolved as NSString).appendingPathComponent("HEAD")
         }
-        guard let raw = try? String(contentsOf: headURL, encoding: .utf8) else { return nil }
+        guard let raw = try? String(contentsOfFile: headPath, encoding: .utf8) else { return nil }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = "ref: refs/heads/"
         guard line.hasPrefix(prefix) else { return nil }
@@ -2203,7 +2257,7 @@ final class AppViewModel {
         sessionSnapshotRefreshTask?.cancel()
         sessionSnapshotRefreshTask = Task { [weak self] in
             let (snapshot, branches): (SessionIndexSnapshot, [String?]) = await Task.detached(priority: .userInitiated) {
-                let branches = paths.map { AppViewModel.gitBranch(for: $0) }
+                let branches = AppViewModel.gitBranches(for: paths)
                 let snapshot = sessionIndex.loadSnapshot(
                     projectPaths: paths,
                     projectBranches: branches,

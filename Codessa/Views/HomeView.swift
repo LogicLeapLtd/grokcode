@@ -22,8 +22,8 @@ struct HomeView: View {
                             .transition(CodexMotion.dropTransition)
                             .codexStaggeredAppear(index: 0)
 
-                        if !model.grokAvailable {
-                            GrokInstallGuidanceBanner()
+                        if model.codexNeedsSetup {
+                            CodexSetupGuidanceBanner()
                                 .frame(maxWidth: CodexTheme.composerMaxWidth)
                                 .codexStaggeredAppear(index: 1)
                         }
@@ -63,7 +63,7 @@ struct HomeView: View {
             .background(HomeScrollViewConfigurator())
             // Base provided by MainContentView's translucent dark layer (so glass refracts).
             .animation(CodexMotion.panelSpring, value: model.errorMessage)
-            .animation(CodexMotion.panelSpring, value: model.grokAvailable)
+            .animation(CodexMotion.panelSpring, value: model.codexNeedsSetup)
         }
     }
 
@@ -266,15 +266,16 @@ struct HooksBanner: View {
     }
 }
 
-/// Compact "Grok CLI not found" warning embedded inside the composer (used by
-/// `PromptComposer`). Home shows the richer `GrokInstallGuidanceBanner` instead.
-struct GrokMissingBanner: View {
+/// Compact provider setup warning embedded inside the composer.
+struct ProviderSetupBanner: View {
+    @Environment(AppViewModel.self) private var model
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(CodexTheme.accentOrange)
-            Text("Grok CLI not found at ~/.grok/bin/grok")
+            Text("Set up \(model.selectedProvider.name) before starting a chat")
                 .font(CodexTheme.captionFont)
                 .foregroundStyle(CodexTheme.textSecondary)
             Spacer()
@@ -282,10 +283,9 @@ struct GrokMissingBanner: View {
     }
 }
 
-/// Shown on Home when the Grok CLI isn't installed. Beyond warning, it surfaces
-/// the one-line install command (copyable) and a docs link so the user can act
-/// without leaving the app (#31).
-struct GrokInstallGuidanceBanner: View {
+/// ChatGPT Codex is the primary path, so Home keeps its install/sign-in action
+/// visible until the local CLI is ready.
+struct CodexSetupGuidanceBanner: View {
     @Environment(AppViewModel.self) private var model
     @State private var didCopy = false
 
@@ -295,20 +295,20 @@ struct GrokInstallGuidanceBanner: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(CodexTheme.accentOrange)
-                Text("Grok CLI not found")
+                Text(model.codexSetupTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(CodexTheme.textPrimary)
                 Spacer(minLength: 8)
             }
 
-            Text("Codessa drives the local `grok` command. Install it, then run `grok login`.")
+            Text(model.codexSetupMessage)
                 .font(.system(size: 12))
                 .foregroundStyle(CodexTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 8) {
-                Text(model.grokInstallCommand)
+                Text(model.codexSetupCommand)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(CodexTheme.textPrimary)
                     .lineLimit(1)
@@ -316,7 +316,7 @@ struct GrokInstallGuidanceBanner: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button {
-                    model.copyGrokInstallCommand()
+                    model.copyCodexSetupCommand()
                     didCopy = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { didCopy = false }
                 } label: {
@@ -338,12 +338,12 @@ struct GrokInstallGuidanceBanner: View {
 
             HStack(spacing: 8) {
                 Button {
-                    model.openGrokDocs()
+                    model.openCodexDocs()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "book")
                             .font(.system(size: 10, weight: .semibold))
-                        Text("Installation docs")
+                        Text("Codex CLI docs")
                             .font(.system(size: 11, weight: .medium))
                     }
                 }

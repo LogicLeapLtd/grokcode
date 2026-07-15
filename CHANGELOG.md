@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.21] - 2026-07-15
+
+- Refocused Codessa on ChatGPT Codex as the leading and default provider across
+  onboarding, Home, Coding Agent settings, setup guidance, and documentation,
+  while retaining other local coding agents as optional alternatives.
+- Removed a 488 ms startup main-thread microhang by scanning local plugins on a
+  utility task, and reduced repeated Git branch resolution from 2,160 ms to
+  1 ms of sampled CPU by caching shared parent-directory results per batch.
+
 ## [1.8.20] - 2026-07-05
 
 - Added tracked Git hooks that block pushes with uncommitted work and remind

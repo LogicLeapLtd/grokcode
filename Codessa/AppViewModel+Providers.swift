@@ -1,9 +1,8 @@
 import AppKit
 import Foundation
 
-/// Multi-provider support (shared contract). Codessa is a provider-agnostic
-/// shell over agent CLIs — Claude Code, Codex, Cursor, Gemini, Grok, Z.AI, and
-/// any custom binary. This extension owns detection, selection, and the
+/// Codex-first provider support. Other local agent CLIs remain available as
+/// optional alternatives. This extension owns detection, selection, and the
 /// convenience accessors the onboarding dock, composer, and Settings read.
 ///
 @MainActor
@@ -13,6 +12,7 @@ extension AppViewModel {
 
     /// Re-detect installed providers and sync the selected id from the registry.
     func refreshProviders() {
+        registry.migrateLegacyDefaultIfNeeded()
         providerStatuses = registry.detectAll()
         selectedProviderId = UserDefaults.standard.string(forKey: defaultProviderKey) ?? registry.selectedProviderId
         // If the persisted selection points at a provider that no longer exists
@@ -44,6 +44,20 @@ extension AppViewModel {
 
     var selectedProviderStatus: ProviderStatus? {
         providerStatuses.first { $0.provider.id == selectedProviderId }
+    }
+
+    var codexProviderStatus: ProviderStatus? {
+        providerStatuses.first { $0.provider.id == AgentProvider.codex.id }
+    }
+
+    var codexNeedsSetup: Bool {
+        guard let status = codexProviderStatus else { return true }
+        return !status.installed || status.authStatus == .unauthenticated
+    }
+
+    var selectedProviderNeedsSetup: Bool {
+        guard let status = selectedProviderStatus else { return true }
+        return !status.installed || status.authStatus == .unauthenticated
     }
 
     /// Count of providers detected on disk — surfaced in onboarding ("2 of 7

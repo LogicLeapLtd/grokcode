@@ -33,8 +33,8 @@ struct PromptComposer: View {
                     .padding(.top, 16)
                     .padding(.bottom, 10)
                     .transition(CodexMotion.bannerTransition)
-            } else if !model.grokAvailable {
-                GrokMissingBanner()
+            } else if model.selectedProviderNeedsSetup && model.activePage != .home {
+                ProviderSetupBanner()
                     .padding(.horizontal, 14)
                     .padding(.top, 16)
                     .padding(.bottom, 10)
@@ -116,7 +116,7 @@ struct PromptComposer: View {
                 .environment(model)
         }
         .animation(CodexMotion.panelSpring, value: model.pendingHooks.count)
-        .animation(CodexMotion.panelSpring, value: model.grokAvailable)
+        .animation(CodexMotion.panelSpring, value: model.selectedProviderNeedsSetup)
         .animation(CodexMotion.quickSpring, value: model.composerAttachments)
         .animation(CodexMotion.quickSpring, value: isDropTargeted)
         .onAppear { isFocused = true }
